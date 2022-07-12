@@ -3,6 +3,10 @@ name = "privacypass"
 version = "0.1.0"
 edition = "2021"
 description = "WIP implementation of Privacy Pass"
+license = "MIT"
+documentation = "https://docs.rs/privacypass"
+repository = "https://github.com/raphaelrobert/privacypass"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
