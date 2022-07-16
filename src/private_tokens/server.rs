@@ -88,7 +88,8 @@ where
     ) -> Result<<CS::Group as Group>::Elem, CreateKeypairError> {
         let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
         self.rng.fill_bytes(&mut seed);
-        let server = VoprfServer::<CS>::new_from_seed(&seed, b"PrivacyPass").unwrap();
+        let server = VoprfServer::<CS>::new_from_seed(&seed, b"PrivacyPass")
+            .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
         key_store.insert(key_id, server).await;
         Ok(public_key)
