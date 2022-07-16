@@ -1,19 +1,32 @@
 mod auth;
 pub mod private_tokens;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(u16)]
+pub enum TokenType {
+    Voprf = 1,
+}
+
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
-    use sha2::digest::{
-        core_api::BlockSizeUser,
-        typenum::{IsLess, IsLessOrEqual, U256},
-        OutputSizeUser,
+    use sha2::{
+        digest::{
+            core_api::BlockSizeUser,
+            typenum::{IsLess, IsLessOrEqual, U256},
+            OutputSizeUser,
+        },
+        Digest, Sha256,
     };
     use std::collections::{HashMap, HashSet};
     use tokio::sync::Mutex;
     use voprf::*;
 
-    use crate::private_tokens::{client::*, server::*, *};
+    use crate::{
+        auth::TokenChallenge,
+        private_tokens::{client::*, server::*, *},
+        TokenType,
+    };
 
     #[derive(Default)]
     struct MemoryNonceStore {
@@ -73,8 +86,18 @@ mod tests {
         // Client: Create client
         let mut client = Client::<Ristretto255>::new(1, public_key);
 
+        // Generate a challenge
+        let challenge = TokenChallenge::new(
+            TokenType::Voprf,
+            "example.com",
+            None,
+            vec!["example.com".to_string()],
+        );
+
+        let challenge_digest = Sha256::digest(challenge.serialize()).to_vec();
+
         // Client: Prepare a TokenRequest after having received a challenge
-        let (token_request, token_state) = client.issue_token_request(&[]).unwrap();
+        let (token_request, token_state) = client.issue_token_request(&challenge).unwrap();
 
         // Server: Issue a TokenResponse
         let token_response = server
@@ -85,16 +108,19 @@ mod tests {
         // Client: Turn the TokenResponse into a Token
         let token = client.issue_token(token_response, token_state).unwrap();
 
+        // Server: Compare the challenge digest
+        assert_eq!(token.challenge_digest(), &challenge_digest);
+
         // Server: Redeem the token
         assert!(server
-            .redeem_token(&mut key_store, &mut nonce_store, token.clone())
+            .redeem_token(&mut key_store, &mut nonce_store, token.clone(),)
             .await
             .is_ok());
 
         // Server: Test double spend protection
         assert_eq!(
             server
-                .redeem_token(&mut key_store, &mut nonce_store, token)
+                .redeem_token(&mut key_store, &mut nonce_store, token,)
                 .await,
             Err(RedeemTokenError::DoubleSpending)
         );

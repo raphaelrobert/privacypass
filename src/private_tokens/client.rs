@@ -10,7 +10,19 @@ use sha2::{
 use thiserror::*;
 use voprf::*;
 
-use super::{Nonce, Token, TokenInput, TokenRequest, TokenResponse, TokenState};
+use crate::{auth::TokenChallenge, TokenType};
+
+use super::{Nonce, Token, TokenInput, TokenRequest, TokenResponse};
+
+pub struct TokenState<CS: CipherSuite>
+where
+    <CS::Hash as OutputSizeUser>::OutputSize:
+        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
+{
+    client: VoprfClient<CS>,
+    token_input: TokenInput,
+    challenge_digest: Vec<u8>,
+}
 
 #[derive(Error, Debug, PartialEq)]
 pub enum IssueTokenRequestError {
@@ -49,23 +61,23 @@ where
 
     pub fn issue_token_request(
         &mut self,
-        challenge: &[u8],
+        challenge: &TokenChallenge,
     ) -> Result<(TokenRequest, TokenState<CS>), IssueTokenRequestError> {
         let nonce: Nonce = self.rng.gen();
-        let context = Sha256::digest(challenge).to_vec();
+        let context = Sha256::digest(challenge.serialize()).to_vec();
 
         // nonce = random(32)
         // context = SHA256(challenge)
         // token_input = concat(0x0001, nonce, context, key_id)
         // blind, blinded_element = client_context.Blind(token_input)
 
-        let token_input = TokenInput::new(1, nonce, context.clone(), self.key_id);
+        let token_input = TokenInput::new(TokenType::Voprf, nonce, context.clone(), self.key_id);
 
         let blinded_element = VoprfClient::<CS>::blind(&token_input.serialize(), &mut self.rng)
             .map_err(|_| IssueTokenRequestError::BlindingError)?;
         let token_request = TokenRequest {
-            token_type: 1,
-            token_key_id: 1,
+            token_type: TokenType::Voprf,
+            token_key_id: self.key_id,
             blinded_msg: blinded_element.message.serialize().to_vec(),
         };
         let token_state = TokenState {
@@ -97,8 +109,8 @@ where
             .map_err(|_| IssueTokenError::InvalidTokenResponse)?
             .to_vec();
         Ok(Token {
-            token_type: 1,
-            nonce: token_state.token_input.nonce.to_vec(),
+            token_type: TokenType::Voprf,
+            nonce: token_state.token_input.nonce,
             challenge_digest: token_state.challenge_digest,
             token_key_id: token_state.token_input.key_id,
             authenticator,

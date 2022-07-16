@@ -10,6 +10,8 @@ use std::marker::PhantomData;
 use thiserror::*;
 use voprf::*;
 
+use crate::TokenType;
+
 use super::{KeyId, Nonce, Token, TokenInput, TokenRequest, TokenResponse};
 
 #[derive(Error, Debug, PartialEq)]
@@ -24,6 +26,8 @@ pub enum IssueTokenResponseError {
     KeyIdNotFound,
     #[error("Invalid TokenRequest")]
     InvalidTokenRequest,
+    #[error("Invalid toke type")]
+    InvalidTokenType,
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -100,7 +104,10 @@ where
         key_store: &KS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
-        assert_eq!(token_request.token_type, 1);
+        if token_request.token_type != TokenType::Voprf {
+            return Err(IssueTokenResponseError::InvalidTokenType);
+        }
+        assert_eq!(token_request.token_type, TokenType::Voprf);
         let server = key_store
             .get(&token_request.token_key_id)
             .await
@@ -120,7 +127,7 @@ where
         nonce_store: &mut NS,
         token: Token,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type != 1 {
+        if token.token_type != TokenType::Voprf {
             return Err(RedeemTokenError::InvalidToken);
         }
         if token.authenticator.len() != <CS::Hash as OutputSizeUser>::output_size() {
