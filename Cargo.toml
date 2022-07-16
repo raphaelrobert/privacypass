@@ -11,10 +11,12 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = "0.1.56"
 generic-array = "0.14.5"
 rand = "0.8.5"
 serde = "1.0.138"
 sha2 = "0.10.2"
+thiserror = "1.0.31"
 tls_codec = "0.2.0"
 voprf = "0.4.0-pre.4"
 
@@ -23,3 +25,4 @@ p256 = { version = "0.11", default-features = false, features = [
   "hash2curve",
   "voprf",
 ] }
+tokio = { version = "1.20.0", features = ["sync", "macros", "rt"] }

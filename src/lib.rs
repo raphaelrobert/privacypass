@@ -1,53 +1,102 @@
 mod auth;
-mod private_tokens;
+pub mod private_tokens;
 
 #[cfg(test)]
 mod tests {
-    use voprf::Ristretto255;
+    use async_trait::async_trait;
+    use sha2::digest::{
+        core_api::BlockSizeUser,
+        typenum::{IsLess, IsLessOrEqual, U256},
+        OutputSizeUser,
+    };
+    use std::collections::{HashMap, HashSet};
+    use tokio::sync::Mutex;
+    use voprf::*;
 
-    use crate::private_tokens::{Client, Server};
+    use crate::private_tokens::{client::*, server::*, *};
 
-    #[test]
-    fn cycle() {
-        // Create server
+    #[derive(Default)]
+    struct MemoryNonceStore {
+        nonces: HashSet<Nonce>,
+    }
+
+    #[async_trait]
+    impl NonceStore for MemoryNonceStore {
+        async fn exists(&self, nonce: &Nonce) -> bool {
+            self.nonces.contains(nonce)
+        }
+
+        async fn insert(&mut self, nonce: Nonce) {
+            self.nonces.insert(nonce);
+        }
+    }
+
+    #[derive(Default)]
+    struct MemoryKeyStore<CS: CipherSuite>
+    where
+        <CS::Hash as OutputSizeUser>::OutputSize:
+            IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
+    {
+        keys: Mutex<HashMap<KeyId, VoprfServer<CS>>>,
+    }
+
+    #[async_trait]
+    impl<CS: CipherSuite> KeyStore<CS> for MemoryKeyStore<CS>
+    where
+        <CS::Hash as OutputSizeUser>::OutputSize:
+            IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
+        <CS::Group as Group>::Scalar: Send,
+        <CS::Group as Group>::Elem: Send,
+    {
+        async fn insert(&mut self, key_id: KeyId, server: VoprfServer<CS>) {
+            let mut keys = self.keys.lock().await;
+            keys.insert(key_id, server);
+        }
+
+        async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<CS>> {
+            self.keys.lock().await.get(key_id).cloned()
+        }
+    }
+
+    #[tokio::test]
+    async fn cycle() {
+        // Server: Instantiate in-memory keystore and nonce store.
+        let mut key_store = MemoryKeyStore::default();
+        let mut nonce_store = MemoryNonceStore::default();
+
+        // Server: Create server
         let mut server = Server::<Ristretto255>::new();
-        server.create_keypair(1);
 
-        // Get the server's public key for the client
-        let public_key = server.get_key(1).unwrap();
+        // Server: Create a new keypair
+        let public_key = server.create_keypair(&mut key_store, 1).await.unwrap();
 
-        // Create client
+        // Client: Create client
         let mut client = Client::<Ristretto255>::new(1, public_key);
 
         // Client: Prepare a TokenRequest after having received a challenge
-        let (token_request, token_state) = client.issue_token_request(&[]);
+        let (token_request, token_state) = client.issue_token_request(&[]).unwrap();
 
         // Server: Issue a TokenResponse
-        let token_response = server.issue_token_response(token_request);
+        let token_response = server
+            .issue_token_response(&key_store, token_request)
+            .await
+            .unwrap();
 
         // Client: Turn the TokenResponse into a Token
-        let token = client.issue_token(token_response, token_state);
+        let token = client.issue_token(token_response, token_state).unwrap();
 
         // Server: Redeem the token
-        assert!(server.redeem_token(token.clone()));
+        assert!(server
+            .redeem_token(&mut key_store, &mut nonce_store, token.clone())
+            .await
+            .is_ok());
 
-        // Test double spend protection
-        assert!(!server.redeem_token(token));
-    }
-
-    #[test]
-    fn key_store() {
-        // Create server
-        let mut server = Server::<Ristretto255>::new();
-        server.create_keypair(1);
-
-        // List keys
-        let keys = server.list_keys();
-        assert_eq!(keys.len(), 1);
-        assert_eq!(keys[0], 1);
-
-        // Remove key
-        server.remove_key(1);
-        assert_eq!(server.list_keys().len(), 0);
+        // Server: Test double spend protection
+        assert_eq!(
+            server
+                .redeem_token(&mut key_store, &mut nonce_store, token)
+                .await,
+            Err(RedeemTokenError::DoubleSpending)
+        );
     }
 }
