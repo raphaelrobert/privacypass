@@ -56,16 +56,6 @@ impl TokenChallenge {
     }
 }
 
-pub struct TokenTypeData {
-    value: u16,
-    name: String,
-    publicly_verifiable: bool,
-    public_metadata: bool,
-    private_metadata: bool,
-    nk: usize,
-    nid: usize,
-}
-
 struct WwwAuthenticateBuilder {}
 
 impl WwwAuthenticateBuilder {
