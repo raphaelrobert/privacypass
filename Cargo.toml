@@ -26,4 +26,9 @@ p256 = { version = "0.11", default-features = false, features = [
   "hash2curve",
   "voprf",
 ] }
-tokio = { version = "1.20.0", features = ["sync", "macros", "rt"] }
+tokio = { version = "1.20.0", features = ["full"] }
+criterion = { version = "0.3.6", features = ["async_futures", "async_tokio"] }
+
+[[bench]]
+name = "benchmark"
+harness = false 

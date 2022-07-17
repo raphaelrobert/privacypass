@@ -53,14 +53,14 @@ async fn private_tokens_cycle() {
 
     // Server: Redeem the token
     assert!(server
-        .redeem_token(&mut key_store, &mut nonce_store, token.clone(),)
+        .redeem_token(&mut key_store, &mut nonce_store, token.clone())
         .await
         .is_ok());
 
     // Server: Test double spend protection
     assert_eq!(
         server
-            .redeem_token(&mut key_store, &mut nonce_store, token,)
+            .redeem_token(&mut key_store, &mut nonce_store, token)
             .await,
         Err(RedeemTokenError::DoubleSpending)
     );
