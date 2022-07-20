@@ -47,7 +47,7 @@ pub trait KeyStore {
     async fn get(&self, key_id: &KeyId) -> Option<KeyPair>;
 }
 
-const KEYSIZE_IN_BITS: usize = 1024;
+const KEYSIZE_IN_BITS: usize = 2048;
 const KEYSIZE_IN_BYTES: usize = KEYSIZE_IN_BITS / 8;
 
 #[derive(Default)]
