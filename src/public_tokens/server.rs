@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use blind_rsa_signatures::{BlindSignature, BlindingResult, KeyPair, Options, Signature};
 use generic_array::GenericArray;
 use rand::{rngs::OsRng, RngCore};
 use sha2::digest::{
@@ -6,9 +7,7 @@ use sha2::digest::{
     typenum::{IsLess, IsLessOrEqual, U256},
     OutputSizeUser,
 };
-use std::marker::PhantomData;
 use thiserror::*;
-use voprf::*;
 
 use crate::{KeyId, Nonce, NonceStore, TokenType};
 
@@ -41,88 +40,72 @@ pub enum RedeemTokenError {
 }
 
 #[async_trait]
-pub trait KeyStore<CS: CipherSuite>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-{
+pub trait KeyStore {
     /// Inserts a keypair with a given `key_id` into the key store.
-    async fn insert(&mut self, key_id: KeyId, server: VoprfServer<CS>);
+    async fn insert(&mut self, key_id: KeyId, server: KeyPair);
     /// Returns a keypair with a given `key_id` from the key store.
-    async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<CS>>;
+    async fn get(&self, key_id: &KeyId) -> Option<KeyPair>;
 }
+
+const KEYSIZE_IN_BITS: usize = 1024;
+const KEYSIZE_IN_BYTES: usize = KEYSIZE_IN_BITS / 8;
 
 #[derive(Default)]
-pub struct Server<CS: CipherSuite>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-{
+pub struct Server {
     rng: OsRng,
-    cs: PhantomData<CS>,
 }
 
-impl<CS: CipherSuite> Server<CS>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-    <CS::Group as Group>::ScalarLen: std::ops::Add,
-    <<CS::Group as Group>::ScalarLen as std::ops::Add>::Output:
-        sha2::digest::generic_array::ArrayLength<u8>,
-{
+impl Server {
     pub fn new() -> Self {
-        Self {
-            rng: OsRng,
-            cs: PhantomData,
-        }
+        Self { rng: OsRng }
     }
 
-    pub async fn create_keypair<KS: KeyStore<CS>>(
+    pub async fn create_keypair<KS: KeyStore>(
         &mut self,
         key_store: &mut KS,
         key_id: KeyId,
-    ) -> Result<<CS::Group as Group>::Elem, CreateKeypairError> {
-        let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
-        self.rng.fill_bytes(&mut seed);
-        let server = VoprfServer::<CS>::new_from_seed(&seed, b"PrivacyPass")
-            .map_err(|_| CreateKeypairError::SeedError)?;
-        let public_key = server.get_public_key();
-        key_store.insert(key_id, server).await;
-        Ok(public_key)
+    ) -> Result<KeyPair, CreateKeypairError> {
+        let key_pair =
+            KeyPair::generate(KEYSIZE_IN_BITS).map_err(|_| CreateKeypairError::SeedError)?;
+        key_store.insert(key_id, key_pair.clone()).await;
+        Ok(key_pair)
     }
 
-    pub async fn issue_token_response<KS: KeyStore<CS>>(
+    pub async fn issue_token_response<KS: KeyStore>(
         &mut self,
         key_store: &KS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
-        if token_request.token_type != TokenType::Voprf {
+        if token_request.token_type != TokenType::BlindRSA {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
-        assert_eq!(token_request.token_type, TokenType::Voprf);
-        let server = key_store
+        assert_eq!(token_request.token_type, TokenType::BlindRSA);
+        let key_pair = key_store
             .get(&token_request.token_key_id)
             .await
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
-        let blinded_element = BlindedElement::<CS>::deserialize(&token_request.blinded_msg)
+
+        // blind_sig = rsabssa_blind_sign(skI, TokenRequest.blinded_msg)
+        let options = Options::default();
+        let blind_sig = key_pair
+            .sk
+            .blind_sign(&token_request.blinded_msg, &options)
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
-        let evaluated_result = server.blind_evaluate(&mut self.rng, &blinded_element);
         Ok(TokenResponse {
-            evaluate_msg: evaluated_result.message.serialize().to_vec(),
-            evaluate_proof: evaluated_result.proof.serialize().to_vec(),
+            blind_sig: blind_sig.to_vec(),
         })
     }
 
-    pub async fn redeem_token<KS: KeyStore<CS>, NS: NonceStore>(
+    pub async fn redeem_token<KS: KeyStore, NS: NonceStore>(
         &mut self,
         key_store: &mut KS,
         nonce_store: &mut NS,
         token: Token,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type != TokenType::Voprf {
+        if token.token_type != TokenType::BlindRSA {
             return Err(RedeemTokenError::InvalidToken);
         }
-        if token.authenticator.len() != <CS::Hash as OutputSizeUser>::output_size() {
+        if token.authenticator.len() != KEYSIZE_IN_BYTES {
             return Err(RedeemTokenError::InvalidToken);
         }
         let nonce: Nonce = token
@@ -139,19 +122,20 @@ where
             context: token.challenge_digest,
             key_id: token.token_key_id,
         };
-        let server = key_store
+        let key_pair = key_store
             .get(&token.token_key_id)
             .await
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
-        let token_authenticator = server
-            .evaluate(&token_input.serialize())
-            .map_err(|_| RedeemTokenError::InvalidToken)?
-            .to_vec();
-        if token.authenticator == token_authenticator {
-            nonce_store.insert(nonce).await;
-            Ok(())
-        } else {
-            Err(RedeemTokenError::InvalidToken)
+
+        let options = Options::default();
+        let signature = Signature(token.authenticator);
+
+        match signature.verify(&key_pair.pk, &token_input.serialize(), &options) {
+            Ok(_) => {
+                nonce_store.insert(nonce).await;
+                Ok(())
+            }
+            Err(_) => Err(RedeemTokenError::InvalidToken),
         }
     }
 }
