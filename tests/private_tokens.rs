@@ -3,7 +3,6 @@ mod private_memory_stores;
 use private_memory_stores::*;
 
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
 use voprf::*;
 
 use privacypass::{

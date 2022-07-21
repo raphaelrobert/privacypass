@@ -1,13 +1,6 @@
 use blind_rsa_signatures::{BlindSignature, BlindingResult, Options, PublicKey};
 use rand::{rngs::OsRng, Rng};
-use sha2::{
-    digest::{
-        core_api::BlockSizeUser,
-        typenum::{IsLess, IsLessOrEqual, U256},
-        OutputSizeUser,
-    },
-    Digest, Sha256,
-};
+use sha2::{Digest, Sha256};
 use thiserror::*;
 
 use crate::{auth::TokenChallenge, TokenType};

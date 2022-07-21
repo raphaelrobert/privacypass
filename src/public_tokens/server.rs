@@ -1,12 +1,5 @@
 use async_trait::async_trait;
-use blind_rsa_signatures::{BlindSignature, BlindingResult, KeyPair, Options, Signature};
-use generic_array::GenericArray;
-use rand::{rngs::OsRng, RngCore};
-use sha2::digest::{
-    core_api::BlockSizeUser,
-    typenum::{IsLess, IsLessOrEqual, U256},
-    OutputSizeUser,
-};
+use blind_rsa_signatures::{KeyPair, Options, Signature};
 use thiserror::*;
 
 use crate::{KeyId, Nonce, NonceStore, TokenType};
@@ -51,13 +44,11 @@ const KEYSIZE_IN_BITS: usize = 2048;
 const KEYSIZE_IN_BYTES: usize = KEYSIZE_IN_BITS / 8;
 
 #[derive(Default)]
-pub struct Server {
-    rng: OsRng,
-}
+pub struct Server {}
 
 impl Server {
     pub fn new() -> Self {
-        Self { rng: OsRng }
+        Self {}
     }
 
     pub async fn create_keypair<KS: KeyStore>(
@@ -130,12 +121,10 @@ impl Server {
         let options = Options::default();
         let signature = Signature(token.authenticator);
 
-        match signature.verify(&key_pair.pk, &token_input.serialize(), &options) {
-            Ok(_) => {
-                nonce_store.insert(nonce).await;
-                Ok(())
-            }
-            Err(_) => Err(RedeemTokenError::InvalidToken),
-        }
+        signature
+            .verify(&key_pair.pk, &token_input.serialize(), &options)
+            .map_err(|_| RedeemTokenError::InvalidToken)?;
+        nonce_store.insert(nonce).await;
+        Ok(())
     }
 }

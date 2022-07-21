@@ -1,13 +1,9 @@
-use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 
 use async_trait::async_trait;
 use blind_rsa_signatures::KeyPair;
-use privacypass::{
-    public_tokens::{client::*, server::*},
-    KeyId, Nonce, NonceStore, TokenType,
-};
+use privacypass::{public_tokens::server::*, KeyId, Nonce, NonceStore};
 
 #[derive(Default)]
 pub struct MemoryNonceStore {

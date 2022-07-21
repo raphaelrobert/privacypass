@@ -3,15 +3,11 @@ mod public_memory_stores;
 use public_memory_stores::*;
 
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
-use tokio::sync::Mutex;
 
-use async_trait::async_trait;
-use blind_rsa_signatures::KeyPair;
 use privacypass::{
     auth::TokenChallenge,
     public_tokens::{client::*, server::*},
-    KeyId, Nonce, NonceStore, TokenType,
+    TokenType,
 };
 
 #[tokio::test]
