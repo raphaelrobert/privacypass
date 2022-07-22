@@ -10,9 +10,9 @@ use std::marker::PhantomData;
 use thiserror::*;
 use voprf::*;
 
-use crate::TokenType;
+use crate::{KeyId, Nonce, NonceStore, TokenType};
 
-use super::{KeyId, Nonce, Token, TokenInput, TokenRequest, TokenResponse};
+use super::{Token, TokenInput, TokenRequest, TokenResponse};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum CreateKeypairError {
@@ -50,14 +50,6 @@ where
     async fn insert(&mut self, key_id: KeyId, server: VoprfServer<CS>);
     /// Returns a keypair with a given `key_id` from the key store.
     async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<CS>>;
-}
-
-#[async_trait]
-pub trait NonceStore {
-    /// Returns `true` if the nonce exists in the nonce store and `false` otherwise.
-    async fn exists(&self, nonce: &Nonce) -> bool;
-    /// Inserts a new nonce in the nonce store.
-    async fn insert(&mut self, nonce: Nonce);
 }
 
 #[derive(Default)]

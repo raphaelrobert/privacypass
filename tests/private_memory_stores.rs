@@ -8,7 +8,8 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 use voprf::*;
 
-use privacypass::private_tokens::{server::*, *};
+use privacypass::private_tokens::server::*;
+use privacypass::{KeyId, Nonce, NonceStore};
 
 #[derive(Default)]
 pub struct MemoryNonceStore {

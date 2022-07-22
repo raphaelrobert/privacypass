@@ -1,34 +1,33 @@
-mod private_memory_stores;
+mod public_memory_stores;
 
-use private_memory_stores::*;
+use public_memory_stores::*;
 
 use sha2::{Digest, Sha256};
-use voprf::*;
 
 use privacypass::{
     auth::TokenChallenge,
-    private_tokens::{client::*, server::*},
+    public_tokens::{client::*, server::*},
     TokenType,
 };
 
 #[tokio::test]
-async fn private_tokens_cycle() {
+async fn public_tokens_cycle() {
     // Server: Instantiate in-memory keystore and nonce store.
     let mut key_store = MemoryKeyStore::default();
     let mut nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
-    let mut server = Server::<Ristretto255>::new();
+    let mut server = Server::new();
 
     // Server: Create a new keypair
-    let public_key = server.create_keypair(&mut key_store, 1).await.unwrap();
+    let key_pair = server.create_keypair(&mut key_store, 1).await.unwrap();
 
     // Client: Create client
-    let mut client = Client::<Ristretto255>::new(1, public_key);
+    let mut client = Client::new(1, key_pair.pk);
 
     // Generate a challenge
     let challenge = TokenChallenge::new(
-        TokenType::Voprf,
+        TokenType::BlindRSA,
         "example.com",
         None,
         vec!["example.com".to_string()],
