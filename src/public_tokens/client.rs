@@ -71,9 +71,9 @@ impl Client {
             blinded_msg: blinding_result.blind_msg.to_vec(),
         };
         let token_state = TokenState {
-            blinding_result: blinding_result.clone(),
+            blinding_result,
             token_input,
-            challenge_digest: challenge_digest,
+            challenge_digest,
         };
         Ok((token_request, token_state))
     }
