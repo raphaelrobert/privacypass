@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod batched_tokens;
 pub mod private_tokens;
 pub mod public_tokens;
 
@@ -9,6 +10,7 @@ use async_trait::async_trait;
 pub enum TokenType {
     Voprf = 1,
     BlindRSA = 2,
+    Batched = 3,
 }
 
 pub type KeyId = u8;
