@@ -3,20 +3,19 @@ mod batched_memory_stores;
 
 use criterion::{async_executor::FuturesExecutor, Criterion};
 use tokio::runtime::Runtime;
-use voprf::*;
 
 use privacypass::{auth::TokenChallenge, TokenType};
 
 async fn create_batched_keypair(
-    mut key_store: batched_memory_stores::MemoryKeyStore<Ristretto255>,
-    mut server: privacypass::batched_tokens::server::Server<Ristretto255>,
+    mut key_store: batched_memory_stores::MemoryKeyStore,
+    mut server: privacypass::batched_tokens::server::Server,
 ) {
     let _public_key = server.create_keypair(&mut key_store, 1).await.unwrap();
 }
 
 async fn issue_batched_token_response(
-    key_store: batched_memory_stores::MemoryKeyStore<Ristretto255>,
-    mut server: privacypass::batched_tokens::server::Server<Ristretto255>,
+    key_store: batched_memory_stores::MemoryKeyStore,
+    mut server: privacypass::batched_tokens::server::Server,
     token_request: privacypass::batched_tokens::TokenRequest,
 ) -> privacypass::batched_tokens::TokenResponse {
     server
@@ -26,10 +25,10 @@ async fn issue_batched_token_response(
 }
 
 async fn redeem_batched_token(
-    mut key_store: batched_memory_stores::MemoryKeyStore<Ristretto255>,
+    mut key_store: batched_memory_stores::MemoryKeyStore,
     mut nonce_store: batched_memory_stores::MemoryNonceStore,
     token: privacypass::batched_tokens::Token,
-    mut server: privacypass::batched_tokens::server::Server<Ristretto255>,
+    mut server: privacypass::batched_tokens::server::Server,
 ) {
     server
         .redeem_token(&mut key_store, &mut nonce_store, token)
@@ -44,7 +43,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
                 let key_store = batched_memory_stores::MemoryKeyStore::default();
-                let server = privacypass::batched_tokens::server::Server::<Ristretto255>::new();
+                let server = privacypass::batched_tokens::server::Server::new();
                 (key_store, server)
             },
             |(key_store, server)| create_batched_keypair(key_store, server),
@@ -58,15 +57,12 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
             b.iter_with_setup(
                 || {
                     let mut key_store = batched_memory_stores::MemoryKeyStore::default();
-                    let mut server =
-                        privacypass::batched_tokens::server::Server::<Ristretto255>::new();
+                    let mut server = privacypass::batched_tokens::server::Server::new();
                     let rt = Runtime::new().unwrap();
                     let public_key = rt.block_on(async {
                         server.create_keypair(&mut key_store, 1).await.unwrap()
                     });
-                    let client = privacypass::batched_tokens::client::Client::<Ristretto255>::new(
-                        1, public_key,
-                    );
+                    let client = privacypass::batched_tokens::client::Client::new(1, public_key);
                     let challenge = TokenChallenge::new(
                         TokenType::Voprf,
                         "example.com",
@@ -89,16 +85,13 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
             b.to_async(FuturesExecutor).iter_with_setup(
                 || {
                     let mut key_store = batched_memory_stores::MemoryKeyStore::default();
-                    let mut server =
-                        privacypass::batched_tokens::server::Server::<Ristretto255>::new();
+                    let mut server = privacypass::batched_tokens::server::Server::new();
                     let rt = Runtime::new().unwrap();
                     let public_key = rt.block_on(async {
                         server.create_keypair(&mut key_store, 1).await.unwrap()
                     });
                     let mut client =
-                        privacypass::batched_tokens::client::Client::<Ristretto255>::new(
-                            1, public_key,
-                        );
+                        privacypass::batched_tokens::client::Client::new(1, public_key);
                     let challenge = TokenChallenge::new(
                         TokenType::Voprf,
                         "example.com",
@@ -121,12 +114,11 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
         b.iter_with_setup(
             || {
                 let mut key_store = batched_memory_stores::MemoryKeyStore::default();
-                let mut server = privacypass::batched_tokens::server::Server::<Ristretto255>::new();
+                let mut server = privacypass::batched_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
                     rt.block_on(async { server.create_keypair(&mut key_store, 1).await.unwrap() });
-                let mut client =
-                    privacypass::batched_tokens::client::Client::<Ristretto255>::new(1, public_key);
+                let mut client = privacypass::batched_tokens::client::Client::new(1, public_key);
                 let challenge = TokenChallenge::new(
                     TokenType::Voprf,
                     "example.com",
@@ -155,12 +147,11 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
             || {
                 let mut key_store = batched_memory_stores::MemoryKeyStore::default();
                 let nonce_store = batched_memory_stores::MemoryNonceStore::default();
-                let mut server = privacypass::batched_tokens::server::Server::<Ristretto255>::new();
+                let mut server = privacypass::batched_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
                     rt.block_on(async { server.create_keypair(&mut key_store, 1).await.unwrap() });
-                let mut client =
-                    privacypass::batched_tokens::client::Client::<Ristretto255>::new(1, public_key);
+                let mut client = privacypass::batched_tokens::client::Client::new(1, public_key);
                 let challenge = TokenChallenge::new(
                     TokenType::Voprf,
                     "example.com",

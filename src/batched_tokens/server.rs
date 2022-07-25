@@ -1,11 +1,6 @@
 use async_trait::async_trait;
 use generic_array::GenericArray;
 use rand::{rngs::OsRng, RngCore};
-use sha2::digest::{
-    core_api::BlockSizeUser,
-    typenum::{IsLess, IsLessOrEqual, U256},
-    OutputSizeUser,
-};
 use std::marker::PhantomData;
 use thiserror::*;
 use voprf::*;
@@ -41,35 +36,20 @@ pub enum RedeemTokenError {
 }
 
 #[async_trait]
-pub trait KeyStore<CS: CipherSuite>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-{
+pub trait KeyStore {
     /// Inserts a keypair with a given `key_id` into the key store.
-    async fn insert(&mut self, key_id: KeyId, server: VoprfServer<CS>);
+    async fn insert(&mut self, key_id: KeyId, server: VoprfServer<Ristretto255>);
     /// Returns a keypair with a given `key_id` from the key store.
-    async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<CS>>;
+    async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<Ristretto255>>;
 }
 
 #[derive(Default)]
-pub struct Server<CS: CipherSuite>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-{
+pub struct Server {
     rng: OsRng,
-    cs: PhantomData<CS>,
+    cs: PhantomData<Ristretto255>,
 }
 
-impl<CS: CipherSuite> Server<CS>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-    <CS::Group as Group>::ScalarLen: std::ops::Add,
-    <<CS::Group as Group>::ScalarLen as std::ops::Add>::Output:
-        sha2::digest::generic_array::ArrayLength<u8>,
-{
+impl Server {
     pub fn new() -> Self {
         Self {
             rng: OsRng,
@@ -77,21 +57,21 @@ where
         }
     }
 
-    pub async fn create_keypair<KS: KeyStore<CS>>(
+    pub async fn create_keypair<KS: KeyStore>(
         &mut self,
         key_store: &mut KS,
         key_id: KeyId,
-    ) -> Result<<CS::Group as Group>::Elem, CreateKeypairError> {
-        let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
+    ) -> Result<<Ristretto255 as Group>::Elem, CreateKeypairError> {
+        let mut seed = GenericArray::<_, <Ristretto255 as Group>::ScalarLen>::default();
         self.rng.fill_bytes(&mut seed);
-        let server = VoprfServer::<CS>::new_from_seed(&seed, b"PrivacyPass")
+        let server = VoprfServer::<Ristretto255>::new_from_seed(&seed, b"PrivacyPass")
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
         key_store.insert(key_id, server).await;
         Ok(public_key)
     }
 
-    pub async fn issue_token_response<KS: KeyStore<CS>>(
+    pub async fn issue_token_response<KS: KeyStore>(
         &mut self,
         key_store: &KS,
         token_request: TokenRequest,
@@ -107,8 +87,9 @@ where
 
         let mut blinded_elements = Vec::new();
         for element in token_request.blinded_elements.iter() {
-            let blinded_element = BlindedElement::<CS>::deserialize(&element.blinded_element)
-                .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
+            let blinded_element =
+                BlindedElement::<Ristretto255>::deserialize(&element.blinded_element)
+                    .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
             blinded_elements.push(blinded_element);
         }
 
@@ -130,7 +111,7 @@ where
         })
     }
 
-    pub async fn redeem_token<KS: KeyStore<CS>, NS: NonceStore>(
+    pub async fn redeem_token<KS: KeyStore, NS: NonceStore>(
         &mut self,
         key_store: &mut KS,
         nonce_store: &mut NS,
@@ -139,7 +120,7 @@ where
         if token.token_type != TokenType::Batched {
             return Err(RedeemTokenError::InvalidToken);
         }
-        if token.authenticator.len() != <CS::Hash as OutputSizeUser>::output_size() {
+        if token.authenticator.len() != 64 {
             return Err(RedeemTokenError::InvalidToken);
         }
         let nonce: Nonce = token

@@ -1,12 +1,5 @@
 use rand::{rngs::OsRng, Rng};
-use sha2::{
-    digest::{
-        core_api::BlockSizeUser,
-        typenum::{IsLess, IsLessOrEqual, U256},
-        OutputSizeUser,
-    },
-    Digest, Sha256,
-};
+use sha2::{Digest, Sha256};
 use thiserror::*;
 use voprf::*;
 
@@ -14,12 +7,8 @@ use crate::{auth::TokenChallenge, TokenType};
 
 use super::{BlindedElement, Nonce, Token, TokenInput, TokenRequest, TokenResponse};
 
-pub struct TokenState<CS: CipherSuite>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-{
-    client: VoprfClient<CS>,
+pub struct TokenState {
+    client: VoprfClient<Ristretto255>,
     token_input: TokenInput,
     challenge_digest: Vec<u8>,
 }
@@ -36,22 +25,14 @@ pub enum IssueTokenError {
     InvalidTokenResponse,
 }
 
-pub struct Client<CS: CipherSuite>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-{
+pub struct Client {
     rng: OsRng,
     key_id: u8,
-    public_key: <CS::Group as Group>::Elem,
+    public_key: <Ristretto255 as Group>::Elem,
 }
 
-impl<CS: CipherSuite> Client<CS>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-{
-    pub fn new(key_id: u8, public_key: <CS::Group as Group>::Elem) -> Self {
+impl Client {
+    pub fn new(key_id: u8, public_key: <Ristretto255 as Group>::Elem) -> Self {
         Self {
             rng: OsRng,
             key_id,
@@ -63,7 +44,7 @@ where
         &mut self,
         challenge: &TokenChallenge,
         nr: usize,
-    ) -> Result<(TokenRequest, Vec<TokenState<CS>>), IssueTokenRequestError> {
+    ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
         let challenge_digest = Sha256::digest(challenge.serialize()).to_vec();
         let mut blinded_elements = Vec::new();
         let mut token_states = Vec::new();
@@ -83,7 +64,7 @@ where
                 self.key_id,
             );
 
-            let blind = VoprfClient::<CS>::blind(&token_input.serialize(), &mut self.rng)
+            let blind = VoprfClient::<Ristretto255>::blind(&token_input.serialize(), &mut self.rng)
                 .map_err(|_| IssueTokenRequestError::BlindingError)?;
 
             let token_state = TokenState {
@@ -112,16 +93,12 @@ where
     pub fn issue_token(
         &self,
         token_response: TokenResponse,
-        token_states: Vec<TokenState<CS>>,
-    ) -> Result<Vec<Token>, IssueTokenError>
-    where
-        <CS::Hash as OutputSizeUser>::OutputSize:
-            IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-    {
+        token_states: Vec<TokenState>,
+    ) -> Result<Vec<Token>, IssueTokenError> {
         let mut evaluated_elements = Vec::new();
         for element in token_response.evaluated_elements.iter() {
             let evaluated_element =
-                EvaluationElement::<CS>::deserialize(&element.evaluated_element)
+                EvaluationElement::<Ristretto255>::deserialize(&element.evaluated_element)
                     .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
             evaluated_elements.push(evaluated_element);
         }

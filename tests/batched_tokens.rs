@@ -3,7 +3,6 @@ mod batched_memory_stores;
 use batched_memory_stores::*;
 
 use sha2::{Digest, Sha256};
-use voprf::*;
 
 use privacypass::{
     auth::TokenChallenge,
@@ -21,13 +20,13 @@ async fn batched_tokens_cycle() {
     let mut nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
-    let mut server = Server::<Ristretto255>::new();
+    let mut server = Server::new();
 
     // Server: Create a new keypair
     let public_key = server.create_keypair(&mut key_store, 1).await.unwrap();
 
     // Client: Create client
-    let mut client = Client::<Ristretto255>::new(1, public_key);
+    let mut client = Client::new(1, public_key);
 
     // Generate a challenge
     let challenge = TokenChallenge::new(

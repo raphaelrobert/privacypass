@@ -1,9 +1,4 @@
 use async_trait::async_trait;
-use sha2::digest::{
-    core_api::BlockSizeUser,
-    typenum::{IsLess, IsLessOrEqual, U256},
-    OutputSizeUser,
-};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 use voprf::*;
@@ -28,28 +23,18 @@ impl NonceStore for MemoryNonceStore {
 }
 
 #[derive(Default)]
-pub struct MemoryKeyStore<CS: CipherSuite>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-{
-    keys: Mutex<HashMap<KeyId, VoprfServer<CS>>>,
+pub struct MemoryKeyStore {
+    keys: Mutex<HashMap<KeyId, VoprfServer<Ristretto255>>>,
 }
 
 #[async_trait]
-impl<CS: CipherSuite> KeyStore<CS> for MemoryKeyStore<CS>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-    <CS::Group as Group>::Scalar: Send,
-    <CS::Group as Group>::Elem: Send,
-{
-    async fn insert(&mut self, key_id: KeyId, server: VoprfServer<CS>) {
+impl KeyStore for MemoryKeyStore {
+    async fn insert(&mut self, key_id: KeyId, server: VoprfServer<Ristretto255>) {
         let mut keys = self.keys.lock().await;
         keys.insert(key_id, server);
     }
 
-    async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<CS>> {
+    async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<Ristretto255>> {
         self.keys.lock().await.get(key_id).cloned()
     }
 }
