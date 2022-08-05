@@ -2,11 +2,10 @@ mod private_memory_stores;
 
 use private_memory_stores::*;
 
-use sha2::{Digest, Sha256};
 use voprf::*;
 
 use privacypass::{
-    auth::TokenChallenge,
+    auth::authenticate::TokenChallenge,
     private_tokens::{client::*, server::*},
     TokenType,
 };
@@ -28,13 +27,11 @@ async fn private_tokens_cycle() {
 
     // Generate a challenge
     let challenge = TokenChallenge::new(
-        TokenType::Voprf,
+        TokenType::Private,
         "example.com",
         None,
         vec!["example.com".to_string()],
     );
-
-    let challenge_digest = Sha256::digest(challenge.serialize()).to_vec();
 
     // Client: Prepare a TokenRequest after having received a challenge
     let (token_request, token_state) = client.issue_token_request(&challenge).unwrap();
@@ -49,7 +46,7 @@ async fn private_tokens_cycle() {
     let token = client.issue_token(token_response, token_state).unwrap();
 
     // Server: Compare the challenge digest
-    assert_eq!(token.challenge_digest(), &challenge_digest);
+    assert_eq!(token.challenge_digest(), &challenge.digest().unwrap());
 
     // Server: Redeem the token
     assert!(server

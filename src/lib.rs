@@ -4,17 +4,19 @@ pub mod private_tokens;
 pub mod public_tokens;
 
 use async_trait::async_trait;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(TlsSize, TlsSerialize, TlsDeserialize, Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u16)]
 pub enum TokenType {
-    Voprf = 1,
-    BlindRSA = 2,
+    Private = 1,
+    Public = 2,
     Batched = 3,
 }
 
 pub type KeyId = u8;
 pub type Nonce = [u8; 32];
+pub type ChallengeDigest = [u8; 32];
 
 #[async_trait]
 pub trait NonceStore {

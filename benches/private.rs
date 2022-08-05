@@ -2,10 +2,11 @@
 mod private_memory_stores;
 
 use criterion::{async_executor::FuturesExecutor, Criterion};
+use generic_array::ArrayLength;
 use tokio::runtime::Runtime;
 use voprf::*;
 
-use privacypass::{auth::TokenChallenge, TokenType};
+use privacypass::{auth::authenticate::TokenChallenge, TokenType};
 
 async fn create_private_keypair(
     mut key_store: private_memory_stores::MemoryKeyStore<Ristretto255>,
@@ -25,10 +26,10 @@ async fn issue_private_token_response(
         .unwrap()
 }
 
-async fn redeem_private_token(
+async fn redeem_private_token<Nk: ArrayLength<u8>>(
     mut key_store: private_memory_stores::MemoryKeyStore<Ristretto255>,
     mut nonce_store: private_memory_stores::MemoryNonceStore,
-    token: privacypass::private_tokens::Token,
+    token: privacypass::auth::authorize::Token<Nk>,
     mut server: privacypass::private_tokens::server::Server<Ristretto255>,
 ) {
     server
@@ -62,7 +63,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                 let client =
                     privacypass::private_tokens::client::Client::<Ristretto255>::new(1, public_key);
                 let challenge = TokenChallenge::new(
-                    TokenType::Voprf,
+                    TokenType::Private,
                     "example.com",
                     None,
                     vec!["example.com".to_string()],
@@ -87,7 +88,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                 let mut client =
                     privacypass::private_tokens::client::Client::<Ristretto255>::new(1, public_key);
                 let challenge = TokenChallenge::new(
-                    TokenType::Voprf,
+                    TokenType::Private,
                     "example.com",
                     None,
                     vec!["example.com".to_string()],
@@ -113,7 +114,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                 let mut client =
                     privacypass::private_tokens::client::Client::<Ristretto255>::new(1, public_key);
                 let challenge = TokenChallenge::new(
-                    TokenType::Voprf,
+                    TokenType::Private,
                     "example.com",
                     None,
                     vec!["example.com".to_string()],
@@ -146,7 +147,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                 let mut client =
                     privacypass::private_tokens::client::Client::<Ristretto255>::new(1, public_key);
                 let challenge = TokenChallenge::new(
-                    TokenType::Voprf,
+                    TokenType::Private,
                     "example.com",
                     None,
                     vec!["example.com".to_string()],
