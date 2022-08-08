@@ -1,22 +1,27 @@
 use rand::{rngs::OsRng, Rng};
-use sha2::{Digest, Sha256};
+use sha2::digest::OutputSizeUser;
 use thiserror::*;
 use voprf::*;
 
-use crate::{auth::TokenChallenge, TokenType};
+use crate::{
+    auth::{authenticate::TokenChallenge, authorize::Token},
+    ChallengeDigest, TokenType,
+};
 
-use super::{BlindedElement, Nonce, Token, TokenInput, TokenRequest, TokenResponse};
+use super::{BlindedElement, Nonce, TokenInput, TokenRequest, TokenResponse};
 
 pub struct TokenState {
     client: VoprfClient<Ristretto255>,
     token_input: TokenInput,
-    challenge_digest: Vec<u8>,
+    challenge_digest: ChallengeDigest,
 }
 
 #[derive(Error, Debug, PartialEq)]
 pub enum IssueTokenRequestError {
     #[error("Token blinding error")]
     BlindingError,
+    #[error("Invalid TokenChallenge")]
+    InvalidTokenChallenge,
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -45,24 +50,22 @@ impl Client {
         challenge: &TokenChallenge,
         nr: usize,
     ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
-        let challenge_digest = Sha256::digest(challenge.serialize()).to_vec();
+        let challenge_digest = challenge
+            .digest()
+            .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
         let mut blinded_elements = Vec::new();
         let mut token_states = Vec::new();
 
         for _ in 0..nr {
             // nonce = random(32)
-            // context = SHA256(challenge)
-            // token_input = concat(0x0003, nonce, context, key_id)
+            // challenge_digest = SHA256(challenge)
+            // token_input = concat(0x0003, nonce, challenge_digest, key_id)
             // blind, blinded_element = client_context.Blind(token_input)
 
             let nonce: Nonce = self.rng.gen();
 
-            let token_input = TokenInput::new(
-                TokenType::Batched,
-                nonce,
-                challenge_digest.clone(),
-                self.key_id,
-            );
+            let token_input =
+                TokenInput::new(TokenType::Batched, nonce, challenge_digest, self.key_id);
 
             let blind = VoprfClient::<Ristretto255>::blind(&token_input.serialize(), &mut self.rng)
                 .map_err(|_| IssueTokenRequestError::BlindingError)?;
@@ -70,7 +73,7 @@ impl Client {
             let token_state = TokenState {
                 client: blind.state,
                 token_input,
-                challenge_digest: challenge_digest.clone(),
+                challenge_digest,
             };
 
             let blinded_element = BlindedElement {
@@ -94,7 +97,10 @@ impl Client {
         &self,
         token_response: TokenResponse,
         token_states: Vec<TokenState>,
-    ) -> Result<Vec<Token>, IssueTokenError> {
+    ) -> Result<
+        Vec<Token<<<Ristretto255 as CipherSuite>::Hash as OutputSizeUser>::OutputSize>>,
+        IssueTokenError,
+    > {
         let mut evaluated_elements = Vec::new();
         for element in token_response.evaluated_elements.iter() {
             let evaluated_element =
@@ -129,13 +135,13 @@ impl Client {
         for (authenticator, token_state) in
             client_batch_finalize_result.iter().zip(token_states.iter())
         {
-            let token = Token {
-                token_type: TokenType::Batched,
-                nonce: token_state.token_input.nonce,
-                challenge_digest: token_state.challenge_digest.clone(),
-                token_key_id: token_state.token_input.key_id,
-                authenticator: authenticator.to_vec(),
-            };
+            let token = Token::new(
+                TokenType::Batched,
+                token_state.token_input.nonce,
+                token_state.challenge_digest,
+                token_state.token_input.key_id,
+                *authenticator,
+            );
             tokens.push(token);
         }
 

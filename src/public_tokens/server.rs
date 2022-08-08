@@ -1,10 +1,11 @@
 use async_trait::async_trait;
 use blind_rsa_signatures::{KeyPair, Options, Signature};
+use generic_array::ArrayLength;
 use thiserror::*;
 
-use crate::{KeyId, Nonce, NonceStore, TokenType};
+use crate::{auth::authorize::Token, KeyId, NonceStore, TokenType};
 
-use super::{Token, TokenInput, TokenRequest, TokenResponse};
+use super::{TokenInput, TokenRequest, TokenResponse};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum CreateKeypairError {
@@ -67,10 +68,10 @@ impl Server {
         key_store: &KS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
-        if token_request.token_type != TokenType::BlindRSA {
+        if token_request.token_type != TokenType::Public {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
-        assert_eq!(token_request.token_type, TokenType::BlindRSA);
+        assert_eq!(token_request.token_type, TokenType::Public);
         let key_pair = key_store
             .get(&token_request.token_key_id)
             .await
@@ -87,44 +88,39 @@ impl Server {
         })
     }
 
-    pub async fn redeem_token<KS: KeyStore, NS: NonceStore>(
+    pub async fn redeem_token<KS: KeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
         &mut self,
         key_store: &mut KS,
         nonce_store: &mut NS,
-        token: Token,
+        token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type != TokenType::BlindRSA {
+        if token.token_type() != TokenType::Public {
             return Err(RedeemTokenError::InvalidToken);
         }
-        if token.authenticator.len() != KEYSIZE_IN_BYTES {
+        if token.authenticator().len() != KEYSIZE_IN_BYTES {
             return Err(RedeemTokenError::InvalidToken);
         }
-        let nonce: Nonce = token
-            .nonce
-            .as_slice()
-            .try_into()
-            .map_err(|_| RedeemTokenError::InvalidToken)?;
-        if nonce_store.exists(&nonce).await {
+        if nonce_store.exists(&token.nonce()).await {
             return Err(RedeemTokenError::DoubleSpending);
         }
         let token_input = TokenInput {
-            token_type: token.token_type,
-            nonce,
-            context: token.challenge_digest,
-            key_id: token.token_key_id,
+            token_type: token.token_type(),
+            nonce: token.nonce(),
+            challenge_digest: *token.challenge_digest(),
+            key_id: token.token_key_id(),
         };
         let key_pair = key_store
-            .get(&token.token_key_id)
+            .get(&token.token_key_id())
             .await
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
 
         let options = Options::default();
-        let signature = Signature(token.authenticator);
+        let signature = Signature(token.authenticator().to_vec());
 
         signature
             .verify(&key_pair.pk, &token_input.serialize(), &options)
             .map_err(|_| RedeemTokenError::InvalidToken)?;
-        nonce_store.insert(nonce).await;
+        nonce_store.insert(token.nonce()).await;
         Ok(())
     }
 }

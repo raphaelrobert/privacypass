@@ -2,9 +2,10 @@
 mod public_memory_stores;
 
 use criterion::{async_executor::FuturesExecutor, Criterion};
+use generic_array::ArrayLength;
 use tokio::runtime::Runtime;
 
-use privacypass::{auth::TokenChallenge, TokenType};
+use privacypass::{auth::authenticate::TokenChallenge, TokenType};
 
 async fn create_public_keypair(
     mut key_store: public_memory_stores::MemoryKeyStore,
@@ -24,10 +25,10 @@ async fn issue_public_token_response(
         .unwrap()
 }
 
-async fn redeem_public_token(
+async fn redeem_public_token<Nk: ArrayLength<u8>>(
     mut key_store: public_memory_stores::MemoryKeyStore,
     mut nonce_store: public_memory_stores::MemoryNonceStore,
-    token: privacypass::public_tokens::Token,
+    token: privacypass::auth::authorize::Token<Nk>,
     mut server: privacypass::public_tokens::server::Server,
 ) {
     server
@@ -60,7 +61,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                     rt.block_on(async { server.create_keypair(&mut key_store, 1).await.unwrap() });
                 let client = privacypass::public_tokens::client::Client::new(1, key_pair.pk);
                 let challenge = TokenChallenge::new(
-                    TokenType::BlindRSA,
+                    TokenType::Public,
                     "example.com",
                     None,
                     vec!["example.com".to_string()],
@@ -84,7 +85,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                     rt.block_on(async { server.create_keypair(&mut key_store, 1).await.unwrap() });
                 let mut client = privacypass::public_tokens::client::Client::new(1, key_pair.pk);
                 let challenge = TokenChallenge::new(
-                    TokenType::BlindRSA,
+                    TokenType::Public,
                     "example.com",
                     None,
                     vec!["example.com".to_string()],
@@ -109,7 +110,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                     rt.block_on(async { server.create_keypair(&mut key_store, 1).await.unwrap() });
                 let mut client = privacypass::public_tokens::client::Client::new(1, key_pair.pk);
                 let challenge = TokenChallenge::new(
-                    TokenType::BlindRSA,
+                    TokenType::Public,
                     "example.com",
                     None,
                     vec!["example.com".to_string()],
@@ -141,7 +142,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                     rt.block_on(async { server.create_keypair(&mut key_store, 1).await.unwrap() });
                 let mut client = privacypass::public_tokens::client::Client::new(1, key_pair.pk);
                 let challenge = TokenChallenge::new(
-                    TokenType::BlindRSA,
+                    TokenType::Public,
                     "example.com",
                     None,
                     vec!["example.com".to_string()],

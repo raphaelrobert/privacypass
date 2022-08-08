@@ -2,10 +2,8 @@ mod batched_memory_stores;
 
 use batched_memory_stores::*;
 
-use sha2::{Digest, Sha256};
-
 use privacypass::{
-    auth::TokenChallenge,
+    auth::authenticate::TokenChallenge,
     batched_tokens::{client::*, server::*},
     TokenType,
 };
@@ -36,8 +34,6 @@ async fn batched_tokens_cycle() {
         vec!["example.com".to_string()],
     );
 
-    let challenge_digest = Sha256::digest(challenge.serialize()).to_vec();
-
     // Client: Prepare a TokenRequest after having received a challenge
     let (token_request, token_states) = client.issue_token_request(&challenge, nr).unwrap();
 
@@ -52,7 +48,7 @@ async fn batched_tokens_cycle() {
 
     // Server: Compare the challenge digest
     for token in &tokens {
-        assert_eq!(token.challenge_digest(), &challenge_digest);
+        assert_eq!(token.challenge_digest(), &challenge.digest().unwrap());
     }
 
     // Server: Redeem the token
