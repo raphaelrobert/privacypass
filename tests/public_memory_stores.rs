@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 
 use async_trait::async_trait;
-use blind_rsa_signatures::KeyPair;
+use blind_rsa_signatures::{KeyPair, PublicKey};
 use privacypass::{public_tokens::server::*, KeyId, Nonce, NonceStore};
 
 #[derive(Default)]
@@ -22,18 +22,35 @@ impl NonceStore for MemoryNonceStore {
 }
 
 #[derive(Default)]
-pub struct MemoryKeyStore {
+pub struct IssuerMemoryKeyStore {
     keys: Mutex<HashMap<KeyId, KeyPair>>,
 }
 
 #[async_trait]
-impl KeyStore for MemoryKeyStore {
+impl IssuerKeyStore for IssuerMemoryKeyStore {
     async fn insert(&mut self, key_id: KeyId, key_pair: KeyPair) {
         let mut keys = self.keys.lock().await;
         keys.insert(key_id, key_pair);
     }
 
     async fn get(&self, key_id: &KeyId) -> Option<KeyPair> {
+        self.keys.lock().await.get(key_id).cloned()
+    }
+}
+
+#[derive(Default)]
+pub struct OriginMemoryKeyStore {
+    keys: Mutex<HashMap<KeyId, PublicKey>>,
+}
+
+#[async_trait]
+impl OriginKeyStore for OriginMemoryKeyStore {
+    async fn insert(&mut self, key_id: KeyId, public_key: PublicKey) {
+        let mut keys = self.keys.lock().await;
+        keys.insert(key_id, public_key);
+    }
+
+    async fn get(&self, key_id: &KeyId) -> Option<PublicKey> {
         self.keys.lock().await.get(key_id).cloned()
     }
 }
