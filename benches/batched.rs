@@ -2,7 +2,6 @@
 mod batched_memory_stores;
 
 use criterion::{async_executor::FuturesExecutor, Criterion};
-use generic_array::ArrayLength;
 use tokio::runtime::Runtime;
 
 use privacypass::{auth::authenticate::TokenChallenge, TokenType};
@@ -25,16 +24,14 @@ async fn issue_batched_token_response(
         .unwrap()
 }
 
-async fn redeem_batched_token<Nk>(
-    mut key_store: batched_memory_stores::MemoryKeyStore,
-    mut nonce_store: batched_memory_stores::MemoryNonceStore,
-    token: privacypass::auth::authorize::Token<Nk>,
-    mut server: privacypass::batched_tokens::server::Server,
-) where
-    Nk: ArrayLength<u8>,
-{
+async fn redeem_batched_token(
+    key_store: batched_memory_stores::MemoryKeyStore,
+    nonce_store: batched_memory_stores::MemoryNonceStore,
+    token: privacypass::batched_tokens::BatchedToken,
+    server: privacypass::batched_tokens::server::Server,
+) {
     server
-        .redeem_token(&mut key_store, &mut nonce_store, token)
+        .redeem_token(&key_store, &nonce_store, token)
         .await
         .unwrap();
 }

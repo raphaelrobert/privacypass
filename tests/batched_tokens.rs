@@ -15,7 +15,7 @@ async fn batched_tokens_cycle() {
 
     // Server: Instantiate in-memory keystore and nonce store.
     let mut key_store = MemoryKeyStore::default();
-    let mut nonce_store = MemoryNonceStore::default();
+    let nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
     let mut server = Server::new();
@@ -54,7 +54,7 @@ async fn batched_tokens_cycle() {
     // Server: Redeem the token
     for token in &tokens {
         assert!(server
-            .redeem_token(&mut key_store, &mut nonce_store, token.clone())
+            .redeem_token(&key_store, &nonce_store, token.clone())
             .await
             .is_ok());
     }
@@ -63,7 +63,7 @@ async fn batched_tokens_cycle() {
     for token in &tokens {
         assert_eq!(
             server
-                .redeem_token(&mut key_store, &mut nonce_store, token.clone())
+                .redeem_token(&key_store, &nonce_store, token.clone())
                 .await,
             Err(RedeemTokenError::DoubleSpending)
         );

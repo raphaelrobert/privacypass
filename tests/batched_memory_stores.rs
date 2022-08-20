@@ -8,17 +8,19 @@ use privacypass::{KeyId, Nonce, NonceStore};
 
 #[derive(Default)]
 pub struct MemoryNonceStore {
-    nonces: HashSet<Nonce>,
+    nonces: Mutex<HashSet<Nonce>>,
 }
 
 #[async_trait]
 impl NonceStore for MemoryNonceStore {
     async fn exists(&self, nonce: &Nonce) -> bool {
-        self.nonces.contains(nonce)
+        let nonces = self.nonces.lock().await;
+        nonces.contains(nonce)
     }
 
-    async fn insert(&mut self, nonce: Nonce) {
-        self.nonces.insert(nonce);
+    async fn insert(&self, nonce: Nonce) {
+        let mut nonces = self.nonces.lock().await;
+        nonces.insert(nonce);
     }
 }
 
@@ -29,7 +31,7 @@ pub struct MemoryKeyStore {
 
 #[async_trait]
 impl KeyStore for MemoryKeyStore {
-    async fn insert(&mut self, key_id: KeyId, server: VoprfServer<Ristretto255>) {
+    async fn insert(&self, key_id: KeyId, server: VoprfServer<Ristretto255>) {
         let mut keys = self.keys.lock().await;
         keys.insert(key_id, server);
     }

@@ -11,14 +11,14 @@ use privacypass::{
 #[tokio::test]
 async fn public_tokens_cycle() {
     // Server: Instantiate in-memory keystore and nonce store.
-    let mut key_store = MemoryKeyStore::default();
-    let mut nonce_store = MemoryNonceStore::default();
+    let key_store = MemoryKeyStore::default();
+    let nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
     let mut server = Server::new();
 
     // Server: Create a new keypair
-    let key_pair = server.create_keypair(&mut key_store, 1).await.unwrap();
+    let key_pair = server.create_keypair(&key_store, 1).await.unwrap();
 
     // Client: Create client
     let mut client = Client::new(1, key_pair.pk);
@@ -48,14 +48,14 @@ async fn public_tokens_cycle() {
 
     // Server: Redeem the token
     assert!(server
-        .redeem_token(&mut key_store, &mut nonce_store, token.clone())
+        .redeem_token(&key_store, &nonce_store, token.clone())
         .await
         .is_ok());
 
     // Server: Test double spend protection
     assert_eq!(
         server
-            .redeem_token(&mut key_store, &mut nonce_store, token)
+            .redeem_token(&key_store, &nonce_store, token)
             .await,
         Err(RedeemTokenError::DoubleSpending)
     );

@@ -5,10 +5,10 @@ use thiserror::*;
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
-    ChallengeDigest, TokenType,
+    ChallengeDigest, TokenInput, TokenType,
 };
 
-use super::{Nonce, TokenInput, TokenRequest, TokenResponse};
+use super::{Nonce, TokenRequest, TokenResponse};
 
 pub struct TokenState {
     blinding_result: BlindingResult,
