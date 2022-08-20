@@ -1,16 +1,12 @@
 use async_trait::async_trait;
-use generic_array::ArrayLength;
 use generic_array::GenericArray;
 use rand::{rngs::OsRng, RngCore};
-use std::marker::PhantomData;
 use thiserror::*;
 use voprf::*;
 
-use crate::{
-    auth::authorize::Token, batched_tokens::EvaluatedElement, KeyId, NonceStore, TokenType,
-};
+use crate::{batched_tokens::EvaluatedElement, KeyId, NonceStore, TokenInput, TokenType};
 
-use super::{TokenInput, TokenRequest, TokenResponse};
+use super::{BatchedToken, PublicKey, TokenRequest, TokenResponse};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum CreateKeypairError {
@@ -41,30 +37,35 @@ pub enum RedeemTokenError {
 #[async_trait]
 pub trait KeyStore {
     /// Inserts a keypair with a given `key_id` into the key store.
-    async fn insert(&mut self, key_id: KeyId, server: VoprfServer<Ristretto255>);
+    async fn insert(&self, key_id: KeyId, server: VoprfServer<Ristretto255>);
     /// Returns a keypair with a given `key_id` from the key store.
     async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<Ristretto255>>;
+}
+
+pub fn serialize_public_key(public_key: PublicKey) -> Vec<u8> {
+    <Ristretto255 as Group>::serialize_elem(public_key).to_vec()
+}
+
+pub fn deserialize_public_key(slice: &[u8]) -> Result<PublicKey, Error> {
+    assert_eq!(slice.len(), 32);
+    <Ristretto255 as Group>::deserialize_elem(slice)
 }
 
 #[derive(Default)]
 pub struct Server {
     rng: OsRng,
-    cs: PhantomData<Ristretto255>,
 }
 
 impl Server {
     pub fn new() -> Self {
-        Self {
-            rng: OsRng,
-            cs: PhantomData,
-        }
+        Self { rng: OsRng }
     }
 
     pub async fn create_keypair<KS: KeyStore>(
         &mut self,
         key_store: &mut KS,
         key_id: KeyId,
-    ) -> Result<<Ristretto255 as Group>::Elem, CreateKeypairError> {
+    ) -> Result<PublicKey, CreateKeypairError> {
         let mut seed = GenericArray::<_, <Ristretto255 as Group>::ScalarLen>::default();
         self.rng.fill_bytes(&mut seed);
         let server = VoprfServer::<Ristretto255>::new_from_seed(&seed, b"PrivacyPass")
@@ -102,23 +103,23 @@ impl Server {
         let VoprfServerBatchEvaluateFinishResult { messages, proof } = server
             .batch_blind_evaluate_finish(&mut self.rng, blinded_elements.iter(), &prepared_elements)
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
-        let evaluated_elements: Vec<EvaluatedElement> = messages
+        let evaluated_elements = messages
             .map(|m| EvaluatedElement {
-                evaluated_element: m.serialize().to_vec(),
+                evaluated_element: m.serialize().into(),
             })
             .collect();
 
         Ok(TokenResponse {
             evaluated_elements,
-            evaluated_proof: proof.serialize().to_vec(),
+            evaluated_proof: proof.serialize().into(),
         })
     }
 
-    pub async fn redeem_token<KS: KeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
-        &mut self,
-        key_store: &mut KS,
-        nonce_store: &mut NS,
-        token: Token<Nk>,
+    pub async fn redeem_token<KS: KeyStore, NS: NonceStore>(
+        &self,
+        key_store: &KS,
+        nonce_store: &NS,
+        token: BatchedToken,
     ) -> Result<(), RedeemTokenError> {
         if token.token_type() != TokenType::Batched {
             return Err(RedeemTokenError::InvalidToken);
@@ -150,4 +151,12 @@ impl Server {
             Err(RedeemTokenError::InvalidToken)
         }
     }
+}
+
+#[test]
+fn key_serialization() {
+    let pk = Ristretto255::base_elem();
+    let bytes = serialize_public_key(pk);
+    let pk2 = deserialize_public_key(&bytes).unwrap();
+    assert_eq!(pk, pk2);
 }

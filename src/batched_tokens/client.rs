@@ -1,14 +1,13 @@
 use rand::{rngs::OsRng, Rng};
-use sha2::digest::OutputSizeUser;
 use thiserror::*;
 use voprf::*;
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
-    ChallengeDigest, TokenType,
+    ChallengeDigest, TokenInput, TokenType,
 };
 
-use super::{BlindedElement, Nonce, TokenInput, TokenRequest, TokenResponse};
+use super::{BatchedToken, BlindedElement, Nonce, PublicKey, TokenRequest, TokenResponse};
 
 pub struct TokenState {
     client: VoprfClient<Ristretto255>,
@@ -33,11 +32,11 @@ pub enum IssueTokenError {
 pub struct Client {
     rng: OsRng,
     key_id: u8,
-    public_key: <Ristretto255 as Group>::Elem,
+    public_key: PublicKey,
 }
 
 impl Client {
-    pub fn new(key_id: u8, public_key: <Ristretto255 as Group>::Elem) -> Self {
+    pub fn new(key_id: u8, public_key: PublicKey) -> Self {
         Self {
             rng: OsRng,
             key_id,
@@ -77,7 +76,7 @@ impl Client {
             };
 
             let blinded_element = BlindedElement {
-                blinded_element: blind.message.serialize().to_vec(),
+                blinded_element: blind.message.serialize().into(),
             };
 
             blinded_elements.push(blinded_element);
@@ -87,7 +86,7 @@ impl Client {
         let token_request = TokenRequest {
             token_type: TokenType::Batched,
             token_key_id: self.key_id,
-            blinded_elements,
+            blinded_elements: blinded_elements.into(),
         };
 
         Ok((token_request, token_states))
@@ -97,10 +96,7 @@ impl Client {
         &self,
         token_response: TokenResponse,
         token_states: Vec<TokenState>,
-    ) -> Result<
-        Vec<Token<<<Ristretto255 as CipherSuite>::Hash as OutputSizeUser>::OutputSize>>,
-        IssueTokenError,
-    > {
+    ) -> Result<Vec<BatchedToken>, IssueTokenError> {
         let mut evaluated_elements = Vec::new();
         for element in token_response.evaluated_elements.iter() {
             let evaluated_element =

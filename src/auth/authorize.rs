@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use generic_array::{ArrayLength, GenericArray};
+use http::{header::HeaderName, HeaderValue};
 use pest::Parser;
 use pest_derive::Parser;
 use thiserror::*;
@@ -122,7 +123,7 @@ impl<Nk: ArrayLength<u8>> Token<Nk> {
 /// `PrivateToken token=...`
 pub fn build_authorization_header<Nk: ArrayLength<u8>>(
     token: &Token<Nk>,
-) -> Result<String, BuildError> {
+) -> Result<(HeaderName, HeaderValue), BuildError> {
     let value = format!(
         "PrivateToken token={}",
         base64::encode(
@@ -131,7 +132,9 @@ pub fn build_authorization_header<Nk: ArrayLength<u8>>(
                 .map_err(|_| BuildError::InvalidToken)?
         ),
     );
-    Ok(value)
+    let header_name = http::header::AUTHORIZATION;
+    let header_value = HeaderValue::from_str(&value).map_err(|_| BuildError::InvalidToken)?;
+    Ok((header_name, header_value))
 }
 
 /// Building error for the `Authorization` header values
@@ -145,9 +148,9 @@ pub enum BuildError {
 ///
 /// `PrivateToken token=...`
 pub fn parse_authorization_header<Nk: ArrayLength<u8>>(
-    value: &str,
+    value: &HeaderValue,
 ) -> Result<Token<Nk>, ParseError> {
-    AuthorizationParser::try_from_str(value)
+    AuthorizationParser::try_from_bytes(value.as_bytes())
 }
 
 /// Parsing error for the `WWW-Authenticate` header values
@@ -177,7 +180,8 @@ authorization = {
 struct AuthorizationParser {}
 
 impl AuthorizationParser {
-    fn try_from_str<Nk: ArrayLength<u8>>(value: &str) -> Result<Token<Nk>, ParseError> {
+    fn try_from_bytes<Nk: ArrayLength<u8>>(value: &[u8]) -> Result<Token<Nk>, ParseError> {
+        let value = std::str::from_utf8(value).map_err(|_| ParseError::InvalidInput)?;
         let mut authorization = Self::parse(Rule::authorization, value)
             .map_err(|_| ParseError::InvalidInput)?
             .next()
@@ -217,9 +221,11 @@ fn builder_parser_test() {
         key_id,
         GenericArray::clone_from_slice(&authenticator),
     );
-    let header = build_authorization_header(&token).unwrap();
+    let (header_name, header_value) = build_authorization_header(&token).unwrap();
 
-    let token = parse_authorization_header::<U32>(&header).unwrap();
+    assert_eq!(header_name, http::header::AUTHORIZATION);
+
+    let token = parse_authorization_header::<U32>(&header_value).unwrap();
     assert_eq!(token.token_type(), TokenType::Private);
     assert_eq!(token.nonce(), nonce);
     assert_eq!(token.challenge_digest(), &challenge_digest);

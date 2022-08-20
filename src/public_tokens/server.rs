@@ -3,9 +3,9 @@ use blind_rsa_signatures::{KeyPair, Options, Signature};
 use generic_array::ArrayLength;
 use thiserror::*;
 
-use crate::{auth::authorize::Token, KeyId, NonceStore, TokenType};
+use crate::{auth::authorize::Token, KeyId, NonceStore, TokenInput, TokenType};
 
-use super::{TokenInput, TokenRequest, TokenResponse};
+use super::{TokenRequest, TokenResponse};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum CreateKeypairError {
@@ -36,7 +36,7 @@ pub enum RedeemTokenError {
 #[async_trait]
 pub trait KeyStore {
     /// Inserts a keypair with a given `key_id` into the key store.
-    async fn insert(&mut self, key_id: KeyId, server: KeyPair);
+    async fn insert(&self, key_id: KeyId, server: KeyPair);
     /// Returns a keypair with a given `key_id` from the key store.
     async fn get(&self, key_id: &KeyId) -> Option<KeyPair>;
 }
@@ -54,7 +54,7 @@ impl Server {
 
     pub async fn create_keypair<KS: KeyStore>(
         &mut self,
-        key_store: &mut KS,
+        key_store: &KS,
         key_id: KeyId,
     ) -> Result<KeyPair, CreateKeypairError> {
         let key_pair =
@@ -90,8 +90,8 @@ impl Server {
 
     pub async fn redeem_token<KS: KeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
         &mut self,
-        key_store: &mut KS,
-        nonce_store: &mut NS,
+        key_store: &KS,
+        nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
         if token.token_type() != TokenType::Public {
