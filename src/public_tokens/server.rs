@@ -1,11 +1,13 @@
 use async_trait::async_trait;
-use blind_rsa_signatures::{KeyPair, Options, Signature};
+use blind_rsa_signatures::reexports::rsa::pkcs1::der::Document;
+use blind_rsa_signatures::reexports::rsa::pkcs8::EncodePublicKey;
+use blind_rsa_signatures::{KeyPair, Options, PublicKey, Signature};
 use generic_array::ArrayLength;
 use thiserror::*;
 
-use crate::{auth::authorize::Token, KeyId, NonceStore, TokenInput, TokenType};
+use crate::{auth::authorize::Token, NonceStore, TokenInput, TokenKeyId, TokenType};
 
-use super::{TokenRequest, TokenResponse};
+use super::{key_id_to_token_key_id, public_key_to_key_id, TokenRequest, TokenResponse};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum CreateKeypairError {
@@ -35,10 +37,14 @@ pub enum RedeemTokenError {
 
 #[async_trait]
 pub trait KeyStore {
-    /// Inserts a keypair with a given `key_id` into the key store.
-    async fn insert(&self, key_id: KeyId, server: KeyPair);
-    /// Returns a keypair with a given `key_id` from the key store.
-    async fn get(&self, key_id: &KeyId) -> Option<KeyPair>;
+    /// Inserts a keypair with a given `token_key_id` into the key store.
+    async fn insert(&self, token_key_id: TokenKeyId, server: KeyPair);
+    /// Returns a keypair with a given `token_key_id` from the key store.
+    async fn get(&self, token_key_id: &TokenKeyId) -> Option<KeyPair>;
+}
+
+pub fn serialize_public_key(public_key: &PublicKey) -> Vec<u8> {
+    public_key.0.to_public_key_der().unwrap().as_der().to_vec()
 }
 
 const KEYSIZE_IN_BITS: usize = 2048;
@@ -55,11 +61,11 @@ impl Server {
     pub async fn create_keypair<KS: KeyStore>(
         &mut self,
         key_store: &KS,
-        key_id: KeyId,
     ) -> Result<KeyPair, CreateKeypairError> {
         let key_pair =
             KeyPair::generate(KEYSIZE_IN_BITS).map_err(|_| CreateKeypairError::SeedError)?;
-        key_store.insert(key_id, key_pair.clone()).await;
+        let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&key_pair.pk));
+        key_store.insert(token_key_id, key_pair.clone()).await;
         Ok(key_pair)
     }
 
@@ -103,14 +109,15 @@ impl Server {
         if nonce_store.exists(&token.nonce()).await {
             return Err(RedeemTokenError::DoubleSpending);
         }
-        let token_input = TokenInput {
-            token_type: token.token_type(),
-            nonce: token.nonce(),
-            challenge_digest: *token.challenge_digest(),
-            key_id: token.token_key_id(),
-        };
+        let token_input = TokenInput::new(
+            token.token_type(),
+            token.nonce(),
+            *token.challenge_digest(),
+            *token.token_key_id(),
+        );
+
         let key_pair = key_store
-            .get(&token.token_key_id())
+            .get(&key_id_to_token_key_id(token.token_key_id()))
             .await
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
 

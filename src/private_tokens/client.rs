@@ -5,10 +5,13 @@ use voprf::*;
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
-    ChallengeDigest, TokenInput, TokenType,
+    ChallengeDigest, KeyId, TokenInput, TokenType,
 };
 
-use super::{Nonce, PrivateToken, PublicKey, TokenRequest, TokenResponse};
+use super::{
+    key_id_to_token_key_id, public_key_to_key_id, Nonce, PrivateToken, PublicKey, TokenRequest,
+    TokenResponse,
+};
 
 pub struct TokenState {
     client: VoprfClient<NistP256>,
@@ -32,12 +35,14 @@ pub enum IssueTokenError {
 
 pub struct Client {
     rng: OsRng,
-    key_id: u8,
+    key_id: KeyId,
     public_key: PublicKey,
 }
 
 impl Client {
-    pub fn new(key_id: u8, public_key: PublicKey) -> Self {
+    pub fn new(public_key: PublicKey) -> Self {
+        let key_id = public_key_to_key_id(&public_key);
+
         Self {
             rng: OsRng,
             key_id,
@@ -67,7 +72,7 @@ impl Client {
                 .map_err(|_| IssueTokenRequestError::BlindingError)?;
         let token_request = TokenRequest {
             token_type: TokenType::Private,
-            token_key_id: self.key_id,
+            token_key_id: key_id_to_token_key_id(&self.key_id),
             blinded_msg: blinded_element.message.serialize().into(),
         };
         let token_state = TokenState {

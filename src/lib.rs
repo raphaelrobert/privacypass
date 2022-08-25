@@ -16,7 +16,8 @@ pub enum TokenType {
     Batched = 0xF91A,
 }
 
-pub type KeyId = u8;
+pub type TokenKeyId = u8;
+pub type KeyId = [u8; 32];
 pub type Nonce = [u8; 32];
 pub type ChallengeDigest = [u8; 32];
 
@@ -51,12 +52,12 @@ impl TokenInput {
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        // token_input = concat(0xXXXX, nonce, challenge_digest, key_id)
+        // token_input = concat(0xXXXX, nonce, challenge_digest, token_key_id)
         let mut token_input: Vec<u8> = Vec::new();
         token_input.extend_from_slice((self.token_type as u16).to_be_bytes().as_slice());
         token_input.extend_from_slice(self.nonce.as_slice());
         token_input.extend_from_slice(self.challenge_digest.as_slice());
-        token_input.push(self.key_id);
+        token_input.extend_from_slice(self.key_id.as_slice());
         token_input
     }
 }

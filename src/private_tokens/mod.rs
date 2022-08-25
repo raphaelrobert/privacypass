@@ -2,17 +2,32 @@ pub mod client;
 pub mod server;
 
 use p256::NistP256;
+use sha2::{Digest, Sha256};
 use std::io::Write;
 use thiserror::*;
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::U32;
 pub use voprf::*;
 
-use crate::{auth::authorize::Token, Nonce, TokenType};
+use crate::{auth::authorize::Token, KeyId, Nonce, TokenKeyId, TokenType};
+
+use self::server::serialize_public_key;
 
 pub type PrivateToken = Token<U32>;
-
 pub type PublicKey = <NistP256 as Group>::Elem;
+
+fn public_key_to_key_id(public_key: &PublicKey) -> KeyId {
+    let public_key = serialize_public_key(*public_key);
+    let mut hasher = Sha256::new();
+    hasher.update((TokenType::Batched as u16).to_be_bytes().as_slice());
+    hasher.update(public_key);
+    let key_id = hasher.finalize();
+    key_id.into()
+}
+
+fn key_id_to_token_key_id(key_id: &KeyId) -> TokenKeyId {
+    *key_id.iter().last().unwrap_or(&0)
+}
 
 #[derive(Error, Debug)]
 pub enum SerializationError {

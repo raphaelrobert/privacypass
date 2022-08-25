@@ -18,10 +18,10 @@ async fn public_tokens_cycle() {
     let mut server = Server::new();
 
     // Server: Create a new keypair
-    let key_pair = server.create_keypair(&key_store, 1).await.unwrap();
+    let key_pair = server.create_keypair(&key_store).await.unwrap();
 
     // Client: Create client
-    let mut client = Client::new(1, key_pair.pk);
+    let mut client = Client::new(key_pair.pk);
 
     // Generate a challenge
     let challenge = TokenChallenge::new(
@@ -54,9 +54,7 @@ async fn public_tokens_cycle() {
 
     // Server: Test double spend protection
     assert_eq!(
-        server
-            .redeem_token(&key_store, &nonce_store, token)
-            .await,
+        server.redeem_token(&key_store, &nonce_store, token).await,
         Err(RedeemTokenError::DoubleSpending)
     );
 }

@@ -5,10 +5,10 @@ use thiserror::*;
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
-    ChallengeDigest, TokenInput, TokenType,
+    ChallengeDigest, KeyId, TokenInput, TokenType,
 };
 
-use super::{Nonce, TokenRequest, TokenResponse};
+use super::{key_id_to_token_key_id, public_key_to_key_id, Nonce, TokenRequest, TokenResponse};
 
 pub struct TokenState {
     blinding_result: BlindingResult,
@@ -32,12 +32,14 @@ pub enum IssueTokenError {
 
 pub struct Client {
     rng: OsRng,
-    key_id: u8,
+    key_id: KeyId,
     public_key: PublicKey,
 }
 
 impl Client {
-    pub fn new(key_id: u8, public_key: PublicKey) -> Self {
+    pub fn new(public_key: PublicKey) -> Self {
+        let key_id = public_key_to_key_id(&public_key);
+
         Self {
             rng: OsRng,
             key_id,
@@ -56,7 +58,7 @@ impl Client {
 
         // nonce = random(32)
         // challenge_digest = SHA256(challenge)
-        // token_input = concat(0x0002, nonce, challenge_digest, key_id)
+        // token_input = concat(0x0002, nonce, challenge_digest, token_key_id)
         // blinded_msg, blind_inv = rsabssa_blind(pkI, token_input)
 
         let token_input = TokenInput::new(TokenType::Public, nonce, challenge_digest, self.key_id);
@@ -69,7 +71,7 @@ impl Client {
 
         let token_request = TokenRequest {
             token_type: TokenType::Public,
-            token_key_id: self.key_id,
+            token_key_id: key_id_to_token_key_id(&self.key_id),
             blinded_msg: blinding_result.blind_msg.to_vec(),
         };
         let token_state = TokenState {

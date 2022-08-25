@@ -18,10 +18,10 @@ async fn private_tokens_cycle() {
     let mut server = Server::new();
 
     // Server: Create a new keypair
-    let public_key = server.create_keypair(&key_store, 1).await.unwrap();
+    let public_key = server.create_keypair(&key_store).await.unwrap();
 
     // Client: Create client
-    let mut client = Client::new(1, public_key);
+    let mut client = Client::new(public_key);
 
     // Generate a challenge
     let challenge = TokenChallenge::new(

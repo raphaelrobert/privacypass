@@ -4,9 +4,12 @@ use rand::{rngs::OsRng, RngCore};
 use thiserror::*;
 use voprf::*;
 
-use crate::{batched_tokens::EvaluatedElement, KeyId, NonceStore, TokenInput, TokenType};
+use crate::{batched_tokens::EvaluatedElement, NonceStore, TokenInput, TokenKeyId, TokenType};
 
-use super::{BatchedToken, PublicKey, TokenRequest, TokenResponse};
+use super::{
+    key_id_to_token_key_id, public_key_to_key_id, BatchedToken, PublicKey, TokenRequest,
+    TokenResponse,
+};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum CreateKeypairError {
@@ -36,10 +39,10 @@ pub enum RedeemTokenError {
 
 #[async_trait]
 pub trait KeyStore {
-    /// Inserts a keypair with a given `key_id` into the key store.
-    async fn insert(&self, key_id: KeyId, server: VoprfServer<Ristretto255>);
-    /// Returns a keypair with a given `key_id` from the key store.
-    async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<Ristretto255>>;
+    /// Inserts a keypair with a given `token_key_id` into the key store.
+    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<Ristretto255>);
+    /// Returns a keypair with a given `token_key_id` from the key store.
+    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<Ristretto255>>;
 }
 
 pub fn serialize_public_key(public_key: PublicKey) -> Vec<u8> {
@@ -47,7 +50,6 @@ pub fn serialize_public_key(public_key: PublicKey) -> Vec<u8> {
 }
 
 pub fn deserialize_public_key(slice: &[u8]) -> Result<PublicKey, Error> {
-    assert_eq!(slice.len(), 32);
     <Ristretto255 as Group>::deserialize_elem(slice)
 }
 
@@ -64,14 +66,14 @@ impl Server {
     pub async fn create_keypair<KS: KeyStore>(
         &mut self,
         key_store: &mut KS,
-        key_id: KeyId,
     ) -> Result<PublicKey, CreateKeypairError> {
         let mut seed = GenericArray::<_, <Ristretto255 as Group>::ScalarLen>::default();
         self.rng.fill_bytes(&mut seed);
         let server = VoprfServer::<Ristretto255>::new_from_seed(&seed, b"PrivacyPass")
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
-        key_store.insert(key_id, server).await;
+        let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
+        key_store.insert(token_key_id, server).await;
         Ok(public_key)
     }
 
@@ -134,10 +136,10 @@ impl Server {
             token_type: token.token_type(),
             nonce: token.nonce(),
             challenge_digest: *token.challenge_digest(),
-            key_id: token.token_key_id(),
+            key_id: *token.token_key_id(),
         };
         let server = key_store
-            .get(&token.token_key_id())
+            .get(&key_id_to_token_key_id(token.token_key_id()))
             .await
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
         let token_authenticator = server
