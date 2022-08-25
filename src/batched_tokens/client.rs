@@ -4,10 +4,13 @@ use voprf::*;
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
-    ChallengeDigest, TokenInput, TokenType,
+    ChallengeDigest, KeyId, TokenInput, TokenType,
 };
 
-use super::{BatchedToken, BlindedElement, Nonce, PublicKey, TokenRequest, TokenResponse};
+use super::{
+    key_id_to_token_key_id, public_key_to_key_id, BatchedToken, BlindedElement, Nonce, PublicKey,
+    TokenRequest, TokenResponse,
+};
 
 pub struct TokenState {
     client: VoprfClient<Ristretto255>,
@@ -31,12 +34,14 @@ pub enum IssueTokenError {
 
 pub struct Client {
     rng: OsRng,
-    key_id: u8,
+    key_id: KeyId,
     public_key: PublicKey,
 }
 
 impl Client {
-    pub fn new(key_id: u8, public_key: PublicKey) -> Self {
+    pub fn new(public_key: PublicKey) -> Self {
+        let key_id = public_key_to_key_id(&public_key);
+
         Self {
             rng: OsRng,
             key_id,
@@ -58,7 +63,7 @@ impl Client {
         for _ in 0..nr {
             // nonce = random(32)
             // challenge_digest = SHA256(challenge)
-            // token_input = concat(0x0003, nonce, challenge_digest, key_id)
+            // token_input = concat(0xF91A, nonce, challenge_digest, key_id)
             // blind, blinded_element = client_context.Blind(token_input)
 
             let nonce: Nonce = self.rng.gen();
@@ -85,7 +90,7 @@ impl Client {
 
         let token_request = TokenRequest {
             token_type: TokenType::Batched,
-            token_key_id: self.key_id,
+            token_key_id: key_id_to_token_key_id(&self.key_id),
             blinded_elements: blinded_elements.into(),
         };
 

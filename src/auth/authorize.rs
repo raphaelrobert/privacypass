@@ -108,8 +108,8 @@ impl<Nk: ArrayLength<u8>> Token<Nk> {
     }
 
     /// Returns the token key ID.
-    pub fn token_key_id(&self) -> u8 {
-        self.token_key_id
+    pub fn token_key_id(&self) -> &KeyId {
+        &self.token_key_id
     }
 
     /// Returns the authenticator.
@@ -212,13 +212,13 @@ fn builder_parser_test() {
 
     let nonce = [1u8; 32];
     let challenge_digest = [2u8; 32];
-    let key_id = 3;
+    let token_key_id = [3u8; 32];
     let authenticator = [4u8; 32];
     let token = Token::<U32>::new(
         TokenType::Private,
         nonce,
         challenge_digest,
-        key_id,
+        token_key_id,
         GenericArray::clone_from_slice(&authenticator),
     );
     let (header_name, header_value) = build_authorization_header(&token).unwrap();
@@ -229,6 +229,6 @@ fn builder_parser_test() {
     assert_eq!(token.token_type(), TokenType::Private);
     assert_eq!(token.nonce(), nonce);
     assert_eq!(token.challenge_digest(), &challenge_digest);
-    assert_eq!(token.token_key_id(), key_id);
+    assert_eq!(token.token_key_id(), &token_key_id);
     assert_eq!(token.authenticator(), &authenticator);
 }

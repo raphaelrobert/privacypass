@@ -1,7 +1,28 @@
+use sha2::{Digest, Sha256};
+use typenum::U64;
+
+use crate::{auth::authorize::Token, KeyId, Nonce, TokenKeyId, TokenType};
+
 pub mod client;
 pub mod server;
 
-use crate::{Nonce, TokenType};
+pub type PublicToken = Token<U64>;
+pub use blind_rsa_signatures::PublicKey;
+
+use self::server::serialize_public_key;
+
+fn public_key_to_key_id(public_key: &PublicKey) -> KeyId {
+    let public_key = serialize_public_key(public_key);
+    let mut hasher = Sha256::new();
+    hasher.update((TokenType::Batched as u16).to_be_bytes().as_slice());
+    hasher.update(public_key);
+    let key_id = hasher.finalize();
+    key_id.into()
+}
+
+fn key_id_to_token_key_id(key_id: &KeyId) -> TokenKeyId {
+    *key_id.iter().last().unwrap_or(&0)
+}
 
 // struct {
 //     uint16_t token_type = 0x0002;

@@ -11,7 +11,7 @@ async fn create_private_keypair(
     key_store: private_memory_stores::MemoryKeyStore,
     mut server: privacypass::private_tokens::server::Server,
 ) {
-    let _public_key = server.create_keypair(&key_store, 1).await.unwrap();
+    let _public_key = server.create_keypair(&key_store).await.unwrap();
 }
 
 async fn issue_private_token_response(
@@ -58,8 +58,8 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                 let mut server = privacypass::private_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
-                    rt.block_on(async { server.create_keypair(&key_store, 1).await.unwrap() });
-                let client = privacypass::private_tokens::client::Client::new(1, public_key);
+                    rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
+                let client = privacypass::private_tokens::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
                     TokenType::Private,
                     "example.com",
@@ -82,8 +82,8 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                 let mut server = privacypass::private_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
-                    rt.block_on(async { server.create_keypair(&key_store, 1).await.unwrap() });
-                let mut client = privacypass::private_tokens::client::Client::new(1, public_key);
+                    rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
+                let mut client = privacypass::private_tokens::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
                     TokenType::Private,
                     "example.com",
@@ -107,8 +107,8 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                 let mut server = privacypass::private_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
-                    rt.block_on(async { server.create_keypair(&key_store, 1).await.unwrap() });
-                let mut client = privacypass::private_tokens::client::Client::new(1, public_key);
+                    rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
+                let mut client = privacypass::private_tokens::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
                     TokenType::Private,
                     "example.com",
@@ -139,8 +139,8 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                 let mut server = privacypass::private_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
-                    rt.block_on(async { server.create_keypair(&key_store, 1).await.unwrap() });
-                let mut client = privacypass::private_tokens::client::Client::new(1, public_key);
+                    rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
+                let mut client = privacypass::private_tokens::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
                     TokenType::Private,
                     "example.com",
