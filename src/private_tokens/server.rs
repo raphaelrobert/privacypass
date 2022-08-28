@@ -1,98 +1,118 @@
+//! Server-side implementation of Privately Verifiable Token protocol.
+
 use async_trait::async_trait;
 use generic_array::ArrayLength;
 use generic_array::GenericArray;
+use p256::NistP256;
 use rand::{rngs::OsRng, RngCore};
-use sha2::digest::{
-    core_api::BlockSizeUser,
-    typenum::{IsLess, IsLessOrEqual, U256},
-    OutputSizeUser,
-};
-use std::marker::PhantomData;
-use thiserror::*;
-use voprf::*;
+use thiserror::Error;
+use voprf::{BlindedElement, Error, Group, Result, VoprfServer};
 
-use crate::{auth::authorize::Token, KeyId, NonceStore, TokenType};
+use crate::TokenInput;
+use crate::{auth::authorize::Token, NonceStore, TokenKeyId, TokenType};
 
-use super::{TokenInput, TokenRequest, TokenResponse};
+use super::key_id_to_token_key_id;
+use super::public_key_to_key_id;
+use super::PublicKey;
+use super::{TokenRequest, TokenResponse};
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when creating a keypair.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum CreateKeypairError {
     #[error("Seed is too long")]
+    /// Error when the seed is too long.
     SeedError,
 }
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when issuing the token response.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum IssueTokenResponseError {
     #[error("Key ID not found")]
+    /// Error when the key ID is not found.
     KeyIdNotFound,
     #[error("Invalid TokenRequest")]
+    /// Error when the token request is invalid.
     InvalidTokenRequest,
     #[error("Invalid toke type")]
+    /// Error when the token type is invalid.
     InvalidTokenType,
 }
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when redeeming the token.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum RedeemTokenError {
     #[error("Key ID not found")]
+    /// Error when the key ID is not found.
     KeyIdNotFound,
     #[error("The token has already been redeemed")]
+    /// Error when the token has already been redeemed.
     DoubleSpending,
     #[error("The token is invalid")]
+    /// Error when the token is invalid.
     InvalidToken,
 }
 
+/// Minimal trait for a key store to store key material on the server-side. Note
+/// that the store requires inner mutability.
 #[async_trait]
-pub trait KeyStore<CS: CipherSuite>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-{
-    /// Inserts a keypair with a given `key_id` into the key store.
-    async fn insert(&mut self, key_id: KeyId, server: VoprfServer<CS>);
-    /// Returns a keypair with a given `key_id` from the key store.
-    async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<CS>>;
+pub trait KeyStore: Send + Sync {
+    /// Inserts a keypair with a given `token_key_id` into the key store.
+    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP256>);
+    /// Returns a keypair with a given `token_key_id` from the key store.
+    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<NistP256>>;
 }
 
-#[derive(Default)]
-pub struct Server<CS: CipherSuite>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-{
+/// Serializes a public key.
+#[must_use]
+pub fn serialize_public_key(public_key: PublicKey) -> Vec<u8> {
+    <NistP256 as Group>::serialize_elem(public_key).to_vec()
+}
+
+/// Deserializes a public key from a slice of bytes.
+///
+/// # Errors
+///
+/// This function will return an error if the slice is not a valid public key.
+pub fn deserialize_public_key(slice: &[u8]) -> Result<PublicKey, Error> {
+    <NistP256 as Group>::deserialize_elem(slice)
+}
+
+/// Server side implementation of Privately Verifiable Token protocol.
+#[derive(Default, Debug)]
+pub struct Server {
     rng: OsRng,
-    cs: PhantomData<CS>,
 }
 
-impl<CS: CipherSuite> Server<CS>
-where
-    <CS::Hash as OutputSizeUser>::OutputSize:
-        IsLess<U256> + IsLessOrEqual<<CS::Hash as BlockSizeUser>::BlockSize>,
-    <CS::Group as Group>::ScalarLen: std::ops::Add,
-    <<CS::Group as Group>::ScalarLen as std::ops::Add>::Output:
-        sha2::digest::generic_array::ArrayLength<u8>,
-{
-    pub fn new() -> Self {
-        Self {
-            rng: OsRng,
-            cs: PhantomData,
-        }
+impl Server {
+    /// Creates a new server.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { rng: OsRng }
     }
 
-    pub async fn create_keypair<KS: KeyStore<CS>>(
+    /// Creates a new keypair and inserts it into the key store.
+    ///
+    /// # Errors
+    /// Returns an error if creating the keypair failed.
+    pub async fn create_keypair<KS: KeyStore>(
         &mut self,
-        key_store: &mut KS,
-        key_id: KeyId,
-    ) -> Result<<CS::Group as Group>::Elem, CreateKeypairError> {
-        let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
+        key_store: &KS,
+    ) -> Result<PublicKey, CreateKeypairError> {
+        let mut seed = GenericArray::<_, <NistP256 as Group>::ScalarLen>::default();
         self.rng.fill_bytes(&mut seed);
-        let server = VoprfServer::<CS>::new_from_seed(&seed, b"PrivacyPass")
+        let server = VoprfServer::<NistP256>::new_from_seed(&seed, b"PrivacyPass")
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
-        key_store.insert(key_id, server).await;
+        let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
+        key_store.insert(token_key_id, server).await;
         Ok(public_key)
     }
 
-    pub async fn issue_token_response<KS: KeyStore<CS>>(
+    /// Issues a token response.
+    ///
+    /// # Errors
+    /// Returns an error if the token request is invalid.
+    pub async fn issue_token_response<KS: KeyStore>(
         &mut self,
         key_store: &KS,
         token_request: TokenRequest,
@@ -100,43 +120,47 @@ where
         if token_request.token_type != TokenType::Private {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
-        assert_eq!(token_request.token_type, TokenType::Private);
         let server = key_store
             .get(&token_request.token_key_id)
             .await
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
-        let blinded_element = BlindedElement::<CS>::deserialize(&token_request.blinded_msg)
+        let blinded_element = BlindedElement::<NistP256>::deserialize(&token_request.blinded_msg)
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
         let evaluated_result = server.blind_evaluate(&mut self.rng, &blinded_element);
         Ok(TokenResponse {
-            evaluate_msg: evaluated_result.message.serialize().to_vec(),
-            evaluate_proof: evaluated_result.proof.serialize().to_vec(),
+            evaluate_msg: evaluated_result.message.serialize().into(),
+            evaluate_proof: evaluated_result.proof.serialize().into(),
         })
     }
 
-    pub async fn redeem_token<KS: KeyStore<CS>, NS: NonceStore, Nk: ArrayLength<u8>>(
+    /// Redeems a token.
+    ///
+    /// # Errors
+    /// Returns an error if the token is invalid.
+    pub async fn redeem_token<KS: KeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
         &mut self,
-        key_store: &mut KS,
-        nonce_store: &mut NS,
+        key_store: &KS,
+        nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
         if token.token_type() != TokenType::Private {
             return Err(RedeemTokenError::InvalidToken);
         }
-        if token.authenticator().len() != <CS::Hash as OutputSizeUser>::output_size() {
+        if token.authenticator().len() != 32 {
             return Err(RedeemTokenError::InvalidToken);
         }
         if nonce_store.exists(&token.nonce()).await {
             return Err(RedeemTokenError::DoubleSpending);
         }
-        let token_input = TokenInput {
-            token_type: token.token_type(),
-            nonce: token.nonce(),
-            challenge_digest: token.challenge_digest().to_vec(),
-            key_id: token.token_key_id(),
-        };
+        let token_input = TokenInput::new(
+            token.token_type(),
+            token.nonce(),
+            *token.challenge_digest(),
+            *token.token_key_id(),
+        );
+
         let server = key_store
-            .get(&token.token_key_id())
+            .get(&key_id_to_token_key_id(token.token_key_id()))
             .await
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
         let token_authenticator = server

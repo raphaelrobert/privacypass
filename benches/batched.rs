@@ -2,7 +2,6 @@
 mod batched_memory_stores;
 
 use criterion::{async_executor::FuturesExecutor, Criterion};
-use generic_array::ArrayLength;
 use tokio::runtime::Runtime;
 
 use privacypass::{auth::authenticate::TokenChallenge, TokenType};
@@ -11,7 +10,7 @@ async fn create_batched_keypair(
     mut key_store: batched_memory_stores::MemoryKeyStore,
     mut server: privacypass::batched_tokens::server::Server,
 ) {
-    let _public_key = server.create_keypair(&mut key_store, 1).await.unwrap();
+    let _public_key = server.create_keypair(&mut key_store).await.unwrap();
 }
 
 async fn issue_batched_token_response(
@@ -25,16 +24,14 @@ async fn issue_batched_token_response(
         .unwrap()
 }
 
-async fn redeem_batched_token<Nk>(
-    mut key_store: batched_memory_stores::MemoryKeyStore,
-    mut nonce_store: batched_memory_stores::MemoryNonceStore,
-    token: privacypass::auth::authorize::Token<Nk>,
-    mut server: privacypass::batched_tokens::server::Server,
-) where
-    Nk: ArrayLength<u8>,
-{
+async fn redeem_batched_token(
+    key_store: batched_memory_stores::MemoryKeyStore,
+    nonce_store: batched_memory_stores::MemoryNonceStore,
+    token: privacypass::batched_tokens::BatchedToken,
+    server: privacypass::batched_tokens::server::Server,
+) {
     server
-        .redeem_token(&mut key_store, &mut nonce_store, token)
+        .redeem_token(&key_store, &nonce_store, token)
         .await
         .unwrap();
 }
@@ -62,15 +59,14 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                     let mut key_store = batched_memory_stores::MemoryKeyStore::default();
                     let mut server = privacypass::batched_tokens::server::Server::new();
                     let rt = Runtime::new().unwrap();
-                    let public_key = rt.block_on(async {
-                        server.create_keypair(&mut key_store, 1).await.unwrap()
-                    });
-                    let client = privacypass::batched_tokens::client::Client::new(1, public_key);
+                    let public_key =
+                        rt.block_on(async { server.create_keypair(&mut key_store).await.unwrap() });
+                    let client = privacypass::batched_tokens::client::Client::new(public_key);
                     let challenge = TokenChallenge::new(
                         TokenType::Batched,
                         "example.com",
                         None,
-                        vec!["example.com".to_string()],
+                        &["example.com".to_string()],
                     );
                     (client, challenge)
                 },
@@ -90,16 +86,14 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                     let mut key_store = batched_memory_stores::MemoryKeyStore::default();
                     let mut server = privacypass::batched_tokens::server::Server::new();
                     let rt = Runtime::new().unwrap();
-                    let public_key = rt.block_on(async {
-                        server.create_keypair(&mut key_store, 1).await.unwrap()
-                    });
-                    let mut client =
-                        privacypass::batched_tokens::client::Client::new(1, public_key);
+                    let public_key =
+                        rt.block_on(async { server.create_keypair(&mut key_store).await.unwrap() });
+                    let mut client = privacypass::batched_tokens::client::Client::new(public_key);
                     let challenge = TokenChallenge::new(
                         TokenType::Batched,
                         "example.com",
                         None,
-                        vec!["example.com".to_string()],
+                        &["example.com".to_string()],
                     );
                     let (token_request, _token_states) =
                         client.issue_token_request(&challenge, NR).unwrap();
@@ -120,13 +114,13 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                 let mut server = privacypass::batched_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
-                    rt.block_on(async { server.create_keypair(&mut key_store, 1).await.unwrap() });
-                let mut client = privacypass::batched_tokens::client::Client::new(1, public_key);
+                    rt.block_on(async { server.create_keypair(&mut key_store).await.unwrap() });
+                let mut client = privacypass::batched_tokens::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
                     TokenType::Batched,
                     "example.com",
                     None,
-                    vec!["example.com".to_string()],
+                    &["example.com".to_string()],
                 );
                 let (token_request, token_states) =
                     client.issue_token_request(&challenge, NR).unwrap();
@@ -139,7 +133,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                 (client, token_response, token_states)
             },
             |(client, token_response, token_states)| {
-                client.issue_token(token_response, token_states).unwrap();
+                client.issue_token(&token_response, &token_states).unwrap();
             },
         );
     });
@@ -153,13 +147,13 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                 let mut server = privacypass::batched_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
-                    rt.block_on(async { server.create_keypair(&mut key_store, 1).await.unwrap() });
-                let mut client = privacypass::batched_tokens::client::Client::new(1, public_key);
+                    rt.block_on(async { server.create_keypair(&mut key_store).await.unwrap() });
+                let mut client = privacypass::batched_tokens::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
                     TokenType::Batched,
                     "example.com",
                     None,
-                    vec!["example.com".to_string()],
+                    &["example.com".to_string()],
                 );
                 let (token_request, token_state) =
                     client.issue_token_request(&challenge, NR).unwrap();
@@ -169,7 +163,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                         .await
                         .unwrap()
                 });
-                let tokens = client.issue_token(token_response, token_state).unwrap();
+                let tokens = client.issue_token(&token_response, &token_state).unwrap();
                 (key_store, nonce_store, tokens, server)
             },
             |(key_store, nonce_store, tokens, server)| {

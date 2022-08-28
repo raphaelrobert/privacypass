@@ -7,6 +7,8 @@ license = "MIT"
 documentation = "https://docs.rs/privacypass"
 repository = "https://github.com/raphaelrobert/privacypass"
 readme = "README.md"
+keywords = ["privacy pass", "privacypass", "privacy", "pass"]
+categories = ["cryptography", "privacy"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,16 +22,19 @@ sha2 = "0.10.2"
 thiserror = "1.0.31"
 tls_codec = "0.2.0"
 voprf = "0.4.0-pre.4"
-blind-rsa-signatures = "0.13.0"
-pest = "2.2.1"
-pest_derive = "2.2.1"
-tls_codec_derive = "0.2.0"
-
-[dev-dependencies]
 p256 = { version = "0.11", default-features = false, features = [
   "hash2curve",
   "voprf",
 ] }
+blind-rsa-signatures = "0.13.0"
+pest = "2.2.1"
+pest_derive = "2.2.1"
+tls_codec_derive = "0.2.0"
+http = "0.2.8"
+typenum = "1.15.0"
+
+[dev-dependencies]
+
 tokio = { version = "1.20.0", features = ["full"] }
 criterion = { version = "0.3.6", features = ["async_futures", "async_tokio"] }
 

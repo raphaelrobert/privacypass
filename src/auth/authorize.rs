@@ -1,9 +1,12 @@
-use std::io::Write;
+//! This module contains the authorization logic for redemption phase of the
+//! protocol.
 
 use generic_array::{ArrayLength, GenericArray};
+use http::{header::HeaderName, HeaderValue};
 use pest::Parser;
 use pest_derive::Parser;
-use thiserror::*;
+use std::io::Write;
+use thiserror::Error;
 use tls_codec::{Deserialize, Error, Serialize, Size};
 
 use crate::{ChallengeDigest, KeyId, Nonce, TokenType};
@@ -20,7 +23,7 @@ use crate::{ChallengeDigest, KeyId, Nonce, TokenType};
 /// } Token;
 /// ```
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Token<Nk: ArrayLength<u8>> {
     token_type: TokenType,
     nonce: Nonce,
@@ -63,7 +66,7 @@ impl<Nk: ArrayLength<u8>> Deserialize for Token<Nk> {
         if len != Nk::to_usize() {
             return Err(Error::InvalidVectorLength);
         }
-        Ok(Token {
+        Ok(Self {
             token_type,
             nonce,
             challenge_digest,
@@ -75,7 +78,7 @@ impl<Nk: ArrayLength<u8>> Deserialize for Token<Nk> {
 
 impl<Nk: ArrayLength<u8>> Token<Nk> {
     /// Creates a new Token.
-    pub fn new(
+    pub const fn new(
         token_type: TokenType,
         nonce: Nonce,
         challenge_digest: ChallengeDigest,
@@ -92,23 +95,23 @@ impl<Nk: ArrayLength<u8>> Token<Nk> {
     }
 
     /// Returns the token type.
-    pub fn token_type(&self) -> TokenType {
+    pub const fn token_type(&self) -> TokenType {
         self.token_type
     }
 
     /// Returns the nonce.
-    pub fn nonce(&self) -> Nonce {
+    pub const fn nonce(&self) -> Nonce {
         self.nonce
     }
 
     /// Returns the challenge digest.
-    pub fn challenge_digest(&self) -> &ChallengeDigest {
+    pub const fn challenge_digest(&self) -> &ChallengeDigest {
         &self.challenge_digest
     }
 
     /// Returns the token key ID.
-    pub fn token_key_id(&self) -> u8 {
-        self.token_key_id
+    pub const fn token_key_id(&self) -> &KeyId {
+        &self.token_key_id
     }
 
     /// Returns the authenticator.
@@ -120,9 +123,12 @@ impl<Nk: ArrayLength<u8>> Token<Nk> {
 /// Builds a `Authorize` header according to the following scheme:
 ///
 /// `PrivateToken token=...`
+///
+/// # Errors
+/// Returns an error if the token is not valid.
 pub fn build_authorization_header<Nk: ArrayLength<u8>>(
     token: &Token<Nk>,
-) -> Result<String, BuildError> {
+) -> Result<(HeaderName, HeaderValue), BuildError> {
     let value = format!(
         "PrivateToken token={}",
         base64::encode(
@@ -131,31 +137,39 @@ pub fn build_authorization_header<Nk: ArrayLength<u8>>(
                 .map_err(|_| BuildError::InvalidToken)?
         ),
     );
-    Ok(value)
+    let header_name = http::header::AUTHORIZATION;
+    let header_value = HeaderValue::from_str(&value).map_err(|_| BuildError::InvalidToken)?;
+    Ok((header_name, header_value))
 }
 
 /// Building error for the `Authorization` header values
 #[derive(Error, Debug)]
 pub enum BuildError {
     #[error("Invalid token")]
+    /// Invalid token
     InvalidToken,
 }
 
 /// Parses an `Authorization` header according to the following scheme:
 ///
 /// `PrivateToken token=...`
+///
+/// # Errors
+/// Returns an error if the header value is not valid.
 pub fn parse_authorization_header<Nk: ArrayLength<u8>>(
-    value: &str,
+    value: &HeaderValue,
 ) -> Result<Token<Nk>, ParseError> {
-    AuthorizationParser::try_from_str(value)
+    AuthorizationParser::try_from_bytes(value.as_bytes())
 }
 
 /// Parsing error for the `WWW-Authenticate` header values
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("Invalid token")]
+    /// Invalid token
     InvalidToken,
     #[error("Invalid input string")]
+    /// Invalid input string
     InvalidInput,
 }
 
@@ -177,7 +191,8 @@ authorization = {
 struct AuthorizationParser {}
 
 impl AuthorizationParser {
-    fn try_from_str<Nk: ArrayLength<u8>>(value: &str) -> Result<Token<Nk>, ParseError> {
+    fn try_from_bytes<Nk: ArrayLength<u8>>(value: &[u8]) -> Result<Token<Nk>, ParseError> {
+        let value = std::str::from_utf8(value).map_err(|_| ParseError::InvalidInput)?;
         let mut authorization = Self::parse(Rule::authorization, value)
             .map_err(|_| ParseError::InvalidInput)?
             .next()
@@ -208,21 +223,23 @@ fn builder_parser_test() {
 
     let nonce = [1u8; 32];
     let challenge_digest = [2u8; 32];
-    let key_id = 3;
+    let token_key_id = [3u8; 32];
     let authenticator = [4u8; 32];
     let token = Token::<U32>::new(
         TokenType::Private,
         nonce,
         challenge_digest,
-        key_id,
+        token_key_id,
         GenericArray::clone_from_slice(&authenticator),
     );
-    let header = build_authorization_header(&token).unwrap();
+    let (header_name, header_value) = build_authorization_header(&token).unwrap();
 
-    let token = parse_authorization_header::<U32>(&header).unwrap();
+    assert_eq!(header_name, http::header::AUTHORIZATION);
+
+    let token = parse_authorization_header::<U32>(&header_value).unwrap();
     assert_eq!(token.token_type(), TokenType::Private);
     assert_eq!(token.nonce(), nonce);
     assert_eq!(token.challenge_digest(), &challenge_digest);
-    assert_eq!(token.token_key_id(), key_id);
+    assert_eq!(token.token_key_id(), &token_key_id);
     assert_eq!(token.authenticator(), &authenticator);
 }

@@ -1,79 +1,116 @@
+//! Server-side implementation of the Batched Tokens protocol.
+
 use async_trait::async_trait;
-use generic_array::ArrayLength;
 use generic_array::GenericArray;
 use rand::{rngs::OsRng, RngCore};
-use std::marker::PhantomData;
-use thiserror::*;
-use voprf::*;
-
-use crate::{
-    auth::authorize::Token, batched_tokens::EvaluatedElement, KeyId, NonceStore, TokenType,
+use thiserror::Error;
+use voprf::{
+    BlindedElement, Error, Group, Result, Ristretto255, VoprfServer,
+    VoprfServerBatchEvaluateFinishResult,
 };
 
-use super::{TokenInput, TokenRequest, TokenResponse};
+use crate::{batched_tokens::EvaluatedElement, NonceStore, TokenInput, TokenKeyId, TokenType};
 
-#[derive(Error, Debug, PartialEq)]
+use super::{
+    key_id_to_token_key_id, public_key_to_key_id, BatchedToken, PublicKey, TokenRequest,
+    TokenResponse,
+};
+
+/// Errors that can occur when creating a keypair.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum CreateKeypairError {
     #[error("Seed is too long")]
+    /// Error when the seed is too long.
     SeedError,
 }
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when issuing the token response.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum IssueTokenResponseError {
     #[error("Key ID not found")]
+    /// Error when the key ID is not found.
     KeyIdNotFound,
     #[error("Invalid TokenRequest")]
+    /// Error when the token request is invalid.
     InvalidTokenRequest,
     #[error("Invalid toke type")]
+    /// Error when the token type is invalid.
     InvalidTokenType,
 }
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when redeeming the token.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum RedeemTokenError {
     #[error("Key ID not found")]
+    /// Error when the key ID is not found.
     KeyIdNotFound,
     #[error("The token has already been redeemed")]
+    /// Error when the token has already been redeemed.
     DoubleSpending,
     #[error("The token is invalid")]
+    /// Error when the token is invalid.
     InvalidToken,
 }
 
+/// Minimal trait for a key store to store key material on the server-side. Note
+/// that the store requires inner mutability.
 #[async_trait]
-pub trait KeyStore {
-    /// Inserts a keypair with a given `key_id` into the key store.
-    async fn insert(&mut self, key_id: KeyId, server: VoprfServer<Ristretto255>);
-    /// Returns a keypair with a given `key_id` from the key store.
-    async fn get(&self, key_id: &KeyId) -> Option<VoprfServer<Ristretto255>>;
+pub trait KeyStore: Send + Sync {
+    /// Inserts a keypair with a given `token_key_id` into the key store.
+    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<Ristretto255>);
+    /// Returns a keypair with a given `token_key_id` from the key store.
+    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<Ristretto255>>;
 }
 
-#[derive(Default)]
+/// Serializes a public key.
+#[must_use]
+pub fn serialize_public_key(public_key: PublicKey) -> Vec<u8> {
+    <Ristretto255 as Group>::serialize_elem(public_key).to_vec()
+}
+
+/// Deserializes a public key from a slice of bytes.
+///
+/// # Errors
+/// Returns an error if the slice is not a valid public key.
+pub fn deserialize_public_key(slice: &[u8]) -> Result<PublicKey, Error> {
+    <Ristretto255 as Group>::deserialize_elem(slice)
+}
+
+/// Server-side component of the batched token issuance protocol.
+#[derive(Default, Debug)]
 pub struct Server {
     rng: OsRng,
-    cs: PhantomData<Ristretto255>,
 }
 
 impl Server {
-    pub fn new() -> Self {
-        Self {
-            rng: OsRng,
-            cs: PhantomData,
-        }
+    /// Create a new server. The new server does not contain any key material.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { rng: OsRng }
     }
 
+    /// Creates a new keypair and inserts it into the key store.
+    ///
+    /// # Errors
+    /// Returns an error if the seed is too long.
     pub async fn create_keypair<KS: KeyStore>(
         &mut self,
         key_store: &mut KS,
-        key_id: KeyId,
-    ) -> Result<<Ristretto255 as Group>::Elem, CreateKeypairError> {
+    ) -> Result<PublicKey, CreateKeypairError> {
         let mut seed = GenericArray::<_, <Ristretto255 as Group>::ScalarLen>::default();
         self.rng.fill_bytes(&mut seed);
         let server = VoprfServer::<Ristretto255>::new_from_seed(&seed, b"PrivacyPass")
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
-        key_store.insert(key_id, server).await;
+        let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
+        key_store.insert(token_key_id, server).await;
         Ok(public_key)
     }
 
+    /// Issues a token response.
+    ///
+    /// # Errors
+    /// Returns an error if the token request is invalid.
     pub async fn issue_token_response<KS: KeyStore>(
         &mut self,
         key_store: &KS,
@@ -82,7 +119,6 @@ impl Server {
         if token_request.token_type != TokenType::Batched {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
-        assert_eq!(token_request.token_type, TokenType::Batched);
         let server = key_store
             .get(&token_request.token_key_id)
             .await
@@ -102,23 +138,27 @@ impl Server {
         let VoprfServerBatchEvaluateFinishResult { messages, proof } = server
             .batch_blind_evaluate_finish(&mut self.rng, blinded_elements.iter(), &prepared_elements)
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
-        let evaluated_elements: Vec<EvaluatedElement> = messages
+        let evaluated_elements = messages
             .map(|m| EvaluatedElement {
-                evaluated_element: m.serialize().to_vec(),
+                evaluated_element: m.serialize().into(),
             })
             .collect();
 
         Ok(TokenResponse {
             evaluated_elements,
-            evaluated_proof: proof.serialize().to_vec(),
+            evaluated_proof: proof.serialize().into(),
         })
     }
 
-    pub async fn redeem_token<KS: KeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
-        &mut self,
-        key_store: &mut KS,
-        nonce_store: &mut NS,
-        token: Token<Nk>,
+    /// Redeems a token.
+    ///
+    /// # Errors
+    /// Returns an error if the token is invalid.
+    pub async fn redeem_token<KS: KeyStore, NS: NonceStore>(
+        &self,
+        key_store: &KS,
+        nonce_store: &NS,
+        token: BatchedToken,
     ) -> Result<(), RedeemTokenError> {
         if token.token_type() != TokenType::Batched {
             return Err(RedeemTokenError::InvalidToken);
@@ -133,10 +173,10 @@ impl Server {
             token_type: token.token_type(),
             nonce: token.nonce(),
             challenge_digest: *token.challenge_digest(),
-            key_id: token.token_key_id(),
+            key_id: *token.token_key_id(),
         };
         let server = key_store
-            .get(&token.token_key_id())
+            .get(&key_id_to_token_key_id(token.token_key_id()))
             .await
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
         let token_authenticator = server
@@ -150,4 +190,12 @@ impl Server {
             Err(RedeemTokenError::InvalidToken)
         }
     }
+}
+
+#[test]
+fn key_serialization() {
+    let pk = Ristretto255::base_elem();
+    let bytes = serialize_public_key(pk);
+    let pk2 = deserialize_public_key(&bytes).unwrap();
+    assert_eq!(pk, pk2);
 }
