@@ -1,10 +1,12 @@
-use std::io::Write;
+//! This module contains the authorization logic for redemption phase of the
+//! protocol.
 
 use generic_array::{ArrayLength, GenericArray};
 use http::{header::HeaderName, HeaderValue};
 use pest::Parser;
 use pest_derive::Parser;
-use thiserror::*;
+use std::io::Write;
+use thiserror::Error;
 use tls_codec::{Deserialize, Error, Serialize, Size};
 
 use crate::{ChallengeDigest, KeyId, Nonce, TokenType};
@@ -21,7 +23,7 @@ use crate::{ChallengeDigest, KeyId, Nonce, TokenType};
 /// } Token;
 /// ```
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Token<Nk: ArrayLength<u8>> {
     token_type: TokenType,
     nonce: Nonce,
@@ -64,7 +66,7 @@ impl<Nk: ArrayLength<u8>> Deserialize for Token<Nk> {
         if len != Nk::to_usize() {
             return Err(Error::InvalidVectorLength);
         }
-        Ok(Token {
+        Ok(Self {
             token_type,
             nonce,
             challenge_digest,
@@ -76,7 +78,7 @@ impl<Nk: ArrayLength<u8>> Deserialize for Token<Nk> {
 
 impl<Nk: ArrayLength<u8>> Token<Nk> {
     /// Creates a new Token.
-    pub fn new(
+    pub const fn new(
         token_type: TokenType,
         nonce: Nonce,
         challenge_digest: ChallengeDigest,
@@ -93,22 +95,22 @@ impl<Nk: ArrayLength<u8>> Token<Nk> {
     }
 
     /// Returns the token type.
-    pub fn token_type(&self) -> TokenType {
+    pub const fn token_type(&self) -> TokenType {
         self.token_type
     }
 
     /// Returns the nonce.
-    pub fn nonce(&self) -> Nonce {
+    pub const fn nonce(&self) -> Nonce {
         self.nonce
     }
 
     /// Returns the challenge digest.
-    pub fn challenge_digest(&self) -> &ChallengeDigest {
+    pub const fn challenge_digest(&self) -> &ChallengeDigest {
         &self.challenge_digest
     }
 
     /// Returns the token key ID.
-    pub fn token_key_id(&self) -> &KeyId {
+    pub const fn token_key_id(&self) -> &KeyId {
         &self.token_key_id
     }
 
@@ -121,6 +123,9 @@ impl<Nk: ArrayLength<u8>> Token<Nk> {
 /// Builds a `Authorize` header according to the following scheme:
 ///
 /// `PrivateToken token=...`
+///
+/// # Errors
+/// Returns an error if the token is not valid.
 pub fn build_authorization_header<Nk: ArrayLength<u8>>(
     token: &Token<Nk>,
 ) -> Result<(HeaderName, HeaderValue), BuildError> {
@@ -141,12 +146,16 @@ pub fn build_authorization_header<Nk: ArrayLength<u8>>(
 #[derive(Error, Debug)]
 pub enum BuildError {
     #[error("Invalid token")]
+    /// Invalid token
     InvalidToken,
 }
 
 /// Parses an `Authorization` header according to the following scheme:
 ///
 /// `PrivateToken token=...`
+///
+/// # Errors
+/// Returns an error if the header value is not valid.
 pub fn parse_authorization_header<Nk: ArrayLength<u8>>(
     value: &HeaderValue,
 ) -> Result<Token<Nk>, ParseError> {
@@ -157,8 +166,10 @@ pub fn parse_authorization_header<Nk: ArrayLength<u8>>(
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("Invalid token")]
+    /// Invalid token
     InvalidToken,
     #[error("Invalid input string")]
+    /// Invalid input string
     InvalidInput,
 }
 

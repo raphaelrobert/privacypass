@@ -1,7 +1,9 @@
+//! Client-side implementation of the Privately Verifiable Token protocol.
+
 use p256::NistP256;
 use rand::{rngs::OsRng, Rng};
-use thiserror::*;
-use voprf::*;
+use thiserror::Error;
+use voprf::{EvaluationElement, Proof, Result, VoprfClient};
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
@@ -13,26 +15,35 @@ use super::{
     TokenResponse,
 };
 
+/// Client-side state that is kept between the token requests and token responses.
+#[derive(Debug)]
 pub struct TokenState {
     client: VoprfClient<NistP256>,
     token_input: TokenInput,
     challenge_digest: ChallengeDigest,
 }
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when issuing token requests.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum IssueTokenRequestError {
     #[error("Token blinding error")]
+    /// Error when blinding the token.
     BlindingError,
     #[error("Invalid TokenChallenge")]
+    /// Error when the token challenge is invalid.
     InvalidTokenChallenge,
 }
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when issuing tokens.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum IssueTokenError {
     #[error("Invalid TokenResponse")]
+    /// Error when the token response is invalid.
     InvalidTokenResponse,
 }
 
+/// The client side of the Privately Verifiable Token protocol.
+#[derive(Debug)]
 pub struct Client {
     rng: OsRng,
     key_id: KeyId,
@@ -40,6 +51,8 @@ pub struct Client {
 }
 
 impl Client {
+    /// Create a new client from a public key.
+    #[must_use]
     pub fn new(public_key: PublicKey) -> Self {
         let key_id = public_key_to_key_id(&public_key);
 
@@ -50,6 +63,10 @@ impl Client {
         }
     }
 
+    /// Issue a token request.
+    ///
+    /// # Errors
+    /// Returns an error if the challenge is invalid.
     pub fn issue_token_request(
         &mut self,
         challenge: &TokenChallenge,
@@ -83,10 +100,14 @@ impl Client {
         Ok((token_request, token_state))
     }
 
+    /// Issue a token.
+    ///
+    /// # Errors
+    /// Returns an error if the response is invalid.
     pub fn issue_token(
         &self,
-        token_response: TokenResponse,
-        token_state: TokenState,
+        token_response: &TokenResponse,
+        token_state: &TokenState,
     ) -> Result<PrivateToken, IssueTokenError> {
         let evaluation_element = EvaluationElement::deserialize(&token_response.evaluate_msg)
             .map_err(|_| IssueTokenError::InvalidTokenResponse)?;

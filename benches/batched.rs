@@ -66,7 +66,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                         TokenType::Batched,
                         "example.com",
                         None,
-                        vec!["example.com".to_string()],
+                        &["example.com".to_string()],
                     );
                     (client, challenge)
                 },
@@ -93,7 +93,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                         TokenType::Batched,
                         "example.com",
                         None,
-                        vec!["example.com".to_string()],
+                        &["example.com".to_string()],
                     );
                     let (token_request, _token_states) =
                         client.issue_token_request(&challenge, NR).unwrap();
@@ -120,7 +120,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                     TokenType::Batched,
                     "example.com",
                     None,
-                    vec!["example.com".to_string()],
+                    &["example.com".to_string()],
                 );
                 let (token_request, token_states) =
                     client.issue_token_request(&challenge, NR).unwrap();
@@ -133,7 +133,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                 (client, token_response, token_states)
             },
             |(client, token_response, token_states)| {
-                client.issue_token(token_response, token_states).unwrap();
+                client.issue_token(&token_response, &token_states).unwrap();
             },
         );
     });
@@ -153,7 +153,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                     TokenType::Batched,
                     "example.com",
                     None,
-                    vec!["example.com".to_string()],
+                    &["example.com".to_string()],
                 );
                 let (token_request, token_state) =
                     client.issue_token_request(&challenge, NR).unwrap();
@@ -163,7 +163,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
                         .await
                         .unwrap()
                 });
-                let tokens = client.issue_token(token_response, token_state).unwrap();
+                let tokens = client.issue_token(&token_response, &token_state).unwrap();
                 (key_store, nonce_store, tokens, server)
             },
             |(key_store, nonce_store, tokens, server)| {

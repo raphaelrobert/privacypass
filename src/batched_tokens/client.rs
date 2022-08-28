@@ -1,6 +1,8 @@
+//! Client-side implementation of the Batched Tokens protocol.
+
 use rand::{rngs::OsRng, Rng};
-use thiserror::*;
-use voprf::*;
+use thiserror::Error;
+use voprf::{EvaluationElement, Proof, Result, Ristretto255, VoprfClient};
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
@@ -12,26 +14,35 @@ use super::{
     TokenRequest, TokenResponse,
 };
 
+/// Client-side state that is kept between the token requests and token responses.
+#[derive(Debug)]
 pub struct TokenState {
     client: VoprfClient<Ristretto255>,
     token_input: TokenInput,
     challenge_digest: ChallengeDigest,
 }
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when issuing token requests.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum IssueTokenRequestError {
     #[error("Token blinding error")]
+    /// Error when blinding the token.
     BlindingError,
     #[error("Invalid TokenChallenge")]
+    /// Error when the token challenge is invalid.
     InvalidTokenChallenge,
 }
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when issuing tokens.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum IssueTokenError {
     #[error("Invalid TokenResponse")]
+    /// Error when the token response is invalid.
     InvalidTokenResponse,
 }
 
+/// The client side of the batched token issuance protocol.
+#[derive(Debug)]
 pub struct Client {
     rng: OsRng,
     key_id: KeyId,
@@ -39,6 +50,8 @@ pub struct Client {
 }
 
 impl Client {
+    /// Create a new client from a public key.
+    #[must_use]
     pub fn new(public_key: PublicKey) -> Self {
         let key_id = public_key_to_key_id(&public_key);
 
@@ -49,6 +62,10 @@ impl Client {
         }
     }
 
+    /// Issue a token request.
+    ///
+    /// # Errors
+    /// Returns an error if the token blinding fails.
     pub fn issue_token_request(
         &mut self,
         challenge: &TokenChallenge,
@@ -97,10 +114,14 @@ impl Client {
         Ok((token_request, token_states))
     }
 
+    /// Issue a token.
+    ///
+    /// # Errors
+    /// Returns an error if the token response is invalid.
     pub fn issue_token(
         &self,
-        token_response: TokenResponse,
-        token_states: Vec<TokenState>,
+        token_response: &TokenResponse,
+        token_states: &[TokenState],
     ) -> Result<Vec<BatchedToken>, IssueTokenError> {
         let mut evaluated_elements = Vec::new();
         for element in token_response.evaluated_elements.iter() {
@@ -116,7 +137,7 @@ impl Client {
         let client_batch_finalize_result = VoprfClient::batch_finalize(
             &token_states
                 .iter()
-                .map(|token_state| token_state.token_input.serialize().to_vec())
+                .map(|token_state| token_state.token_input.serialize())
                 .into_iter()
                 .collect::<Vec<_>>(),
             &token_states

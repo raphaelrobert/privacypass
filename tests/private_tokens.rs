@@ -28,7 +28,7 @@ async fn private_tokens_cycle() {
         TokenType::Private,
         "example.com",
         None,
-        vec!["example.com".to_string()],
+        &["example.com".to_string()],
     );
 
     // Client: Prepare a TokenRequest after having received a challenge
@@ -41,7 +41,7 @@ async fn private_tokens_cycle() {
         .unwrap();
 
     // Client: Turn the TokenResponse into a Token
-    let token = client.issue_token(token_response, token_state).unwrap();
+    let token = client.issue_token(&token_response, &token_state).unwrap();
 
     // Server: Compare the challenge digest
     assert_eq!(token.challenge_digest(), &challenge.digest().unwrap());

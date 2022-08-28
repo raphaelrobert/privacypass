@@ -7,6 +7,8 @@ license = "MIT"
 documentation = "https://docs.rs/privacypass"
 repository = "https://github.com/raphaelrobert/privacypass"
 readme = "README.md"
+keywords = ["privacy pass", "privacypass", "privacy", "pass"]
+categories = ["cryptography", "privacy"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

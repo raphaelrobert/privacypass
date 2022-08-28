@@ -64,7 +64,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                     TokenType::Private,
                     "example.com",
                     None,
-                    vec!["example.com".to_string()],
+                    &["example.com".to_string()],
                 );
                 (client, challenge)
             },
@@ -88,7 +88,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                     TokenType::Private,
                     "example.com",
                     None,
-                    vec!["example.com".to_string()],
+                    &["example.com".to_string()],
                 );
                 let (token_request, _token_state) = client.issue_token_request(&challenge).unwrap();
                 (key_store, server, token_request)
@@ -113,7 +113,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                     TokenType::Private,
                     "example.com",
                     None,
-                    vec!["example.com".to_string()],
+                    &["example.com".to_string()],
                 );
                 let (token_request, token_state) = client.issue_token_request(&challenge).unwrap();
                 let token_response = rt.block_on(async {
@@ -125,7 +125,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                 (client, token_response, token_state)
             },
             |(client, token_response, token_state)| {
-                client.issue_token(token_response, token_state).unwrap();
+                client.issue_token(&token_response, &token_state).unwrap();
             },
         );
     });
@@ -145,7 +145,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                     TokenType::Private,
                     "example.com",
                     None,
-                    vec!["example.com".to_string()],
+                    &["example.com".to_string()],
                 );
                 let (token_request, token_state) = client.issue_token_request(&challenge).unwrap();
                 let token_response = rt.block_on(async {
@@ -154,7 +154,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                         .await
                         .unwrap()
                 });
-                let token = client.issue_token(token_response, token_state).unwrap();
+                let token = client.issue_token(&token_response, &token_state).unwrap();
                 (key_store, nonce_store, token, server)
             },
             |(key_store, nonce_store, token, server)| {
