@@ -1,10 +1,12 @@
+//! # Privately Verifiable Tokens
+
 pub mod client;
 pub mod server;
 
 use p256::NistP256;
 use sha2::{Digest, Sha256};
 use std::io::Write;
-use thiserror::*;
+use thiserror::Error;
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::U32;
 pub use voprf::*;
@@ -13,7 +15,9 @@ use crate::{auth::authorize::Token, KeyId, Nonce, TokenKeyId, TokenType};
 
 use self::server::serialize_public_key;
 
+/// Privately Verifiable Token alias
 pub type PrivateToken = Token<U32>;
+/// Public key alias
 pub type PublicKey = <NistP256 as Group>::Elem;
 
 fn public_key_to_key_id(public_key: &PublicKey) -> KeyId {
@@ -29,36 +33,51 @@ fn key_id_to_token_key_id(key_id: &KeyId) -> TokenKeyId {
     *key_id.iter().last().unwrap_or(&0)
 }
 
+/// Serialization error
 #[derive(Error, Debug)]
 pub enum SerializationError {
     #[error("Invalid serialized data")]
+    /// Invalid serialized data
     InvalidData,
 }
 
-// struct {
-//     uint16_t token_type = 0x0001;
-//     uint8_t token_key_id;
-//     uint8_t blinded_msg[Ne];
-//  } TokenRequest;
+/// Token request as specified in the spec:
+///
+/// ```c
+/// struct {
+///     uint16_t token_type = 0x0001;
+///     uint8_t token_key_id;
+///     uint8_t blinded_msg[Ne];
+///  } TokenRequest;
+/// ```
 
+#[derive(Debug)]
 pub struct TokenRequest {
     token_type: TokenType,
     token_key_id: u8,
     blinded_msg: [u8; 33],
 }
 
-// struct {
-//     uint8_t evaluate_msg[Nk];
-//     uint8_t evaluate_proof[Ns+Ns];
-//  } TokenResponse;
+/// Token response as specified in the spec:
+///
+/// ```c
+/// struct {
+///     uint8_t evaluate_msg[Nk];
+///     uint8_t evaluate_proof[Ns+Ns];
+///  } TokenResponse;
+/// ```
 
+#[derive(Debug)]
 pub struct TokenResponse {
     evaluate_msg: [u8; 33],
     evaluate_proof: [u8; 64],
 }
 
 impl TokenResponse {
-    /// Create a new TokenResponse from a byte slice.
+    /// Create a new `TokenResponse` from a byte slice.
+    ///
+    /// # Errors
+    /// Returns `SerializationError::InvalidData` if the byte slice is not valid.
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, SerializationError> {
         let mut bytes = bytes;
         Self::tls_deserialize(&mut bytes).map_err(|_| SerializationError::InvalidData)
@@ -89,7 +108,7 @@ impl Serialize for TokenRequest {
 impl Deserialize for TokenRequest {
     fn tls_deserialize<R: std::io::Read>(
         bytes: &mut R,
-    ) -> std::result::Result<TokenRequest, tls_codec::Error>
+    ) -> std::result::Result<Self, tls_codec::Error>
     where
         Self: Sized,
     {
@@ -98,7 +117,7 @@ impl Deserialize for TokenRequest {
         let mut blinded_msg = [0u8; 33];
         bytes.read_exact(&mut blinded_msg)?;
 
-        Ok(TokenRequest {
+        Ok(Self {
             token_type,
             token_key_id,
             blinded_msg,
@@ -124,7 +143,7 @@ impl Serialize for TokenResponse {
 impl Deserialize for TokenResponse {
     fn tls_deserialize<R: std::io::Read>(
         bytes: &mut R,
-    ) -> std::result::Result<TokenResponse, tls_codec::Error>
+    ) -> std::result::Result<Self, tls_codec::Error>
     where
         Self: Sized,
     {
@@ -134,7 +153,7 @@ impl Deserialize for TokenResponse {
         let mut evaluate_proof = [0u8; 64];
         bytes.read_exact(&mut evaluate_proof)?;
 
-        Ok(TokenResponse {
+        Ok(Self {
             evaluate_msg,
             evaluate_proof,
         })

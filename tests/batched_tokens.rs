@@ -31,7 +31,7 @@ async fn batched_tokens_cycle() {
         TokenType::Batched,
         "example.com",
         None,
-        vec!["example.com".to_string()],
+        &["example.com".to_string()],
     );
 
     // Client: Prepare a TokenRequest after having received a challenge
@@ -44,7 +44,7 @@ async fn batched_tokens_cycle() {
         .unwrap();
 
     // Client: Turn the TokenResponse into a Token
-    let tokens = client.issue_token(token_response, token_states).unwrap();
+    let tokens = client.issue_token(&token_response, &token_states).unwrap();
 
     // Server: Compare the challenge digest
     for token in &tokens {

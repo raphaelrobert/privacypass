@@ -1,10 +1,12 @@
+//! Server-side implementation of Privately Verifiable Token protocol.
+
 use async_trait::async_trait;
 use generic_array::ArrayLength;
 use generic_array::GenericArray;
 use p256::NistP256;
 use rand::{rngs::OsRng, RngCore};
-use thiserror::*;
-use voprf::*;
+use thiserror::Error;
+use voprf::{BlindedElement, Error, Group, Result, VoprfServer};
 
 use crate::TokenInput;
 use crate::{auth::authorize::Token, NonceStore, TokenKeyId, TokenType};
@@ -14,58 +16,84 @@ use super::public_key_to_key_id;
 use super::PublicKey;
 use super::{TokenRequest, TokenResponse};
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when creating a keypair.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum CreateKeypairError {
     #[error("Seed is too long")]
+    /// Error when the seed is too long.
     SeedError,
 }
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when issuing the token response.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum IssueTokenResponseError {
     #[error("Key ID not found")]
+    /// Error when the key ID is not found.
     KeyIdNotFound,
     #[error("Invalid TokenRequest")]
+    /// Error when the token request is invalid.
     InvalidTokenRequest,
     #[error("Invalid toke type")]
+    /// Error when the token type is invalid.
     InvalidTokenType,
 }
 
-#[derive(Error, Debug, PartialEq)]
+/// Errors that can occur when redeeming the token.
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum RedeemTokenError {
     #[error("Key ID not found")]
+    /// Error when the key ID is not found.
     KeyIdNotFound,
     #[error("The token has already been redeemed")]
+    /// Error when the token has already been redeemed.
     DoubleSpending,
     #[error("The token is invalid")]
+    /// Error when the token is invalid.
     InvalidToken,
 }
 
+/// Minimal trait for a key store to store key material on the server-side. Note
+/// that the store requires inner mutability.
 #[async_trait]
-pub trait KeyStore {
+pub trait KeyStore: Send + Sync {
     /// Inserts a keypair with a given `token_key_id` into the key store.
     async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP256>);
     /// Returns a keypair with a given `token_key_id` from the key store.
     async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<NistP256>>;
 }
 
+/// Serializes a public key.
+#[must_use]
 pub fn serialize_public_key(public_key: PublicKey) -> Vec<u8> {
     <NistP256 as Group>::serialize_elem(public_key).to_vec()
 }
 
+/// Deserializes a public key from a slice of bytes.
+///
+/// # Errors
+///
+/// This function will return an error if the slice is not a valid public key.
 pub fn deserialize_public_key(slice: &[u8]) -> Result<PublicKey, Error> {
     <NistP256 as Group>::deserialize_elem(slice)
 }
 
-#[derive(Default)]
+/// Server side implementation of Privately Verifiable Token protocol.
+#[derive(Default, Debug)]
 pub struct Server {
     rng: OsRng,
 }
 
 impl Server {
-    pub fn new() -> Self {
+    /// Creates a new server.
+    #[must_use]
+    pub const fn new() -> Self {
         Self { rng: OsRng }
     }
 
+    /// Creates a new keypair and inserts it into the key store.
+    ///
+    /// # Errors
+    /// Returns an error if creating the keypair failed.
     pub async fn create_keypair<KS: KeyStore>(
         &mut self,
         key_store: &KS,
@@ -80,6 +108,10 @@ impl Server {
         Ok(public_key)
     }
 
+    /// Issues a token response.
+    ///
+    /// # Errors
+    /// Returns an error if the token request is invalid.
     pub async fn issue_token_response<KS: KeyStore>(
         &mut self,
         key_store: &KS,
@@ -88,7 +120,6 @@ impl Server {
         if token_request.token_type != TokenType::Private {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
-        assert_eq!(token_request.token_type, TokenType::Private);
         let server = key_store
             .get(&token_request.token_key_id)
             .await
@@ -102,6 +133,10 @@ impl Server {
         })
     }
 
+    /// Redeems a token.
+    ///
+    /// # Errors
+    /// Returns an error if the token is invalid.
     pub async fn redeem_token<KS: KeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
         &mut self,
         key_store: &KS,

@@ -1,3 +1,5 @@
+//! # Publicly Verifiable Tokens
+
 use sha2::{Digest, Sha256};
 use typenum::U64;
 
@@ -6,6 +8,7 @@ use crate::{auth::authorize::Token, KeyId, Nonce, TokenKeyId, TokenType};
 pub mod client;
 pub mod server;
 
+/// Publicly Verifiable Token alias
 pub type PublicToken = Token<U64>;
 pub use blind_rsa_signatures::PublicKey;
 
@@ -24,22 +27,32 @@ fn key_id_to_token_key_id(key_id: &KeyId) -> TokenKeyId {
     *key_id.iter().last().unwrap_or(&0)
 }
 
-// struct {
-//     uint16_t token_type = 0x0002;
-//     uint8_t token_key_id;
-//     uint8_t blinded_msg[Nk];
-//  } TokenRequest;
+/// Token request as specified in the spec:
+///
+/// ```c
+/// struct {
+///     uint16_t token_type = 0x0002;
+///     uint8_t token_key_id;
+///     uint8_t blinded_msg[Nk];
+///  } TokenRequest;
+/// ```
 
+#[derive(Debug)]
 pub struct TokenRequest {
     token_type: TokenType,
     token_key_id: u8,
     blinded_msg: Vec<u8>,
 }
 
-// struct {
-//     uint8_t blind_sig[Nk];
-//  } TokenResponse;
+/// Token response as specified in the spec:
+///
+/// ```c
+/// struct {
+///     uint8_t blind_sig[Nk];
+///  } TokenResponse;
+/// ```
 
+#[derive(Debug)]
 pub struct TokenResponse {
     blind_sig: Vec<u8>,
 }
