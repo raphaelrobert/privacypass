@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use generic_array::ArrayLength;
 use generic_array::GenericArray;
-use p256::NistP256;
+use p384::NistP384;
 use rand::{rngs::OsRng, RngCore};
 use thiserror::Error;
 use voprf::{BlindedElement, Error, Group, Result, VoprfServer};
@@ -14,6 +14,8 @@ use crate::{auth::authorize::Token, NonceStore, TokenKeyId, TokenType};
 use super::key_id_to_token_key_id;
 use super::public_key_to_key_id;
 use super::PublicKey;
+use super::NK;
+use super::NS;
 use super::{TokenRequest, TokenResponse};
 
 /// Errors that can occur when creating a keypair.
@@ -57,15 +59,15 @@ pub enum RedeemTokenError {
 #[async_trait]
 pub trait KeyStore: Send + Sync {
     /// Inserts a keypair with a given `token_key_id` into the key store.
-    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP256>);
+    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP384>);
     /// Returns a keypair with a given `token_key_id` from the key store.
-    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<NistP256>>;
+    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<NistP384>>;
 }
 
 /// Serializes a public key.
 #[must_use]
 pub fn serialize_public_key(public_key: PublicKey) -> Vec<u8> {
-    <NistP256 as Group>::serialize_elem(public_key).to_vec()
+    <NistP384 as Group>::serialize_elem(public_key).to_vec()
 }
 
 /// Deserializes a public key from a slice of bytes.
@@ -74,7 +76,7 @@ pub fn serialize_public_key(public_key: PublicKey) -> Vec<u8> {
 ///
 /// This function will return an error if the slice is not a valid public key.
 pub fn deserialize_public_key(slice: &[u8]) -> Result<PublicKey, Error> {
-    <NistP256 as Group>::deserialize_elem(slice)
+    <NistP384 as Group>::deserialize_elem(slice)
 }
 
 /// Server side implementation of Privately Verifiable Token protocol.
@@ -98,9 +100,9 @@ impl Server {
         &mut self,
         key_store: &KS,
     ) -> Result<PublicKey, CreateKeypairError> {
-        let mut seed = GenericArray::<_, <NistP256 as Group>::ScalarLen>::default();
+        let mut seed = GenericArray::<_, <NistP384 as Group>::ScalarLen>::default();
         self.rng.fill_bytes(&mut seed);
-        let server = VoprfServer::<NistP256>::new_from_seed(&seed, b"PrivacyPass")
+        let server = VoprfServer::<NistP384>::new_from_seed(&seed, b"PrivacyPass")
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
         let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
@@ -124,12 +126,14 @@ impl Server {
             .get(&token_request.token_key_id)
             .await
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
-        let blinded_element = BlindedElement::<NistP256>::deserialize(&token_request.blinded_msg)
+        let blinded_element = BlindedElement::<NistP384>::deserialize(&token_request.blinded_msg)
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
         let evaluated_result = server.blind_evaluate(&mut self.rng, &blinded_element);
+        let mut evaluate_proof = [0u8; NS + NS];
+        evaluate_proof[..(NS + NS)].copy_from_slice(&evaluated_result.proof.serialize());
         Ok(TokenResponse {
             evaluate_msg: evaluated_result.message.serialize().into(),
-            evaluate_proof: evaluated_result.proof.serialize().into(),
+            evaluate_proof,
         })
     }
 
@@ -146,7 +150,7 @@ impl Server {
         if token.token_type() != TokenType::Private {
             return Err(RedeemTokenError::InvalidToken);
         }
-        if token.authenticator().len() != 32 {
+        if token.authenticator().len() != NK {
             return Err(RedeemTokenError::InvalidToken);
         }
         if nonce_store.exists(&token.nonce()).await {

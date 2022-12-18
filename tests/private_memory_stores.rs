@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use p256::NistP256;
+use p384::NistP384;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 use voprf::*;
@@ -27,17 +27,17 @@ impl NonceStore for MemoryNonceStore {
 
 #[derive(Default)]
 pub struct MemoryKeyStore {
-    keys: Mutex<HashMap<TokenKeyId, VoprfServer<NistP256>>>,
+    keys: Mutex<HashMap<TokenKeyId, VoprfServer<NistP384>>>,
 }
 
 #[async_trait]
 impl KeyStore for MemoryKeyStore {
-    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP256>) {
+    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP384>) {
         let mut keys = self.keys.lock().await;
         keys.insert(token_key_id, server);
     }
 
-    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<NistP256>> {
+    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<NistP384>> {
         self.keys.lock().await.get(token_key_id).cloned()
     }
 }

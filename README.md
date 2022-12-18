@@ -10,8 +10,3 @@ for the following token types:
  - Privately Verfifiable Tokens
  - Publicly Verfifiable Tokens
  - Batched Tokens
-
-# Limitations
-
-The Privately Verifiable Token type currently uses P256/SHA256 until this
-[issue](https://github.com/novifinancial/voprf/issues/81) is resolved.
