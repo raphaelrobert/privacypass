@@ -99,7 +99,6 @@ pub struct EvaluatedElement {
 ///     uint8_t evaluated_proof[Ns + Ns];
 ///  } TokenResponse;
 /// ```
-
 #[derive(Debug)]
 pub struct TokenResponse {
     evaluated_elements: TlsVecU16<EvaluatedElement>,
