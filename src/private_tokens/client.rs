@@ -1,6 +1,6 @@
 //! Client-side implementation of the Privately Verifiable Token protocol.
 
-use p256::NistP256;
+use p384::NistP384;
 use rand::{rngs::OsRng, Rng};
 use thiserror::Error;
 use voprf::{EvaluationElement, Proof, Result, VoprfClient};
@@ -18,7 +18,7 @@ use super::{
 /// Client-side state that is kept between the token requests and token responses.
 #[derive(Debug)]
 pub struct TokenState {
-    client: VoprfClient<NistP256>,
+    client: VoprfClient<NistP384>,
     token_input: TokenInput,
     challenge_digest: ChallengeDigest,
 }
@@ -85,7 +85,7 @@ impl Client {
         let token_input = TokenInput::new(TokenType::Private, nonce, challenge_digest, self.key_id);
 
         let blinded_element =
-            VoprfClient::<NistP256>::blind(&token_input.serialize(), &mut self.rng)
+            VoprfClient::<NistP384>::blind(&token_input.serialize(), &mut self.rng)
                 .map_err(|_| IssueTokenRequestError::BlindingError)?;
         let token_request = TokenRequest {
             token_type: TokenType::Private,
