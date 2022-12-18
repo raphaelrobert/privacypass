@@ -73,7 +73,7 @@ impl TokenChallenge {
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be serialized.
     pub fn to_base64(&self) -> Result<String, SerializationError> {
-        Ok(base64::encode(&self.serialize()?))
+        Ok(base64::encode(self.serialize()?))
     }
 
     /// Deserializes a `TokenChallenge` from a base64 encoded string.
@@ -90,7 +90,7 @@ impl TokenChallenge {
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be serialized.
     pub fn digest(&self) -> Result<ChallengeDigest, SerializationError> {
-        Ok(Sha256::digest(&self.serialize()?).into())
+        Ok(Sha256::digest(self.serialize()?).into())
     }
 }
 

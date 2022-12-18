@@ -155,7 +155,7 @@ impl Server {
         let signature = Signature(token.authenticator().to_vec());
 
         signature
-            .verify(&key_pair.pk, &token_input.serialize(), &options)
+            .verify(&key_pair.pk, token_input.serialize(), &options)
             .map_err(|_| RedeemTokenError::InvalidToken)?;
         nonce_store.insert(token.nonce()).await;
         Ok(())
