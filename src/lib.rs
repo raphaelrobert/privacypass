@@ -1,4 +1,4 @@
-//! Privacy Pass
+//! # Privacy Pass
 //!
 //! A Rust implementation of the Privacy Pass protocol as specified in Privacy
 //! Pass IETF WG

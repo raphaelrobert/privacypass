@@ -14,6 +14,11 @@ pub use blind_rsa_signatures::PublicKey;
 
 use self::server::serialize_public_key;
 
+/// Converts a public key to a token key ID
+pub fn public_key_to_token_key_id(public_key: &PublicKey) -> TokenKeyId {
+    key_id_to_token_key_id(&public_key_to_key_id(public_key))
+}
+
 fn public_key_to_key_id(public_key: &PublicKey) -> KeyId {
     let public_key = serialize_public_key(public_key);
     let mut hasher = Sha256::new();

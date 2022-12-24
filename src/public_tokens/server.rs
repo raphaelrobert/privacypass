@@ -1,9 +1,10 @@
 //! Server-side implementation of Publicly Verifiable Token protocol.
 
 use async_trait::async_trait;
-use blind_rsa_signatures::reexports::rsa::pkcs1::der::Document;
-use blind_rsa_signatures::reexports::rsa::pkcs8::EncodePublicKey;
-use blind_rsa_signatures::{KeyPair, Options, PublicKey, Signature};
+use blind_rsa_signatures::{
+    reexports::rsa::{pkcs1::der::Document, pkcs8::EncodePublicKey},
+    KeyPair, Options, PublicKey, Signature,
+};
 use generic_array::ArrayLength;
 use thiserror::Error;
 
@@ -50,11 +51,22 @@ pub enum RedeemTokenError {
 /// Minimal trait for a key store to store key material on the server-side. Note
 /// that the store requires inner mutability.
 #[async_trait]
-pub trait KeyStore: Send + Sync {
+
+pub trait IssuerKeyStore: Send + Sync {
     /// Inserts a keypair with a given `token_key_id` into the key store.
     async fn insert(&self, token_key_id: TokenKeyId, server: KeyPair);
     /// Returns a keypair with a given `token_key_id` from the key store.
     async fn get(&self, token_key_id: &TokenKeyId) -> Option<KeyPair>;
+}
+
+/// Minimal trait for a key store to store key material on the server-side. Note
+/// that the store requires inner mutability.
+#[async_trait]
+pub trait OriginKeyStore {
+    /// Inserts a keypair with a given `token_key_id` into the key store.
+    async fn insert(&self, token_key_id: TokenKeyId, server: PublicKey);
+    /// Returns a keypair with a given `token_key_id` from the key store.
+    async fn get(&self, token_key_id: &TokenKeyId) -> Option<PublicKey>;
 }
 
 /// Serializes a keypair into a DER-encoded PKCS#8 document.
@@ -66,11 +78,12 @@ pub fn serialize_public_key(public_key: &PublicKey) -> Vec<u8> {
 const KEYSIZE_IN_BITS: usize = 2048;
 const KEYSIZE_IN_BYTES: usize = KEYSIZE_IN_BITS / 8;
 
-/// Server-side implementation of Publicly Verifiable Token protocol.
+/// Server-side implementation of Publicly Verifiable Token protocol for
+/// issuers.
 #[derive(Default, Debug)]
-pub struct Server {}
+pub struct IssuerServer {}
 
-impl Server {
+impl IssuerServer {
     /// Creates a new server.
     #[must_use]
     pub const fn new() -> Self {
@@ -81,8 +94,8 @@ impl Server {
     ///
     /// # Errors
     /// Returns an error if creating the keypair fails.
-    pub async fn create_keypair<KS: KeyStore>(
-        &mut self,
+    pub async fn create_keypair<KS: IssuerKeyStore>(
+        &self,
         key_store: &KS,
     ) -> Result<KeyPair, CreateKeypairError> {
         let key_pair =
@@ -96,8 +109,8 @@ impl Server {
     ///
     /// # Errors
     /// Returns an error if the token request is invalid.
-    pub async fn issue_token_response<KS: KeyStore>(
-        &mut self,
+    pub async fn issue_token_response<KS: IssuerKeyStore>(
+        &self,
         key_store: &KS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
@@ -119,13 +132,25 @@ impl Server {
             blind_sig: blind_sig.to_vec(),
         })
     }
+}
+
+/// Server-side implementation of Publicly Verifiable Token protocol for
+/// origins.
+#[derive(Default, Debug)]
+pub struct OriginServer {}
+
+impl OriginServer {
+    /// Creates a new server.
+    pub fn new() -> Self {
+        Self {}
+    }
 
     /// Redeems a token.
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<KS: KeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
-        &mut self,
+    pub async fn redeem_token<KS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
+        &self,
         key_store: &KS,
         nonce_store: &NS,
         token: Token<Nk>,
@@ -146,7 +171,7 @@ impl Server {
             *token.token_key_id(),
         );
 
-        let key_pair = key_store
+        let public_key = key_store
             .get(&key_id_to_token_key_id(token.token_key_id()))
             .await
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
@@ -155,7 +180,7 @@ impl Server {
         let signature = Signature(token.authenticator().to_vec());
 
         signature
-            .verify(&key_pair.pk, token_input.serialize(), &options)
+            .verify(&public_key, token_input.serialize(), &options)
             .map_err(|_| RedeemTokenError::InvalidToken)?;
         nonce_store.insert(token.nonce()).await;
         Ok(())
