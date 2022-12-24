@@ -178,4 +178,19 @@ impl Server {
             Err(RedeemTokenError::InvalidToken)
         }
     }
+
+    /// Sets a keypair with a given `private_key` into the key store.
+    #[cfg(feature = "kat")]
+    pub async fn set_key<KS: KeyStore>(
+        &mut self,
+        key_store: &KS,
+        private_key: &[u8],
+    ) -> Result<PublicKey, CreateKeypairError> {
+        let server = VoprfServer::<NistP384>::new_with_key(private_key)
+            .map_err(|_| CreateKeypairError::SeedError)?;
+        let public_key = server.get_public_key();
+        let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
+        key_store.insert(token_key_id, server).await;
+        Ok(public_key)
+    }
 }

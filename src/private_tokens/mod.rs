@@ -27,7 +27,7 @@ pub type PublicKey = <NistP384 as Group>::Elem;
 fn public_key_to_key_id(public_key: &PublicKey) -> KeyId {
     let public_key = serialize_public_key(*public_key);
     let mut hasher = Sha256::new();
-    hasher.update((TokenType::Batched as u16).to_be_bytes().as_slice());
+    hasher.update((TokenType::Private as u16).to_be_bytes().as_slice());
     hasher.update(public_key);
     let key_id = hasher.finalize();
     key_id.into()

@@ -100,6 +100,37 @@ impl Client {
         Ok((token_request, token_state))
     }
 
+    #[cfg(feature = "kat")]
+    /// Issue a token request.
+    pub fn issue_token_request_with_params(
+        &mut self,
+        challenge_digest: ChallengeDigest,
+        nonce: Nonce,
+        blind: <NistP384 as voprf::Group>::Scalar,
+    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+        // nonce = random(32)
+        // challenge_digest = SHA256(challenge)
+        // token_input = concat(0x0001, nonce, challenge_digest, key_id)
+        // blind, blinded_element = client_context.Blind(token_input)
+
+        let token_input = TokenInput::new(TokenType::Private, nonce, challenge_digest, self.key_id);
+
+        let blinded_element =
+            VoprfClient::<NistP384>::deterministic_blind_unchecked(&token_input.serialize(), blind)
+                .map_err(|_| IssueTokenRequestError::BlindingError)?;
+        let token_request = TokenRequest {
+            token_type: TokenType::Private,
+            token_key_id: key_id_to_token_key_id(&self.key_id),
+            blinded_msg: blinded_element.message.serialize().into(),
+        };
+        let token_state = TokenState {
+            client: blinded_element.state,
+            token_input,
+            challenge_digest,
+        };
+        Ok((token_request, token_state))
+    }
+
     /// Issue a token.
     ///
     /// # Errors

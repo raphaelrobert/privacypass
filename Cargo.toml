@@ -33,10 +33,15 @@ tls_codec_derive = "0.2.0"
 http = "0.2.8"
 typenum = "1.15.0"
 
-[dev-dependencies]
+[features]
+default = []
+kat = ["voprf/danger"]
 
+[dev-dependencies]
+privacypass = { path = ".", features = ["kat"] }
 tokio = { version = "1.20.0", features = ["full"] }
 criterion = { version = "0.3.6", features = ["async_futures", "async_tokio"] }
+
 
 [[bench]]
 name = "benchmark"
