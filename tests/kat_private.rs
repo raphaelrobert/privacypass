@@ -5,18 +5,21 @@ use std::num::ParseIntError;
 use p384::NistP384;
 use private_memory_stores::*;
 use tls_codec::Serialize;
-
-use privacypass::private_tokens::{client::*, server::*};
 use voprf::Group;
 
-const SKS: &str = "0177781aeced893dccdf80713d318a801e2a0498240fdcf650304bbbfd0f8d3b5c0cf6cfee457aaa983ec02ff283b7a9";
-const PKS: &str = "022c63f79ac59c0ba3d204245f676a2133bd6120c90d67afa05cd6f8614294b7366c252c6458300551b79a4911c2590a36";
-const CHALLENGE: &str = "a5d46383359ef34e3c4a7b8d1b3165778bffc9b70c9e6a60dd14143e4c9c9fbd";
-const NONCE: &str = "5d4799f8338ddc50a6685f83b8ecd264b2f157015229d12b3384c0f199efe7b8";
-const BLIND: &str = "0322fec505230992256296063d989b59cc03e83184eb6187076d264137622d20248e4e525bdc007b80d1560e0a6f49d9";
-const TOKEN_REQUEST: &str = "00011a02861fd50d14be873611cff0131d2c872c79d0260c6763498a2a3f14ca926009c0f247653406e1d52b68d61b7ed2bac9ea";
-const TOKEN_RESPONSE: &str = "038e3625b6a769668a99680e46cf9479f5dc1e86d57164ab3b4a569ddfc486bf1485d4916a5194fdc0518d3e8444968421ba36e8144aa7902705ff0f3cf405863d69451a2a7ba210cc45760c2f1a6045134d877b39e8bcbbf920e5de4a3372557debf211765cd969976860bc039f9082d6a3e03f8e891246240173d2cf3d69a4613b0f8415979029";
-const TOKEN: &str = "00015d4799f8338ddc50a6685f83b8ecd264b2f157015229d12b3384c0f199efe7b8742cdfb0ed756ea680868ef109a280a393e001d2fa56b1be46ecb31fa25e76731a5b1d698ea7ab843b8e8a71ed9b2fffa70457a43a8fc687939424b29a7554b40fde130ab7a822715909cb73f99a45b640ca1c85180ba9ca1a40bab8b664406a34bcbc63b5e2e5c455cea00001a968f7";
+use privacypass::{
+    auth::authenticate::TokenChallenge,
+    private_tokens::{client::*, server::*},
+};
+
+const SKS: &str = "08f572b675c83bf83c8037e503816119409a21d26e097414678eb44c625fcddd9b2e4eb16dbccc975c5ae745ffa3f4fa";
+const PKS: &str = "0371b63695ddf79655f770ced74c17938d60c9cb9d8b9537614072b001ffc6085e80f310cdb4475487736f0f9d1406c7c9";
+const CHALLENGE: &str = "0001000e6973737565722e6578616d706c6500000e6f726967696e2e6578616d706c65";
+const NONCE: &str = "1a177bae66ea3341c367c160c635aa52daef9f105bb1240d06a063ae12e9798a";
+const BLIND: &str = "1e46366a7b619aea7d7e24d2b853f5ddc64524eb5a78f4e3af108f02919827cbdea2f8d753869ab9229aeb7fe9988763";
+const TOKEN_REQUEST: &str = "00017f023d788d4089a5f76f908ce26d18bb3b8ee826223b8a1df70a052e092aaf235c44c6f1e57f81d17d31632d090d260dc531";
+const TOKEN_RESPONSE: &str = "03c1854b0cb631ceff11079299fdc5c8d9f94c6d7d6dbc862b259916a4dba69e39ac38817fafaa6e48842c610d41bf0bb6fa3ae6e3025acf2238c0ef02e0b628437944cdbd0207c86bd9c3025fcacbd0e520576c7ad9bb9cc1846687168e7c5226bdfd0c89be908d5d90eb60e5533045358e3063b6d3a24cc2f55891cded1a7642ef945bcec888e92e15d5ecdb431fdc6d";
+const TOKEN: &str = "00011a177bae66ea3341c367c160c635aa52daef9f105bb1240d06a063ae12e9798ac994f7d5cdc2fb970b13d4e8eb6e6d8f9dcdaa65851fb091025dfe134bd5a62a7f13956db7526669425e8eb1128273c17972b5f16a9bc835a9c9f35772a2add9f5e1bb3ab71770ada81faf1af0fbdfa476fc92a3ff25fac14639b7fe34365118ae2ff55a2399e1580bec9aa759659317";
 
 pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
     (0..s.len())
@@ -54,13 +57,14 @@ async fn kat_private_token() {
     let mut client = Client::new(public_key);
 
     // Convert parameters
-    let challenge_digest: [u8; 32] = challenge.try_into().unwrap();
+    let token_challenge = TokenChallenge::deserialize(challenge.as_slice()).unwrap();
+    let challenge_digest: [u8; 32] = token_challenge.digest().unwrap();
     let nonce: [u8; 32] = nonce.try_into().unwrap();
     let blind = NistP384::deserialize_scalar(&blind).unwrap();
 
     // Client: Prepare a TokenRequest after having received a challenge
     let (token_request, token_state) = client
-        .issue_token_request_with_params(challenge_digest, nonce, blind)
+        .issue_token_request_with_params(&token_challenge, nonce, blind)
         .unwrap();
 
     // KAT: Check token request
