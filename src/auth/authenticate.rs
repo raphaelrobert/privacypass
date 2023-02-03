@@ -1,6 +1,7 @@
 //! This module contains the authentication logic for the challenge phase of the
 //! protocol.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use http::{header::HeaderName, HeaderValue};
 use pest::Parser;
 use pest_derive::Parser;
@@ -73,7 +74,7 @@ impl TokenChallenge {
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be serialized.
     pub fn to_base64(&self) -> Result<String, SerializationError> {
-        Ok(base64::encode(self.serialize()?))
+        Ok(STANDARD.encode(self.serialize()?))
     }
 
     /// Deserializes a `TokenChallenge` from a base64 encoded string.
@@ -81,7 +82,7 @@ impl TokenChallenge {
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be deserialized.
     pub fn from_base64(s: &str) -> Result<Self, SerializationError> {
-        base64::decode(s).map_err(|_| SerializationError::InvalidTokenChallenge)
+        STANDARD.decode(s).map_err(|_| SerializationError::InvalidTokenChallenge)
             .and_then(|data| Self::deserialize(&data))
     }
 
@@ -119,12 +120,11 @@ pub fn build_www_authenticate_header(
     let challenge_value = token_challenge
         .to_base64()
         .map_err(|_| BuildError::InvalidTokenChallenge)?;
-    let token_key_value = base64::encode(token_key);
-    let max_age_string = max_age.map_or_else(|| "".to_string(), |max_age| format!(", max-age={}", max_age));
+    let token_key_value = STANDARD.encode(token_key);
+    let max_age_string = max_age.map_or_else(|| "".to_string(), |max_age| format!(", max-age={max_age}"));
 
     let value = format!(
-        "PrivateToken challenge={}, token-key={}{}",
-        challenge_value, token_key_value, max_age_string
+        "PrivateToken challenge={challenge_value}, token-key={token_key_value}{max_age_string}"
     );
     let header_name = http::header::WWW_AUTHENTICATE;
     let header_value =
@@ -258,7 +258,7 @@ impl WwwAuthenticateParser {
                 let challenge = Challenge {
                     challenge: TokenChallenge::from_base64(challenge_param)
                         .map_err(|_| ParseError::InvalidChallenge)?,
-                    token_key: base64::decode(token_key_param)
+                    token_key: STANDARD.decode(token_key_param)
                         .map_err(|_| ParseError::InvalidTokenKey)?,
                     max_age: max_age_param,
                 };
@@ -287,7 +287,7 @@ fn builder_test() {
     let expected_value = format!(
         "PrivateToken challenge={}, token-key={}, max-age={}",
         serialized_token_challenge,
-        base64::encode(&token_key),
+        STANDARD.encode(&token_key),
         max_age
     );
     assert_eq!(header_name, http::header::WWW_AUTHENTICATE);
@@ -316,9 +316,9 @@ fn parser_test() {
     let input = HeaderValue::from_str(&format!(
             "PrivateToken challenge={}, token-key={}, max-age=10, PrivateToken challenge={}, token-key={}", 
             challenge1.to_base64().unwrap(),
-            base64::encode(&token_key1), 
+            STANDARD.encode(&token_key1), 
             challenge2.to_base64().unwrap(),
-            base64::encode(&token_key2)))
+            STANDARD.encode(&token_key2)))
         .unwrap();
 
     let challenge_list = parse_www_authenticate_header(&input).unwrap();

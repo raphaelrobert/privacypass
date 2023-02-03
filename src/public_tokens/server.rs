@@ -2,8 +2,7 @@
 
 use async_trait::async_trait;
 use blind_rsa_signatures::{
-    reexports::rsa::{pkcs1::der::Document, pkcs8::EncodePublicKey},
-    KeyPair, Options, PublicKey, Signature,
+    reexports::rsa::pkcs8::EncodePublicKey, KeyPair, Options, PublicKey, Signature,
 };
 use generic_array::ArrayLength;
 use thiserror::Error;
@@ -72,7 +71,12 @@ pub trait OriginKeyStore {
 /// Serializes a keypair into a DER-encoded PKCS#8 document.
 #[must_use]
 pub fn serialize_public_key(public_key: &PublicKey) -> Vec<u8> {
-    public_key.0.to_public_key_der().unwrap().as_der().to_vec()
+    public_key
+        .0
+        .to_public_key_der()
+        .unwrap()
+        .as_bytes()
+        .to_vec()
 }
 
 const KEYSIZE_IN_BITS: usize = 2048;
@@ -180,7 +184,7 @@ impl OriginServer {
         let signature = Signature(token.authenticator().to_vec());
 
         signature
-            .verify(&public_key, token_input.serialize(), &options)
+            .verify(&public_key, None, token_input.serialize(), &options)
             .map_err(|_| RedeemTokenError::InvalidToken)?;
         nonce_store.insert(token.nonce()).await;
         Ok(())

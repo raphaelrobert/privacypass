@@ -18,9 +18,9 @@ use super::{
 /// Client-side state that is kept between the token requests and token responses.
 #[derive(Debug)]
 pub struct TokenState {
-    client: VoprfClient<NistP384>,
     token_input: TokenInput,
     challenge_digest: ChallengeDigest,
+    client: VoprfClient<NistP384>,
 }
 
 /// Errors that can occur when issuing token requests.
@@ -104,10 +104,14 @@ impl Client {
     /// Issue a token request.
     pub fn issue_token_request_with_params(
         &mut self,
-        challenge_digest: ChallengeDigest,
+        challenge: &TokenChallenge,
         nonce: Nonce,
         blind: <NistP384 as voprf::Group>::Scalar,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+        let challenge_digest = challenge
+            .digest()
+            .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
+
         // nonce = random(32)
         // challenge_digest = SHA256(challenge)
         // token_input = concat(0x0001, nonce, challenge_digest, key_id)

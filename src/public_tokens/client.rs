@@ -83,7 +83,7 @@ impl Client {
         let options = Options::default();
         let blinding_result = self
             .public_key
-            .blind(token_input.serialize(), &options)
+            .blind(token_input.serialize(), false, &options)
             .map_err(|_| IssueTokenRequestError::BlindingError)?;
 
         let token_request = TokenRequest {
@@ -117,6 +117,7 @@ impl Client {
             .finalize(
                 &blind_sig,
                 &token_state.blinding_result.secret,
+                None,
                 token_input,
                 &options,
             )

@@ -1,6 +1,7 @@
 //! This module contains the authorization logic for redemption phase of the
 //! protocol.
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use generic_array::{ArrayLength, GenericArray};
 use http::{header::HeaderName, HeaderValue};
 use pest::Parser;
@@ -131,7 +132,7 @@ pub fn build_authorization_header<Nk: ArrayLength<u8>>(
 ) -> Result<(HeaderName, HeaderValue), BuildError> {
     let value = format!(
         "PrivateToken token={}",
-        base64::encode(
+        STANDARD.encode(
             token
                 .tls_serialize_detached()
                 .map_err(|_| BuildError::InvalidToken)?
@@ -207,7 +208,8 @@ impl AuthorizationParser {
             .ok_or(ParseError::InvalidInput)?
             .as_str();
         let token = Token::tls_deserialize(
-            &mut base64::decode(token_param)
+            &mut STANDARD
+                .decode(token_param)
                 .map_err(|_| ParseError::InvalidToken)?
                 .as_slice(),
         )

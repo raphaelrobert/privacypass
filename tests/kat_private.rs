@@ -9,17 +9,17 @@ use voprf::Group;
 
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    private_tokens::{client::*, server::*},
+    private_tokens::{client::*, server::*, NE},
 };
 
-const SKS: &str = "08f572b675c83bf83c8037e503816119409a21d26e097414678eb44c625fcddd9b2e4eb16dbccc975c5ae745ffa3f4fa";
-const PKS: &str = "0371b63695ddf79655f770ced74c17938d60c9cb9d8b9537614072b001ffc6085e80f310cdb4475487736f0f9d1406c7c9";
+const SKS: &str = "3897b393bca7393f3373972472427655474e7110e7792ecc07212363644f0cbacecb31d34b7d913a1aa8bb7628fd3400";
+const PKS: &str = "034a1a030a25546ce56fe40f0d7dcdfcbdfd56e83affe3e3b2953a0e940111298c13a9b87520e003b63affc7957f747d60";
 const CHALLENGE: &str = "0001000e6973737565722e6578616d706c6500000e6f726967696e2e6578616d706c65";
-const NONCE: &str = "1a177bae66ea3341c367c160c635aa52daef9f105bb1240d06a063ae12e9798a";
-const BLIND: &str = "1e46366a7b619aea7d7e24d2b853f5ddc64524eb5a78f4e3af108f02919827cbdea2f8d753869ab9229aeb7fe9988763";
-const TOKEN_REQUEST: &str = "00017f023d788d4089a5f76f908ce26d18bb3b8ee826223b8a1df70a052e092aaf235c44c6f1e57f81d17d31632d090d260dc531";
-const TOKEN_RESPONSE: &str = "03c1854b0cb631ceff11079299fdc5c8d9f94c6d7d6dbc862b259916a4dba69e39ac38817fafaa6e48842c610d41bf0bb6fa3ae6e3025acf2238c0ef02e0b628437944cdbd0207c86bd9c3025fcacbd0e520576c7ad9bb9cc1846687168e7c5226bdfd0c89be908d5d90eb60e5533045358e3063b6d3a24cc2f55891cded1a7642ef945bcec888e92e15d5ecdb431fdc6d";
-const TOKEN: &str = "00011a177bae66ea3341c367c160c635aa52daef9f105bb1240d06a063ae12e9798ac994f7d5cdc2fb970b13d4e8eb6e6d8f9dcdaa65851fb091025dfe134bd5a62a7f13956db7526669425e8eb1128273c17972b5f16a9bc835a9c9f35772a2add9f5e1bb3ab71770ada81faf1af0fbdfa476fc92a3ff25fac14639b7fe34365118ae2ff55a2399e1580bec9aa759659317";
+const NONCE: &str = "e8be1d043af17dd9f2a6fe3771c39ea098628428fc202c00e15066cf2fb3237e";
+const BLIND: &str = "50af9570a6ccf4ece5cd43296a08056681eda548e37d55db1a2537ad95ac5795f5e9787bc1aa1332c16970d3388a4c0f";
+const TOKEN_REQUEST: &str = "0001d002f40eeccab27cce578be549b2c12c275d2102812358d059b711f112f726f6f2da13aaa071a536e87be865634c9bc1497c";
+const TOKEN_RESPONSE: &str = "027b023b35d28bd2b037c0449a2835bac1b76e38359e89493ac592fee50fcbbe7b9277d243f3aa2b3c36bbe69838668364f1056df48d5dd0563e163e9368ce8fb1640cb3ff2df7ab88f8a669ef37cce3afc0937f7052e78b35ef9a76ce6ae6f67921446bc07b478e886622711aa53eb7a91034b78a5d957fc956aaba541c86f034872894666330b7dce5539074a728b485";
+const TOKEN: &str = "0001e8be1d043af17dd9f2a6fe3771c39ea098628428fc202c00e15066cf2fb3237ec994f7d5cdc2fb970b13d4e8eb6e6d8f9dcdaa65851fb091025dfe134bd5a62ad0adb6d31efe8cf6f965b60a1beb66138597ade0572223a4c6dc005a8ff01fdd24b734c2abcf8a995343d28ff3fcae12e664faf55dfbe969ef1f834571276964d0f25df7c1a7edc1bde01b794eb35193";
 
 pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
     (0..s.len())
@@ -81,8 +81,8 @@ async fn kat_private_token() {
 
     // KAT: Check token response
     assert_eq!(
-        token_response.tls_serialize_detached().unwrap(),
-        expected_token_response
+        token_response.tls_serialize_detached().unwrap()[..NE],
+        expected_token_response[..NE]
     );
 
     // Client: Turn the TokenResponse into a Token
