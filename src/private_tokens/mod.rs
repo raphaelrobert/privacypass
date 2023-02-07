@@ -34,7 +34,7 @@ fn public_key_to_key_id(public_key: &PublicKey) -> KeyId {
 }
 
 fn key_id_to_token_key_id(key_id: &KeyId) -> TokenKeyId {
-    *key_id.iter().next().unwrap_or(&0)
+    *key_id.iter().last().unwrap_or(&0)
 }
 
 /// Serialization error
