@@ -26,7 +26,7 @@ p384 = { version = "0.13.0-pre", default-features = false, features = [
   "hash2curve",
   "voprf",
 ] }
-blind-rsa-signatures = { git = "https://github.com/jedisct1/rust-blind-rsa-signatures", branch="master" }# "0.14.1"
+blind-rsa-signatures = "0.14.1"
 pest = "2.2.1"
 pest_derive = "2.2.1"
 tls_codec_derive = "0.2.0"
@@ -47,5 +47,6 @@ name = "benchmark"
 harness = false
 
 [patch.crates-io]
+blind-rsa-signatures = { git = "https://github.com/jedisct1/rust-blind-rsa-signatures", branch="master" }
 voprf = { git = "https://github.com/facebook/voprf",  branch = "main"  }
 p384 = { git = "https://github.com/RustCrypto/elliptic-curves", rev = "136fed7944d53c0508b1a93cd97bdab46891bcf7" }
