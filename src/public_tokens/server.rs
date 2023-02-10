@@ -1,15 +1,14 @@
 //! Server-side implementation of Publicly Verifiable Token protocol.
 
 use async_trait::async_trait;
-use blind_rsa_signatures::{
-    reexports::rsa::pkcs8::EncodePublicKey, KeyPair, Options, PublicKey, Signature,
-};
+use blind_rsa_signatures::{KeyPair, Options, PublicKey, Signature};
 use generic_array::ArrayLength;
+use rand::{rngs::OsRng, CryptoRng, RngCore};
 use thiserror::Error;
 
 use crate::{auth::authorize::Token, NonceStore, TokenInput, TokenKeyId, TokenType};
 
-use super::{key_id_to_token_key_id, public_key_to_key_id, TokenRequest, TokenResponse};
+use super::{key_id_to_token_key_id, public_key_to_key_id, TokenRequest, TokenResponse, NK};
 
 /// Errors that can occur when creating a keypair.
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -71,12 +70,7 @@ pub trait OriginKeyStore {
 /// Serializes a keypair into a DER-encoded PKCS#8 document.
 #[must_use]
 pub fn serialize_public_key(public_key: &PublicKey) -> Vec<u8> {
-    public_key
-        .0
-        .to_public_key_der()
-        .unwrap()
-        .as_bytes()
-        .to_vec()
+    public_key.to_spki(Some(&Options::default())).unwrap()
 }
 
 const KEYSIZE_IN_BITS: usize = 2048;
@@ -98,12 +92,13 @@ impl IssuerServer {
     ///
     /// # Errors
     /// Returns an error if creating the keypair fails.
-    pub async fn create_keypair<KS: IssuerKeyStore>(
+    pub async fn create_keypair<KS: IssuerKeyStore, R: RngCore + CryptoRng>(
         &self,
+        rng: &mut R,
         key_store: &KS,
     ) -> Result<KeyPair, CreateKeypairError> {
         let key_pair =
-            KeyPair::generate(KEYSIZE_IN_BITS).map_err(|_| CreateKeypairError::SeedError)?;
+            KeyPair::generate(rng, KEYSIZE_IN_BITS).map_err(|_| CreateKeypairError::SeedError)?;
         let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&key_pair.pk));
         key_store.insert(token_key_id, key_pair.clone()).await;
         Ok(key_pair)
@@ -118,6 +113,7 @@ impl IssuerServer {
         key_store: &KS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
+        let rng = &mut OsRng;
         if token_request.token_type != TokenType::Public {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
@@ -128,13 +124,23 @@ impl IssuerServer {
 
         // blind_sig = rsabssa_blind_sign(skI, TokenRequest.blinded_msg)
         let options = Options::default();
-        let blind_sig = key_pair
+        let blind_signature = key_pair
             .sk
-            .blind_sign(&token_request.blinded_msg, &options)
+            .blind_sign(rng, token_request.blinded_msg, &options)
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
-        Ok(TokenResponse {
-            blind_sig: blind_sig.to_vec(),
-        })
+
+        debug_assert!(blind_signature.len() == NK);
+        let mut blind_sig = [0u8; NK];
+        blind_sig.copy_from_slice(blind_signature.as_slice());
+
+        Ok(TokenResponse { blind_sig })
+    }
+
+    /// Sets the given keypair.
+    #[cfg(feature = "kat")]
+    pub async fn set_keypair<KS: IssuerKeyStore>(&self, key_store: &KS, key_pair: KeyPair) {
+        let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&key_pair.pk));
+        key_store.insert(token_key_id, key_pair).await;
     }
 }
 

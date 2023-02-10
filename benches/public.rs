@@ -4,15 +4,17 @@ mod public_memory_stores;
 
 use criterion::{async_executor::FuturesExecutor, Criterion};
 use generic_array::ArrayLength;
+use rand::{CryptoRng, RngCore};
 use tokio::runtime::Runtime;
 
 use privacypass::{auth::authenticate::TokenChallenge, TokenType};
 
-async fn create_public_keypair(
+async fn create_public_keypair<R: RngCore + CryptoRng>(
+    rng: &mut R,
     key_store: public_memory_stores::IssuerMemoryKeyStore,
     server: privacypass::public_tokens::server::IssuerServer,
 ) {
-    let _public_key = server.create_keypair(&key_store).await.unwrap();
+    let _public_key = server.create_keypair(rng, &key_store).await.unwrap();
 }
 
 async fn issue_public_token_response(
@@ -43,11 +45,14 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
     c.bench_function("PUBLIC SERVER: Generate key pair", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
+                let rng = rand::thread_rng();
                 let key_store = public_memory_stores::IssuerMemoryKeyStore::default();
                 let server = privacypass::public_tokens::server::IssuerServer::new();
-                (key_store, server)
+                (rng, key_store, server)
             },
-            |(key_store, server)| create_public_keypair(key_store, server),
+            |(mut rng, key_store, server)| async move {
+                create_public_keypair(&mut rng, key_store, server).await;
+            },
         );
     });
 
@@ -55,23 +60,26 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
     c.bench_function("PUBLIC CLIENT: Issue token request", move |b| {
         b.iter_with_setup(
             || {
+                let mut rng = rand::thread_rng();
                 let key_store = public_memory_stores::IssuerMemoryKeyStore::default();
                 let server = privacypass::public_tokens::server::IssuerServer::new();
 
                 let rt = Runtime::new().unwrap();
-                let key_pair =
-                    rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
+                let key_pair = rt
+                    .block_on(async { server.create_keypair(&mut rng, &key_store).await.unwrap() });
                 let client = privacypass::public_tokens::client::Client::new(key_pair.pk);
-                let challenge = TokenChallenge::new(
+                let token_challenge = TokenChallenge::new(
                     TokenType::Public,
                     "example.com",
                     None,
                     &["example.com".to_string()],
                 );
-                (client, challenge)
+                (rng, client, token_challenge)
             },
-            |(mut client, challenge)| {
-                client.issue_token_request(&challenge).unwrap();
+            |(mut rng, mut client, token_challenge)| {
+                client
+                    .issue_token_request(&mut rng, token_challenge)
+                    .unwrap();
             },
         );
     });
@@ -80,20 +88,22 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
     c.bench_function("PUBLIC SERVER: Issue token response", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
+                let rng = &mut rand::thread_rng();
                 let key_store = public_memory_stores::IssuerMemoryKeyStore::default();
                 let server = privacypass::public_tokens::server::IssuerServer::new();
 
                 let rt = Runtime::new().unwrap();
                 let key_pair =
-                    rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
+                    rt.block_on(async { server.create_keypair(rng, &key_store).await.unwrap() });
                 let mut client = privacypass::public_tokens::client::Client::new(key_pair.pk);
-                let challenge = TokenChallenge::new(
+                let token_challenge = TokenChallenge::new(
                     TokenType::Public,
                     "example.com",
                     None,
                     &["example.com".to_string()],
                 );
-                let (token_request, _token_state) = client.issue_token_request(&challenge).unwrap();
+                let (token_request, _token_state) =
+                    client.issue_token_request(rng, token_challenge).unwrap();
                 (key_store, server, token_request)
             },
             |(key_store, server, token_request)| {
@@ -106,20 +116,22 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
     c.bench_function("PUBLIC CLIENT: Issue token", move |b| {
         b.iter_with_setup(
             || {
+                let rng = &mut rand::thread_rng();
                 let key_store = public_memory_stores::IssuerMemoryKeyStore::default();
                 let server = privacypass::public_tokens::server::IssuerServer::new();
 
                 let rt = Runtime::new().unwrap();
                 let key_pair =
-                    rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
+                    rt.block_on(async { server.create_keypair(rng, &key_store).await.unwrap() });
                 let mut client = privacypass::public_tokens::client::Client::new(key_pair.pk);
-                let challenge = TokenChallenge::new(
+                let token_challenge = TokenChallenge::new(
                     TokenType::Public,
                     "example.com",
                     None,
                     &["example.com".to_string()],
                 );
-                let (token_request, token_state) = client.issue_token_request(&challenge).unwrap();
+                let (token_request, token_state) =
+                    client.issue_token_request(rng, token_challenge).unwrap();
                 let token_response = rt.block_on(async {
                     server
                         .issue_token_response(&key_store, token_request)
@@ -138,6 +150,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
     c.bench_function("PUBLIC SERVER: Redeem token", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
+                let rng = &mut rand::thread_rng();
                 let issuer_key_store = public_memory_stores::IssuerMemoryKeyStore::default();
                 let origin_key_store = public_memory_stores::OriginMemoryKeyStore::default();
 
@@ -147,7 +160,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                 let rt = Runtime::new().unwrap();
                 let key_pair = rt.block_on(async {
                     let key_pair = issuer_server
-                        .create_keypair(&issuer_key_store)
+                        .create_keypair(rng, &issuer_key_store)
                         .await
                         .unwrap();
                     origin_key_store.insert(1, key_pair.pk.clone()).await;
@@ -155,13 +168,14 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                 });
                 let mut client = privacypass::public_tokens::client::Client::new(key_pair.pk);
 
-                let challenge = TokenChallenge::new(
+                let token_challenge = TokenChallenge::new(
                     TokenType::Public,
                     "example.com",
                     None,
                     &["example.com".to_string()],
                 );
-                let (token_request, token_state) = client.issue_token_request(&challenge).unwrap();
+                let (token_request, token_state) =
+                    client.issue_token_request(rng, token_challenge).unwrap();
                 let token_response = rt.block_on(async {
                     issuer_server
                         .issue_token_response(&issuer_key_store, token_request)

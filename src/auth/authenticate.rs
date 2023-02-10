@@ -7,7 +7,7 @@ use pest::Parser;
 use pest_derive::Parser;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tls_codec::{Serialize, TlsByteVecU16, Deserialize};
+use tls_codec::{Serialize, TlsByteVecU16, Deserialize, TlsByteVecU8};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 
@@ -30,7 +30,7 @@ pub type RedemptionContext = [u8; 32];
 pub struct TokenChallenge {
     token_type: TokenType,
     issuer_name: TlsByteVecU16,
-    redemption_context: Option<RedemptionContext>,
+    redemption_context: TlsByteVecU8,
     origin_info: TlsByteVecU16,
 }
 
@@ -45,7 +45,7 @@ impl TokenChallenge {
         Self {
             token_type,
             issuer_name: issuer_name.as_bytes().into(),
-            redemption_context,
+            redemption_context: redemption_context.map(|rc| rc.to_vec().into()).unwrap_or_default(),
             origin_info: origin_info.join(",").as_bytes().into(),
         }
     }
@@ -63,8 +63,7 @@ impl TokenChallenge {
     /// 
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be deserialized.
-    pub fn deserialize(data: &[u8]) -> Result<Self, SerializationError> {
-        let mut data = data;
+    pub fn deserialize(mut data: &[u8]) -> Result<Self, SerializationError> {
         Self::tls_deserialize(&mut data)
             .map_err(|_| SerializationError::InvalidTokenChallenge)
     }

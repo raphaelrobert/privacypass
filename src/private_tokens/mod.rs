@@ -17,7 +17,7 @@ use self::server::serialize_public_key;
 
 /// Size of serialized element
 pub const NE: usize = 49;
-///Size of serializes scalar
+/// Size of serializes scalar
 pub const NS: usize = 48;
 /// Size of the authenticator
 pub const NK: usize = 48;

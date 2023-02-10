@@ -2,7 +2,7 @@
 
 use blind_rsa_signatures::{BlindSignature, BlindingResult, Options, PublicKey};
 use generic_array::{typenum::U256, GenericArray};
-use rand::{rngs::OsRng, Rng};
+use rand::{CryptoRng, RngCore};
 use thiserror::Error;
 
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
     ChallengeDigest, KeyId, TokenInput, TokenType,
 };
 
-use super::{key_id_to_token_key_id, public_key_to_key_id, Nonce, TokenRequest, TokenResponse};
+use super::{key_id_to_token_key_id, public_key_to_key_id, Nonce, TokenRequest, TokenResponse, NK};
 
 /// Client-side state that is kept between the token requests and token responses.
 #[derive(Debug)]
@@ -42,7 +42,6 @@ pub enum IssueTokenError {
 /// The client side of the Publicly Verifiable Token protocol.
 #[derive(Debug)]
 pub struct Client {
-    rng: OsRng,
     key_id: KeyId,
     public_key: PublicKey,
 }
@@ -53,22 +52,21 @@ impl Client {
     pub fn new(public_key: PublicKey) -> Self {
         let key_id = public_key_to_key_id(&public_key);
 
-        Self {
-            rng: OsRng,
-            key_id,
-            public_key,
-        }
+        Self { key_id, public_key }
     }
 
     /// Issue a token request.
     ///
     /// # Errors
     /// Returns an error if the challenge is invalid.
-    pub fn issue_token_request(
+    pub fn issue_token_request<R: RngCore + CryptoRng>(
         &mut self,
-        challenge: &TokenChallenge,
+        rng: &mut R,
+        challenge: TokenChallenge,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
-        let nonce: Nonce = self.rng.gen();
+        let mut nonce: Nonce = [0u8; 32];
+        rng.fill_bytes(&mut nonce[..]);
+
         let challenge_digest = challenge
             .digest()
             .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
@@ -83,14 +81,19 @@ impl Client {
         let options = Options::default();
         let blinding_result = self
             .public_key
-            .blind(token_input.serialize(), false, &options)
+            .blind(rng, token_input.serialize(), false, &options)
             .map_err(|_| IssueTokenRequestError::BlindingError)?;
+
+        debug_assert!(blinding_result.blind_msg.len() == NK);
+        let mut blinded_msg = [0u8; NK];
+        blinded_msg.copy_from_slice(blinding_result.blind_msg.as_slice());
 
         let token_request = TokenRequest {
             token_type: TokenType::Public,
             token_key_id: key_id_to_token_key_id(&self.key_id),
-            blinded_msg: blinding_result.blind_msg.to_vec(),
+            blinded_msg,
         };
+
         let token_state = TokenState {
             blinding_result,
             token_input,
@@ -111,7 +114,7 @@ impl Client {
         // authenticator = rsabssa_finalize(pkI, nonce, blind_sig, blind_inv)
         let token_input = token_state.token_input.serialize();
         let options = Options::default();
-        let blind_sig = BlindSignature(token_response.blind_sig);
+        let blind_sig = BlindSignature(token_response.blind_sig.to_vec());
         let signature = self
             .public_key
             .finalize(

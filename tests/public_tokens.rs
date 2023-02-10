@@ -7,9 +7,12 @@ use privacypass::{
     public_tokens::{client::*, public_key_to_token_key_id, server::*},
     TokenType,
 };
+use rand::thread_rng;
 
 #[tokio::test]
 async fn public_tokens_cycle() {
+    let rng = &mut thread_rng();
+
     // Server: Instantiate in-memory keystore and nonce store.
     let issuer_key_store = IssuerMemoryKeyStore::default();
     let origin_key_store = OriginMemoryKeyStore::default();
@@ -21,7 +24,7 @@ async fn public_tokens_cycle() {
 
     // Issuer server: Create a new keypair
     let key_pair = issuer_server
-        .create_keypair(&issuer_key_store)
+        .create_keypair(&mut rand::thread_rng(), &issuer_key_store)
         .await
         .unwrap();
 
@@ -35,15 +38,16 @@ async fn public_tokens_cycle() {
     let mut client = Client::new(public_key);
 
     // Generate a challenge
-    let challenge = TokenChallenge::new(
+    let token_challenge = TokenChallenge::new(
         TokenType::Public,
         "example.com",
         None,
         &["example.com".to_string()],
     );
+    let challenge_digest = token_challenge.digest().unwrap();
 
     // Client: Prepare a TokenRequest after having received a challenge
-    let (token_request, token_state) = client.issue_token_request(&challenge).unwrap();
+    let (token_request, token_state) = client.issue_token_request(rng, token_challenge).unwrap();
 
     // Issuer server: Issue a TokenResponse
     let token_response = issuer_server
@@ -55,7 +59,7 @@ async fn public_tokens_cycle() {
     let token = client.issue_token(token_response, &token_state).unwrap();
 
     // Origin server: Compare the challenge digest
-    assert_eq!(token.challenge_digest(), &challenge.digest().unwrap());
+    assert_eq!(token.challenge_digest(), &challenge_digest);
 
     // Origin server: Redeem the token
     assert!(origin_server
