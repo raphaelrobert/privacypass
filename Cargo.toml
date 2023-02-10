@@ -26,7 +26,7 @@ p384 = { version = "0.13.0-pre", default-features = false, features = [
   "hash2curve",
   "voprf",
 ] }
-blind-rsa-signatures = "0.14.1"
+blind-rsa-signatures = "0.15.0"
 pest = "2.2.1"
 pest_derive = "2.2.1"
 tls_codec_derive = "0.2.0"
