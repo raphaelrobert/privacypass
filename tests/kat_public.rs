@@ -2,8 +2,6 @@ mod public_memory_stores;
 
 use serde::Deserialize;
 
-use std::num::ParseIntError;
-
 use blind_rsa_signatures::{KeyPair, Options, PublicKey, SecretKey};
 
 use public_memory_stores::*;

@@ -2,8 +2,6 @@ mod private_memory_stores;
 
 use serde::Deserialize;
 
-use std::num::ParseIntError;
-
 use p384::NistP384;
 use private_memory_stores::*;
 use tls_codec::Serialize;
