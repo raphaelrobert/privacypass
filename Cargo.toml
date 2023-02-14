@@ -41,6 +41,8 @@ kat = ["voprf/danger"]
 privacypass = { path = ".", features = ["kat"] }
 tokio = { version = "1.20.0", features = ["full"] }
 criterion = { version = "0.4.0", features = ["async_futures", "async_tokio"] }
+hex = { version = "0.4.3", features = ["serde"]}
+serde_json = "1.0"
 
 [[bench]]
 name = "benchmark"
