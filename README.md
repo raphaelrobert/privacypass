@@ -1,6 +1,6 @@
 # Privacy Pass
 
-A Rust implementation of the Privacy Pass protocols as specified in Privacy
+A Rust implementation of the Privacy Pass protocols as specified in the Privacy
 Pass IETF WG
 [documents](https://datatracker.ietf.org/wg/privacypass/documents/).
 

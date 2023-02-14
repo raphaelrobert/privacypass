@@ -52,7 +52,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
 
     // Issue token request
     c.bench_function(
-        &format!("BATCHED CLIENT: Issue token request for {} tokens", NR),
+        &format!("BATCHED CLIENT: Issue token request for {NR} tokens"),
         move |b| {
             b.iter_with_setup(
                 || {
@@ -79,7 +79,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
 
     // Issue token response
     c.bench_function(
-        &format!("BATCHED SERVER: Issue token response for {} tokens", NR),
+        &format!("BATCHED SERVER: Issue token response for {NR} tokens"),
         move |b| {
             b.to_async(FuturesExecutor).iter_with_setup(
                 || {
@@ -107,7 +107,7 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
     );
 
     // Issue token
-    c.bench_function(&format!("BATCHED CLIENT: Issue {} tokens", NR), move |b| {
+    c.bench_function(&format!("BATCHED CLIENT: Issue {NR} tokens"), move |b| {
         b.iter_with_setup(
             || {
                 let mut key_store = batched_memory_stores::MemoryKeyStore::default();

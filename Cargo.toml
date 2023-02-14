@@ -14,35 +14,41 @@ categories = ["cryptography", "privacy"]
 
 [dependencies]
 async-trait = "0.1.56"
-base64 = "0.13.0"
+base64 = "0.21.0"
 generic-array = "0.14.5"
 rand = "0.8.5"
 serde = "1.0.138"
 sha2 = "0.10.2"
 thiserror = "1.0.31"
 tls_codec = "0.2.0"
-voprf = "0.4.0"
-p384 = { version = "0.12.0-pre.0", default-features = false, features = [
+voprf = "0.5.0-pre.2"
+p384 = { version = "0.13.0-pre", default-features = false, features = [
   "hash2curve",
   "voprf",
 ] }
-blind-rsa-signatures = "0.13.0"
+blind-rsa-signatures = "0.15.0"
 pest = "2.2.1"
 pest_derive = "2.2.1"
 tls_codec_derive = "0.2.0"
 http = "0.2.8"
 typenum = "1.15.0"
 
-[dev-dependencies]
+[features]
+default = []
+kat = ["voprf/danger"]
 
+[dev-dependencies]
+privacypass = { path = ".", features = ["kat"] }
 tokio = { version = "1.20.0", features = ["full"] }
-criterion = { version = "0.3.6", features = ["async_futures", "async_tokio"] }
+criterion = { version = "0.4.0", features = ["async_futures", "async_tokio"] }
+hex = { version = "0.4.3", features = ["serde"]}
+serde_json = "1.0"
 
 [[bench]]
 name = "benchmark"
-harness = false 
+harness = false
 
 [patch.crates-io]
-voprf = { git = "https://github.com/khonsulabs/voprf",  branch = "p384"  }
-elliptic-curve = { git = "https://github.com/RustCrypto/traits", rev = "d28eb2408070b247ebc0fd243a39dedf52b594d4" }
-p384 = { git = "https://github.com/khonsulabs/elliptic-curves", branch = "p384-hash-to-curve" }
+blind-rsa-signatures = { git = "https://github.com/jedisct1/rust-blind-rsa-signatures", branch="master" }
+voprf = { git = "https://github.com/facebook/voprf",  branch = "main"  }
+p384 = { git = "https://github.com/RustCrypto/elliptic-curves", rev = "136fed7944d53c0508b1a93cd97bdab46891bcf7" }

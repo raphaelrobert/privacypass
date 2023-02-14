@@ -18,9 +18,9 @@ use super::{
 /// Client-side state that is kept between the token requests and token responses.
 #[derive(Debug)]
 pub struct TokenState {
-    client: VoprfClient<NistP384>,
     token_input: TokenInput,
     challenge_digest: ChallengeDigest,
+    client: VoprfClient<NistP384>,
 }
 
 /// Errors that can occur when issuing token requests.
@@ -86,6 +86,41 @@ impl Client {
 
         let blinded_element =
             VoprfClient::<NistP384>::blind(&token_input.serialize(), &mut self.rng)
+                .map_err(|_| IssueTokenRequestError::BlindingError)?;
+        let token_request = TokenRequest {
+            token_type: TokenType::Private,
+            token_key_id: key_id_to_token_key_id(&self.key_id),
+            blinded_msg: blinded_element.message.serialize().into(),
+        };
+        let token_state = TokenState {
+            client: blinded_element.state,
+            token_input,
+            challenge_digest,
+        };
+        Ok((token_request, token_state))
+    }
+
+    #[cfg(feature = "kat")]
+    /// Issue a token request.
+    pub fn issue_token_request_with_params(
+        &mut self,
+        challenge: &TokenChallenge,
+        nonce: Nonce,
+        blind: <NistP384 as voprf::Group>::Scalar,
+    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+        let challenge_digest = challenge
+            .digest()
+            .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
+
+        // nonce = random(32)
+        // challenge_digest = SHA256(challenge)
+        // token_input = concat(0x0001, nonce, challenge_digest, key_id)
+        // blind, blinded_element = client_context.Blind(token_input)
+
+        let token_input = TokenInput::new(TokenType::Private, nonce, challenge_digest, self.key_id);
+
+        let blinded_element =
+            VoprfClient::<NistP384>::deterministic_blind_unchecked(&token_input.serialize(), blind)
                 .map_err(|_| IssueTokenRequestError::BlindingError)?;
         let token_request = TokenRequest {
             token_type: TokenType::Private,
