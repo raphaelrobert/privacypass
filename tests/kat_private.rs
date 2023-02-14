@@ -1,7 +1,6 @@
 mod private_memory_stores;
 
 use serde::Deserialize;
-use serde_json::Value;
 
 use std::num::ParseIntError;
 
@@ -17,10 +16,10 @@ use privacypass::{
 
 #[derive(Deserialize)]
 struct PrivateTokenTestVector {
-    #[serde(with = "hex")]
-    skS: Vec<u8>,
-    #[serde(with = "hex")]
-    pkS: Vec<u8>,
+    #[serde(with = "hex", alias = "skS")]
+    sk_s: Vec<u8>,
+    #[serde(with = "hex", alias = "pkS")]
+    pk_s: Vec<u8>,
     #[serde(with = "hex")]
     token_challenge: Vec<u8>,
     #[serde(with = "hex")]
@@ -48,10 +47,10 @@ async fn kat_private_token() {
         let mut server = Server::new();
 
         // Server: Create a new keypair
-        let public_key = server.set_key(&key_store, &vector.skS).await.unwrap();
+        let public_key = server.set_key(&key_store, &vector.sk_s).await.unwrap();
 
         // KAT: Check public key
-        assert_eq!(serialize_public_key(public_key), vector.pkS);
+        assert_eq!(serialize_public_key(public_key), vector.pk_s);
 
         // Client: Create client
         let mut client = Client::new(public_key);

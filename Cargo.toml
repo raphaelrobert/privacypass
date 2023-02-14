@@ -17,13 +17,11 @@ async-trait = "0.1.56"
 base64 = "0.21.0"
 generic-array = "0.14.5"
 rand = "0.8.5"
-serde_json = "1.0"
 serde = "1.0.138"
 sha2 = "0.10.2"
 thiserror = "1.0.31"
 tls_codec = "0.2.0"
 voprf = "0.5.0-pre.2"
-hex = { version = "0.4.3", features = ["serde"]}
 p384 = { version = "0.13.0-pre", default-features = false, features = [
   "hash2curve",
   "voprf",
@@ -43,6 +41,8 @@ kat = ["voprf/danger"]
 privacypass = { path = ".", features = ["kat"] }
 tokio = { version = "1.20.0", features = ["full"] }
 criterion = { version = "0.4.0", features = ["async_futures", "async_tokio"] }
+hex = { version = "0.4.3", features = ["serde"]}
+serde_json = "1.0"
 
 [[bench]]
 name = "benchmark"

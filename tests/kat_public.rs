@@ -1,7 +1,6 @@
 mod public_memory_stores;
 
 use serde::Deserialize;
-use serde_json::Value;
 
 use std::num::ParseIntError;
 
@@ -18,10 +17,10 @@ use privacypass::{
 
 #[derive(Deserialize)]
 struct PublicTokenTestVector {
-    #[serde(with = "hex")]
-    skS: Vec<u8>,
-    #[serde(with = "hex")]
-    pkS: Vec<u8>,
+    #[serde(with = "hex", alias = "skS")]
+    sk_s: Vec<u8>,
+    #[serde(with = "hex", alias = "pkS")]
+    pk_s: Vec<u8>,
     #[serde(with = "hex")]
     token_challenge: Vec<u8>,
     #[serde(with = "hex")]
@@ -55,15 +54,15 @@ async fn kat_public_token() {
         // Keys
         let options = Options::default();
 
-        let sec_key = SecretKey::from_pem(&String::from_utf8_lossy(&vector.skS)).unwrap();
-        let pub_key = PublicKey::from_spki(&vector.pkS, Some(&options)).unwrap();
+        let sec_key = SecretKey::from_pem(&String::from_utf8_lossy(&vector.sk_s)).unwrap();
+        let pub_key = PublicKey::from_spki(&vector.pk_s, Some(&options)).unwrap();
 
         // KAT: Check public key
         // Derive the public key from the private and compare it
         assert_eq!(sec_key.to_public_key(), pub_key.0);
 
         // Serialize the public key and compare it
-        assert_eq!(serialize_public_key(&pub_key), vector.pkS);
+        assert_eq!(serialize_public_key(&pub_key), vector.pk_s);
 
         let keypair = KeyPair {
             sk: sec_key,
