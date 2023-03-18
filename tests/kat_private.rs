@@ -33,7 +33,7 @@ struct PrivateTokenTestVector {
 }
 
 #[tokio::test]
-async fn kat_private_token() {
+async fn read_kat_private_token() {
     let list: Vec<PrivateTokenTestVector> =
         serde_json::from_str(include_str!("private_vectors.json").trim()).unwrap();
     for (_, vector) in list.iter().enumerate() {
