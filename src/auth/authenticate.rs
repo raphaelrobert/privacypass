@@ -1,17 +1,23 @@
 //! This module contains the authentication logic for the challenge phase of the
 //! protocol.
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use http::{header::HeaderName, HeaderValue};
-use pest::Parser;
-use pest_derive::Parser;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tls_codec::{Serialize, TlsByteVecU16, Deserialize, TlsByteVecU8};
+use tls_codec::{Deserialize, Serialize, TlsByteVecU16, TlsByteVecU8};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
+use nom::{
+    bytes::complete::{tag, tag_no_case},
+    character::complete::digit1,
+    multi::{many1, separated_list1},
+    IResult,
+};
 
 use crate::{ChallengeDigest, TokenType};
+
+use super::{base64_char, key_name, opt_spaces, parse_u32, space};
 
 /// Redemption context filed of a ``TokenChallenge
 pub type RedemptionContext = [u8; 32];
@@ -36,7 +42,8 @@ pub struct TokenChallenge {
 
 impl TokenChallenge {
     /// Creates a new `TokenChallenge`.
-    #[must_use] pub fn new(
+    #[must_use]
+    pub fn new(
         token_type: TokenType,
         issuer_name: &str,
         redemption_context: Option<RedemptionContext>,
@@ -45,13 +52,15 @@ impl TokenChallenge {
         Self {
             token_type,
             issuer_name: issuer_name.as_bytes().into(),
-            redemption_context: redemption_context.map(|rc| rc.to_vec().into()).unwrap_or_default(),
+            redemption_context: redemption_context
+                .map(|rc| rc.to_vec().into())
+                .unwrap_or_default(),
             origin_info: origin_info.join(",").as_bytes().into(),
         }
     }
 
     /// Serializes the `TokenChallenge`.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be serialized.
     pub fn serialize(&self) -> Result<Vec<u8>, SerializationError> {
@@ -60,16 +69,15 @@ impl TokenChallenge {
     }
 
     /// Deserializes the `TokenChallenge`.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be deserialized.
     pub fn deserialize(mut data: &[u8]) -> Result<Self, SerializationError> {
-        Self::tls_deserialize(&mut data)
-            .map_err(|_| SerializationError::InvalidTokenChallenge)
+        Self::tls_deserialize(&mut data).map_err(|_| SerializationError::InvalidTokenChallenge)
     }
 
     /// Serializes the `TokenChallenge` as a base64 encoded string.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be serialized.
     pub fn to_base64(&self) -> Result<String, SerializationError> {
@@ -77,16 +85,18 @@ impl TokenChallenge {
     }
 
     /// Deserializes a `TokenChallenge` from a base64 encoded string.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be deserialized.
     pub fn from_base64(s: &str) -> Result<Self, SerializationError> {
-        STANDARD.decode(s).map_err(|_| SerializationError::InvalidTokenChallenge)
+        STANDARD
+            .decode(s)
+            .map_err(|_| SerializationError::InvalidTokenChallenge)
             .and_then(|data| Self::deserialize(&data))
     }
 
     /// Serializes and hashes the `TokenChallenge` with SHA256.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be serialized.
     pub fn digest(&self) -> Result<ChallengeDigest, SerializationError> {
@@ -108,19 +118,20 @@ pub enum SerializationError {
 /// Builds a `WWW-Authenticate` header according to the following scheme:
 ///
 /// `PrivateToken challenge=... token-key=... [max-age=...]`
-/// 
+///
 /// # Errors
 /// Returns an error if the `TokenChallenge` cannot be serialized.
 pub fn build_www_authenticate_header(
     token_challenge: &TokenChallenge,
     token_key: &[u8],
-    max_age: Option<usize>,
+    max_age: Option<u32>,
 ) -> Result<(HeaderName, HeaderValue), BuildError> {
     let challenge_value = token_challenge
         .to_base64()
         .map_err(|_| BuildError::InvalidTokenChallenge)?;
     let token_key_value = STANDARD.encode(token_key);
-    let max_age_string = max_age.map_or_else(|| "".to_string(), |max_age| format!(", max-age={max_age}"));
+    let max_age_string =
+        max_age.map_or_else(|| "".to_string(), |max_age| format!(", max-age={max_age}"));
 
     let value = format!(
         "PrivateToken challenge={challenge_value}, token-key={token_key_value}{max_age_string}"
@@ -142,11 +153,14 @@ pub enum BuildError {
 /// Parses a `WWW-Authenticate` header according to the following scheme:
 ///
 /// `PrivateToken challenge=... token-key=... [max-age=...]`
-/// 
+///
 /// # Errors
 /// Returns an error if the `WWW-Authenticate` header cannot be parsed.
 pub fn parse_www_authenticate_header(value: &HeaderValue) -> Result<Vec<Challenge>, ParseError> {
-    WwwAuthenticateParser::try_from_bytes(value.as_bytes())
+    let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
+    let (_, challenges) = parse_private_tokens(s).map_err(|_| ParseError::InvalidChallenge)?;
+
+    Ok(challenges)
 }
 
 /// Decoded challenge from a `WWW-Authenicate` header
@@ -154,22 +168,25 @@ pub fn parse_www_authenticate_header(value: &HeaderValue) -> Result<Vec<Challeng
 pub struct Challenge {
     challenge: TokenChallenge,
     token_key: Vec<u8>,
-    max_age: Option<usize>,
+    max_age: Option<u32>,
 }
 
 impl Challenge {
     /// Returns the token challenge
-    #[must_use] pub const fn token_challenge(&self) -> &TokenChallenge {
+    #[must_use]
+    pub const fn token_challenge(&self) -> &TokenChallenge {
         &self.challenge
     }
 
     /// Returns the token key as bytes
-    #[must_use] pub fn token_key(&self) -> &[u8] {
+    #[must_use]
+    pub fn token_key(&self) -> &[u8] {
         &self.token_key
     }
 
     /// Returns the optional max-age
-    #[must_use] pub const fn max_age(&self) -> Option<usize> {
+    #[must_use]
+    pub const fn max_age(&self) -> Option<u32> {
         self.max_age
     }
 }
@@ -177,106 +194,82 @@ impl Challenge {
 /// Parsing error for the `WWW-Authenticate` header values
 #[derive(Error, Debug)]
 pub enum ParseError {
-    #[error("Invalid challenge")]
     /// Invalid challenge
+    #[error("Invalid challenge")]
     InvalidChallenge,
-    #[error("Invalid token key")]
-    /// Invalid token key
-    InvalidTokenKey,
-    #[error("Invalid max age")]
-    /// Invalid max-age
-    InvalidMaxAge,
-    #[error("Invalid input string")]
     /// Invalid input string
+    #[error("Invalid token key")]
     InvalidInput,
 }
 
-#[derive(Parser)]
-#[grammar_inline = r#"
-WHITESPACE = _{ " " }
-name_char = { ASCII_ALPHANUMERIC | "-" }
-base64_char = { ASCII_ALPHANUMERIC | "+" | "/" | "=" }
-name = @{ name_char+ }
-value = @{ base64_char* }
-num_value = { ASCII_DIGIT+ }
-property = { name ~ "=" ~ value }
-challenge_param = { "challenge=" ~ value }
-token_key_param = { "token-key=" ~ value }
-max_age_param = { "max-age=" ~ num_value }
-challenge = { "PrivateToken " ~ challenge_param ~ "," ~ token_key_param ~ ("," ~ max_age_param)? }
-challenge_list = {
-    SOI ~
-     ((challenge ~ ",") | challenge)+ ~
-    EOI
-}
-"#]
-struct WwwAuthenticateParser {}
-
-impl WwwAuthenticateParser {
-    fn try_from_bytes(value: &[u8]) -> Result<Vec<Challenge>, ParseError> {
-        let value = std::str::from_utf8(value).map_err(|_| ParseError::InvalidInput)?;
-        let mut challenges = Vec::new();
-        let challenge_list = Self::parse(Rule::challenge_list, value)
-            .map_err(|_| ParseError::InvalidInput)?
-            .next()
-            .ok_or(ParseError::InvalidInput)?
-            .into_inner();
-        for challenge in challenge_list {
-            let mut params = challenge.into_inner();
-
-            if params.peek().is_some() {
-                let challenge_param = params
-                    .next()
-                    .ok_or(ParseError::InvalidChallenge)?
-                    .into_inner()
-                    .next()
-                    .ok_or(ParseError::InvalidChallenge)?
-                    .as_str();
-                let token_key_param = params
-                    .next()
-                    .ok_or(ParseError::InvalidTokenKey)?
-                    .into_inner()
-                    .next()
-                    .ok_or(ParseError::InvalidTokenKey)?
-                    .as_str();
-                let max_age_param = match params.next() {
-                    Some(max_age_param) => {
-                        let max_age_param = max_age_param
-                            .into_inner()
-                            .next()
-                            .ok_or(ParseError::InvalidMaxAge)?
-                            .as_str();
-                        Some(
-                            max_age_param
-                                .parse::<usize>()
-                                .map_err(|_| ParseError::InvalidMaxAge)?,
-                        )
-                    }
-                    None => None,
-                };
-                let challenge = Challenge {
-                    challenge: TokenChallenge::from_base64(challenge_param)
-                        .map_err(|_| ParseError::InvalidChallenge)?,
-                    token_key: STANDARD.decode(token_key_param)
-                        .map_err(|_| ParseError::InvalidTokenKey)?,
-                    max_age: max_age_param,
-                };
-                challenges.push(challenge);
-            }
+fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
+    let (input, _) = opt_spaces(input)?;
+    let (input, key) = key_name(input)?;
+    let (input, _) = opt_spaces(input)?;
+    let (input, _) = tag("=")(input)?;
+    let (input, _) = opt_spaces(input)?;
+    let (input, value) = match key.to_lowercase().as_str() {
+        "challenge" | "token-key" => base64_char(input)?,
+        "max-age" => digit1(input)?,
+        _ => {
+            return Err(nom::Err::Failure(nom::error::make_error(
+                input,
+                nom::error::ErrorKind::Tag,
+            )));
         }
-        Ok(challenges)
+    };
+    Ok((input, (key, value)))
+}
+
+fn parse_private_token(input: &str) -> IResult<&str, Challenge> {
+    let (input, _) = opt_spaces(input)?;
+    let (input, _) = tag_no_case("PrivateToken")(input)?;
+    let (input, _) = many1(space)(input)?;
+    let (input, key_values) = separated_list1(tag(","), parse_key_value)(input)?;
+
+    let mut challenge = None;
+    let mut token_key = None;
+    let mut max_age = None;
+
+    for (key, value) in key_values {
+        let err = nom::Err::Failure(nom::error::make_error(input, nom::error::ErrorKind::Tag));
+        match key.to_lowercase().as_str() {
+            "challenge" => challenge = Some(TokenChallenge::from_base64(value).map_err(|_| err)?),
+            "token-key" => token_key = Some(STANDARD.decode(value).map_err(|_| err)?),
+            "max-age" => {
+                let parsed_max_age = parse_u32(value).map_err(|_| err)?;
+                max_age = Some(parsed_max_age);
+            }
+            _ => return Err(err),
+        }
     }
+
+    if let (Some(challenge), Some(token_key)) = (challenge, token_key) {
+        Ok((
+            input,
+            Challenge {
+                challenge,
+                token_key,
+                max_age,
+            },
+        ))
+    } else {
+        Err(nom::Err::Failure(nom::error::make_error(
+            input,
+            nom::error::ErrorKind::Verify,
+        )))
+    }
+}
+
+fn parse_private_tokens(input: &str) -> IResult<&str, Vec<Challenge>> {
+    separated_list1(tag(","), parse_private_token)(input)
 }
 
 #[test]
 fn builder_test() {
     let token_key = b"sample token key".to_vec();
-    let token_challenge = TokenChallenge::new(
-        TokenType::Private,
-        "issuer",
-        None,
-        &["origin".to_string()],
-    );
+    let token_challenge =
+        TokenChallenge::new(TokenType::Private, "issuer", None, &["origin".to_string()]);
     let serialized_token_challenge = token_challenge.to_base64().unwrap();
     let max_age = 100;
 
@@ -315,12 +308,12 @@ fn parser_test() {
     let input = HeaderValue::from_str(&format!(
             "PrivateToken challenge={}, token-key={}, max-age=10, PrivateToken challenge={}, token-key={}", 
             challenge1.to_base64().unwrap(),
-            STANDARD.encode(&token_key1), 
+            STANDARD.encode(&token_key1),
             challenge2.to_base64().unwrap(),
             STANDARD.encode(&token_key2)))
         .unwrap();
 
-    let challenge_list = parse_www_authenticate_header(&input).unwrap();
+    let (_, challenge_list) = parse_private_tokens(input.to_str().unwrap()).unwrap();
 
     assert_eq!(
         challenge_list,
@@ -341,20 +334,19 @@ fn parser_test() {
 
 #[test]
 fn builder_parser_test() {
-    use voprf::{Ristretto255, Group};
-    use crate::batched_tokens::server::{serialize_public_key, deserialize_public_key};
+    use crate::batched_tokens::server::{deserialize_public_key, serialize_public_key};
+    use voprf::{Group, Ristretto255};
 
     let public_key = Ristretto255::base_elem();
     let token_key = serialize_public_key(public_key);
-    let token_challenge = TokenChallenge::new(
-        TokenType::Private,
-        "issuer",
-        None,
-        &["origin".to_string()],
-    );
-    let max_age = 100;
+    let token_challenge =
+        TokenChallenge::new(TokenType::Private, "issuer", None, &["origin".to_string()]);
+    let max_age = 100u32;
     let (_header_name, header_value) =
         build_www_authenticate_header(&token_challenge, &token_key, Some(max_age)).unwrap();
+
+    println!("header_value: {:?}", header_value);
+
     let challenges = parse_www_authenticate_header(&header_value).unwrap();
 
     assert_eq!(

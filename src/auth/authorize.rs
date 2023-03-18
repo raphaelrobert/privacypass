@@ -4,13 +4,18 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use generic_array::{ArrayLength, GenericArray};
 use http::{header::HeaderName, HeaderValue};
-use pest::Parser;
-use pest_derive::Parser;
+use nom::{
+    bytes::complete::{tag, tag_no_case},
+    multi::{many1, separated_list1},
+    IResult,
+};
 use std::io::Write;
 use thiserror::Error;
 use tls_codec::{Deserialize, Error, Serialize, Size};
 
 use crate::{ChallengeDigest, KeyId, Nonce, TokenType};
+
+use super::{base64_char, key_name, opt_spaces, space};
 
 /// A Token as defined in The Privacy Pass HTTP Authentication Scheme:
 ///
@@ -160,7 +165,10 @@ pub enum BuildError {
 pub fn parse_authorization_header<Nk: ArrayLength<u8>>(
     value: &HeaderValue,
 ) -> Result<Token<Nk>, ParseError> {
-    AuthorizationParser::try_from_bytes(value.as_bytes())
+    let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
+    let tokens = parse_header_value(s)?;
+    let token = tokens[0].clone();
+    Ok(token)
 }
 
 /// Parsing error for the `WWW-Authenticate` header values
@@ -174,49 +182,71 @@ pub enum ParseError {
     InvalidInput,
 }
 
-#[derive(Parser)]
-#[grammar_inline = r#"
-WHITESPACE = _{ " " }
-name_char = { ASCII_ALPHANUMERIC | "-" }
-base64_char = { ASCII_ALPHANUMERIC | "+" | "/" | "=" }
-name = @{ name_char+ }
-value = @{ base64_char* }
-property = { name ~ "=" ~ value }
-token_param = { "PrivateToken" ~ "token=" ~ value }
-authorization = {
-    SOI ~
-    token_param ~
-    EOI
+fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
+    let (input, _) = opt_spaces(input)?;
+    let (input, key) = key_name(input)?;
+    let (input, _) = opt_spaces(input)?;
+    let (input, _) = tag("=")(input)?;
+    let (input, _) = opt_spaces(input)?;
+    let (input, value) = match key.to_lowercase().as_str() {
+        "token" => base64_char(input)?,
+        _ => {
+            return Err(nom::Err::Failure(nom::error::make_error(
+                input,
+                nom::error::ErrorKind::Tag,
+            )))
+        }
+    };
+    Ok((input, (key, value)))
 }
-"#]
-struct AuthorizationParser {}
 
-impl AuthorizationParser {
-    fn try_from_bytes<Nk: ArrayLength<u8>>(value: &[u8]) -> Result<Token<Nk>, ParseError> {
-        let value = std::str::from_utf8(value).map_err(|_| ParseError::InvalidInput)?;
-        let mut authorization = Self::parse(Rule::authorization, value)
-            .map_err(|_| ParseError::InvalidInput)?
-            .next()
-            .ok_or(ParseError::InvalidInput)?
-            .into_inner();
+fn parse_private_token(input: &str) -> IResult<&str, &str> {
+    let (input, _) = opt_spaces(input)?;
+    let (input, _) = tag_no_case("PrivateToken")(input)?;
+    let (input, _) = many1(space)(input)?;
+    let (input, key_values) = separated_list1(tag(","), parse_key_value)(input)?;
 
-        let token_param = authorization
-            .next()
-            .ok_or(ParseError::InvalidInput)?
-            .into_inner()
-            .next()
-            .ok_or(ParseError::InvalidInput)?
-            .as_str();
-        let token = Token::tls_deserialize(
-            &mut STANDARD
-                .decode(token_param)
-                .map_err(|_| ParseError::InvalidToken)?
-                .as_slice(),
-        )
-        .map_err(|_| ParseError::InvalidToken)?;
+    let mut token = None;
+    let err = nom::Err::Failure(nom::error::make_error(input, nom::error::ErrorKind::Tag));
 
-        Ok(token)
+    for (key, value) in key_values {
+        match key.to_lowercase().as_str() {
+            "token" => {
+                if token.is_some() {
+                    return Err(err);
+                }
+                token = Some(value)
+            }
+            _ => return Err(err),
+        }
     }
+    let token = token.ok_or(err)?;
+
+    Ok((input, token))
+}
+
+fn parse_private_tokens(input: &str) -> IResult<&str, Vec<&str>> {
+    separated_list1(tag(","), parse_private_token)(input)
+}
+
+fn parse_header_value<Nk: ArrayLength<u8>>(input: &str) -> Result<Vec<Token<Nk>>, ParseError> {
+    let (output, tokens) = parse_private_tokens(input).map_err(|_| ParseError::InvalidInput)?;
+    if !output.is_empty() {
+        return Err(ParseError::InvalidInput);
+    }
+    let tokens = tokens
+        .into_iter()
+        .map(|token_value| {
+            Token::tls_deserialize(
+                &mut STANDARD
+                    .decode(token_value)
+                    .map_err(|_| ParseError::InvalidToken)?
+                    .as_slice(),
+            )
+            .map_err(|_| ParseError::InvalidToken)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(tokens)
 }
 
 #[test]
