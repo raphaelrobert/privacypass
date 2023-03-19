@@ -262,7 +262,7 @@ async fn write_kat_public_token() {
 
     evaluate_kat(elements).await;
 
-    let mut file = File::create("tests/kat_vectors/public_vectors_privacypass.json").unwrap();
+    let mut file = File::create("tests/kat_vectors/public_vectors_privacypass-new.json").unwrap();
     file.write_all(data.as_bytes()).unwrap();
 }
 
