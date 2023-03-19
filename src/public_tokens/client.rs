@@ -65,7 +65,7 @@ impl Client {
         challenge: TokenChallenge,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
         let mut nonce: Nonce = [0u8; 32];
-        rng.fill_bytes(&mut nonce[..]);
+        rng.fill_bytes(&mut nonce);
 
         let challenge_digest = challenge
             .digest()

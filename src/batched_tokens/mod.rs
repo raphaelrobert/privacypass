@@ -14,6 +14,13 @@ use crate::{auth::authorize::Token, KeyId, Nonce, TokenKeyId, TokenType};
 
 use self::server::serialize_public_key;
 
+/// Size of serialized element
+pub const NE: usize = 32;
+/// Size of serializes scalar
+pub const NS: usize = 32;
+/// Size of the authenticator
+pub const NK: usize = 64;
+
 /// Batched token alias
 pub type BatchedToken = Token<U64>;
 /// Public key alias
@@ -21,11 +28,8 @@ pub type PublicKey = <Ristretto255 as Group>::Elem;
 
 fn public_key_to_key_id(public_key: &PublicKey) -> KeyId {
     let public_key = serialize_public_key(*public_key);
-    let mut hasher = Sha256::new();
-    hasher.update((TokenType::Batched as u16).to_be_bytes().as_slice());
-    hasher.update(public_key);
-    let key_id = hasher.finalize();
-    key_id.into()
+
+    Sha256::digest(public_key).into()
 }
 
 fn key_id_to_token_key_id(key_id: &KeyId) -> TokenKeyId {
@@ -50,7 +54,7 @@ pub enum SerializationError {
 
 #[derive(Debug)]
 pub struct BlindedElement {
-    blinded_element: [u8; 32],
+    blinded_element: [u8; NE],
 }
 
 /// Token request as specified in the spec:
@@ -88,7 +92,7 @@ impl TokenRequest {
 
 #[derive(Debug)]
 pub struct EvaluatedElement {
-    evaluated_element: [u8; 32],
+    evaluated_element: [u8; NE],
 }
 
 /// Token response as specified in the spec:
@@ -102,7 +106,7 @@ pub struct EvaluatedElement {
 #[derive(Debug)]
 pub struct TokenResponse {
     evaluated_elements: TlsVecU16<EvaluatedElement>,
-    evaluated_proof: [u8; 64],
+    evaluated_proof: [u8; NS + NS],
 }
 
 impl TokenResponse {
@@ -121,7 +125,7 @@ impl TokenResponse {
 
 impl Size for BlindedElement {
     fn tls_serialized_len(&self) -> usize {
-        32
+        NE
     }
 }
 
@@ -141,7 +145,7 @@ impl Deserialize for BlindedElement {
     where
         Self: Sized,
     {
-        let mut blinded_element = [0u8; 32];
+        let mut blinded_element = [0u8; NE];
         bytes.read_exact(&mut blinded_element)?;
         Ok(Self { blinded_element })
     }
@@ -149,7 +153,7 @@ impl Deserialize for BlindedElement {
 
 impl Size for EvaluatedElement {
     fn tls_serialized_len(&self) -> usize {
-        32
+        NE
     }
 }
 
@@ -169,7 +173,7 @@ impl Deserialize for EvaluatedElement {
     where
         Self: Sized,
     {
-        let mut evaluated_element = [0u8; 32];
+        let mut evaluated_element = [0u8; NE];
         bytes.read_exact(&mut evaluated_element)?;
         Ok(Self { evaluated_element })
     }
@@ -241,7 +245,7 @@ impl Deserialize for TokenResponse {
         Self: Sized,
     {
         let evaluated_elements = TlsVecU16::tls_deserialize(bytes)?;
-        let mut evaluated_proof = [0u8; 64];
+        let mut evaluated_proof = [0u8; NS + NS];
         bytes.read_exact(&mut evaluated_proof)?;
         Ok(Self {
             evaluated_elements,

@@ -102,12 +102,35 @@ impl Server {
     ) -> Result<PublicKey, CreateKeypairError> {
         let mut seed = GenericArray::<_, <NistP384 as Group>::ScalarLen>::default();
         self.rng.fill_bytes(&mut seed);
-        let server = VoprfServer::<NistP384>::new_from_seed(&seed, b"PrivacyPass")
+        self.create_keypair_internal(key_store, &seed, b"PrivacyPass")
+            .await
+    }
+
+    /// Creates a new keypair and inserts it into the key store.
+    async fn create_keypair_internal<KS: KeyStore>(
+        &mut self,
+        key_store: &KS,
+        seed: &[u8],
+        info: &[u8],
+    ) -> Result<PublicKey, CreateKeypairError> {
+        let server = VoprfServer::<NistP384>::new_from_seed(seed, info)
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
         let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
         key_store.insert(token_key_id, server).await;
         Ok(public_key)
+    }
+
+    /// Creates a new keypair with explicit parameters and inserts it into the
+    /// key store.
+    #[cfg(feature = "kat")]
+    pub async fn create_keypair_with_params<KS: KeyStore>(
+        &mut self,
+        key_store: &KS,
+        seed: &[u8],
+        info: &[u8],
+    ) -> Result<PublicKey, CreateKeypairError> {
+        self.create_keypair_internal(key_store, seed, info).await
     }
 
     /// Issues a token response.

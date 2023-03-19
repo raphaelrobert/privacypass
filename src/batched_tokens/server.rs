@@ -13,7 +13,7 @@ use crate::{batched_tokens::EvaluatedElement, NonceStore, TokenInput, TokenKeyId
 
 use super::{
     key_id_to_token_key_id, public_key_to_key_id, BatchedToken, PublicKey, TokenRequest,
-    TokenResponse,
+    TokenResponse, NK,
 };
 
 /// Errors that can occur when creating a keypair.
@@ -95,16 +95,39 @@ impl Server {
     /// Returns an error if the seed is too long.
     pub async fn create_keypair<KS: KeyStore>(
         &mut self,
-        key_store: &mut KS,
+        key_store: &KS,
     ) -> Result<PublicKey, CreateKeypairError> {
         let mut seed = GenericArray::<_, <Ristretto255 as Group>::ScalarLen>::default();
         self.rng.fill_bytes(&mut seed);
-        let server = VoprfServer::<Ristretto255>::new_from_seed(&seed, b"PrivacyPass")
+        self.create_keypair_internal(key_store, &seed, b"PrivacyPass")
+            .await
+    }
+
+    /// Creates a new keypair and inserts it into the key store.
+    async fn create_keypair_internal<KS: KeyStore>(
+        &mut self,
+        key_store: &KS,
+        seed: &[u8],
+        info: &[u8],
+    ) -> Result<PublicKey, CreateKeypairError> {
+        let server = VoprfServer::<Ristretto255>::new_from_seed(seed, info)
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
         let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
         key_store.insert(token_key_id, server).await;
         Ok(public_key)
+    }
+
+    /// Creates a new keypair with explicit parameters and inserts it into the
+    /// key store.
+    #[cfg(feature = "kat")]
+    pub async fn create_keypair_with_params<KS: KeyStore>(
+        &mut self,
+        key_store: &KS,
+        seed: &[u8],
+        info: &[u8],
+    ) -> Result<PublicKey, CreateKeypairError> {
+        self.create_keypair_internal(key_store, seed, info).await
     }
 
     /// Issues a token response.
@@ -163,7 +186,7 @@ impl Server {
         if token.token_type() != TokenType::Batched {
             return Err(RedeemTokenError::InvalidToken);
         }
-        if token.authenticator().len() != 64 {
+        if token.authenticator().len() != (NK) {
             return Err(RedeemTokenError::InvalidToken);
         }
         if nonce_store.exists(&token.nonce()).await {
@@ -189,6 +212,21 @@ impl Server {
         } else {
             Err(RedeemTokenError::InvalidToken)
         }
+    }
+
+    /// Sets a keypair with a given `private_key` into the key store.
+    #[cfg(feature = "kat")]
+    pub async fn set_key<KS: KeyStore>(
+        &mut self,
+        key_store: &KS,
+        private_key: &[u8],
+    ) -> Result<PublicKey, CreateKeypairError> {
+        let server = VoprfServer::<Ristretto255>::new_with_key(private_key)
+            .map_err(|_| CreateKeypairError::SeedError)?;
+        let public_key = server.get_public_key();
+        let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
+        key_store.insert(token_key_id, server).await;
+        Ok(public_key)
     }
 }
 
