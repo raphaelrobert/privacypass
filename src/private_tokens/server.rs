@@ -94,9 +94,9 @@ impl Server {
     ///
     /// # Errors
     /// Returns an error if creating the keypair failed.
-    pub async fn create_keypair<KS: PrivateKeyStore>(
+    pub async fn create_keypair<PKS: PrivateKeyStore>(
         &self,
-        key_store: &KS,
+        key_store: &PKS,
     ) -> Result<PublicKey, CreateKeypairError> {
         let mut seed = GenericArray::<_, <NistP384 as Group>::ScalarLen>::default();
         OsRng.fill_bytes(&mut seed);
@@ -105,9 +105,9 @@ impl Server {
     }
 
     /// Creates a new keypair and inserts it into the key store.
-    async fn create_keypair_internal<KS: PrivateKeyStore>(
+    async fn create_keypair_internal<PKS: PrivateKeyStore>(
         &self,
-        key_store: &KS,
+        key_store: &PKS,
         seed: &[u8],
         info: &[u8],
     ) -> Result<PublicKey, CreateKeypairError> {
@@ -122,9 +122,9 @@ impl Server {
     /// Creates a new keypair with explicit parameters and inserts it into the
     /// key store.
     #[cfg(feature = "kat")]
-    pub async fn create_keypair_with_params<KS: PrivateKeyStore>(
+    pub async fn create_keypair_with_params<PKS: PrivateKeyStore>(
         &self,
-        key_store: &KS,
+        key_store: &PKS,
         seed: &[u8],
         info: &[u8],
     ) -> Result<PublicKey, CreateKeypairError> {
@@ -135,9 +135,9 @@ impl Server {
     ///
     /// # Errors
     /// Returns an error if the token request is invalid.
-    pub async fn issue_token_response<KS: PrivateKeyStore>(
+    pub async fn issue_token_response<PKS: PrivateKeyStore>(
         &self,
-        key_store: &KS,
+        key_store: &PKS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
         if token_request.token_type != TokenType::Private {
@@ -162,9 +162,9 @@ impl Server {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<KS: PrivateKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
+    pub async fn redeem_token<PKS: PrivateKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
         &self,
-        key_store: &KS,
+        key_store: &PKS,
         nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
@@ -202,9 +202,9 @@ impl Server {
 
     /// Sets a keypair with a given `private_key` into the key store.
     #[cfg(feature = "kat")]
-    pub async fn set_key<KS: PrivateKeyStore>(
+    pub async fn set_key<PKS: PrivateKeyStore>(
         &self,
-        key_store: &KS,
+        key_store: &PKS,
         private_key: &[u8],
     ) -> Result<PublicKey, CreateKeypairError> {
         let server = VoprfServer::<NistP384>::new_with_key(private_key)
