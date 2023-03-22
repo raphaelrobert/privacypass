@@ -45,7 +45,6 @@ pub enum IssueTokenError {
 /// The client side of the Privately Verifiable Token protocol.
 #[derive(Debug)]
 pub struct Client {
-    rng: OsRng,
     key_id: KeyId,
     public_key: PublicKey,
 }
@@ -56,11 +55,7 @@ impl Client {
     pub fn new(public_key: PublicKey) -> Self {
         let key_id = public_key_to_key_id(&public_key);
 
-        Self {
-            rng: OsRng,
-            key_id,
-            public_key,
-        }
+        Self { key_id, public_key }
     }
 
     /// Issue a token request.
@@ -68,17 +63,17 @@ impl Client {
     /// # Errors
     /// Returns an error if the challenge is invalid.
     pub fn issue_token_request(
-        &mut self,
+        &self,
         challenge: &TokenChallenge,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
-        let nonce: Nonce = self.rng.gen();
+        let nonce: Nonce = OsRng.gen();
 
         self.issue_token_request_internal(challenge, nonce, None)
     }
 
     /// Issue a token request.
     fn issue_token_request_internal(
-        &mut self,
+        &self,
         challenge: &TokenChallenge,
         nonce: Nonce,
         _blind: Option<<NistP384 as voprf::Group>::Scalar>,
@@ -94,9 +89,8 @@ impl Client {
 
         let token_input = TokenInput::new(TokenType::Private, nonce, challenge_digest, self.key_id);
 
-        let blinded_element =
-            VoprfClient::<NistP384>::blind(&token_input.serialize(), &mut self.rng)
-                .map_err(|_| IssueTokenRequestError::BlindingError)?;
+        let blinded_element = VoprfClient::<NistP384>::blind(&token_input.serialize(), &mut OsRng)
+            .map_err(|_| IssueTokenRequestError::BlindingError)?;
 
         #[cfg(feature = "kat")]
         let blinded_element = if let Some(blind) = _blind {
@@ -122,7 +116,7 @@ impl Client {
     #[cfg(feature = "kat")]
     /// Issue a token request.
     pub fn issue_token_request_with_params(
-        &mut self,
+        &self,
         challenge: &TokenChallenge,
         nonce: Nonce,
         blind: <NistP384 as voprf::Group>::Scalar,

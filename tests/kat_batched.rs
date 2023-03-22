@@ -69,7 +69,7 @@ async fn evaluate_kat(list: Vec<BatchedTokenTestVector>) {
         let nonce_store = MemoryNonceStore::default();
 
         // Server: Create server
-        let mut server = Server::new();
+        let server = Server::new();
 
         // Server: Create a new keypair
         let public_key = server.set_key(&key_store, &vector.sk_s).await.unwrap();
@@ -78,7 +78,7 @@ async fn evaluate_kat(list: Vec<BatchedTokenTestVector>) {
         assert_eq!(serialize_public_key(public_key), vector.pk_s);
 
         // Client: Create client
-        let mut client = Client::new(public_key);
+        let client = Client::new(public_key);
 
         // Convert parameters
         let token_challenge =
@@ -148,7 +148,7 @@ async fn write_kat_batched_token() {
         let nonce_store = MemoryNonceStore::default();
 
         // Server: Create server
-        let mut server = Server::new();
+        let server = Server::new();
 
         // Server: Create a new keypair
         let mut seed = GenericArray::<_, <Ristretto255 as Group>::ScalarLen>::default();
@@ -169,7 +169,7 @@ async fn write_kat_batched_token() {
         let pk_s = serialize_public_key(public_key);
 
         // Client: Create client
-        let mut client = Client::new(public_key);
+        let client = Client::new(public_key);
 
         let redemption_context = if OsRng.next_u32() % 2 == 0 {
             let mut bytes = [0u8; 32];
