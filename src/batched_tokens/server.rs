@@ -55,7 +55,7 @@ pub enum RedeemTokenError {
 /// Minimal trait for a key store to store key material on the server-side. Note
 /// that the store requires inner mutability.
 #[async_trait]
-pub trait KeyStore: Send + Sync {
+pub trait BatchedKeyStore: Send + Sync {
     /// Inserts a keypair with a given `token_key_id` into the key store.
     async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<Ristretto255>);
     /// Returns a keypair with a given `token_key_id` from the key store.
@@ -78,35 +78,33 @@ pub fn deserialize_public_key(slice: &[u8]) -> Result<PublicKey, Error> {
 
 /// Server-side component of the batched token issuance protocol.
 #[derive(Default, Debug)]
-pub struct Server {
-    rng: OsRng,
-}
+pub struct Server {}
 
 impl Server {
     /// Create a new server. The new server does not contain any key material.
     #[must_use]
     pub const fn new() -> Self {
-        Self { rng: OsRng }
+        Self {}
     }
 
     /// Creates a new keypair and inserts it into the key store.
     ///
     /// # Errors
     /// Returns an error if the seed is too long.
-    pub async fn create_keypair<KS: KeyStore>(
-        &mut self,
-        key_store: &KS,
+    pub async fn create_keypair<BKS: BatchedKeyStore>(
+        &self,
+        key_store: &BKS,
     ) -> Result<PublicKey, CreateKeypairError> {
         let mut seed = GenericArray::<_, <Ristretto255 as Group>::ScalarLen>::default();
-        self.rng.fill_bytes(&mut seed);
+        OsRng.fill_bytes(&mut seed);
         self.create_keypair_internal(key_store, &seed, b"PrivacyPass")
             .await
     }
 
     /// Creates a new keypair and inserts it into the key store.
-    async fn create_keypair_internal<KS: KeyStore>(
-        &mut self,
-        key_store: &KS,
+    async fn create_keypair_internal<BKS: BatchedKeyStore>(
+        &self,
+        key_store: &BKS,
         seed: &[u8],
         info: &[u8],
     ) -> Result<PublicKey, CreateKeypairError> {
@@ -121,9 +119,9 @@ impl Server {
     /// Creates a new keypair with explicit parameters and inserts it into the
     /// key store.
     #[cfg(feature = "kat")]
-    pub async fn create_keypair_with_params<KS: KeyStore>(
-        &mut self,
-        key_store: &KS,
+    pub async fn create_keypair_with_params<BKS: BatchedKeyStore>(
+        &self,
+        key_store: &BKS,
         seed: &[u8],
         info: &[u8],
     ) -> Result<PublicKey, CreateKeypairError> {
@@ -134,9 +132,9 @@ impl Server {
     ///
     /// # Errors
     /// Returns an error if the token request is invalid.
-    pub async fn issue_token_response<KS: KeyStore>(
-        &mut self,
-        key_store: &KS,
+    pub async fn issue_token_response<BKS: BatchedKeyStore>(
+        &self,
+        key_store: &BKS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
         if token_request.token_type != TokenType::Batched {
@@ -159,7 +157,7 @@ impl Server {
             .batch_blind_evaluate_prepare(blinded_elements.iter())
             .collect::<Vec<_>>();
         let VoprfServerBatchEvaluateFinishResult { messages, proof } = server
-            .batch_blind_evaluate_finish(&mut self.rng, blinded_elements.iter(), &prepared_elements)
+            .batch_blind_evaluate_finish(&mut OsRng, blinded_elements.iter(), &prepared_elements)
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
         let evaluated_elements = messages
             .map(|m| EvaluatedElement {
@@ -177,9 +175,9 @@ impl Server {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<KS: KeyStore, NS: NonceStore>(
+    pub async fn redeem_token<BKS: BatchedKeyStore, NS: NonceStore>(
         &self,
-        key_store: &KS,
+        key_store: &BKS,
         nonce_store: &NS,
         token: BatchedToken,
     ) -> Result<(), RedeemTokenError> {
@@ -216,9 +214,9 @@ impl Server {
 
     /// Sets a keypair with a given `private_key` into the key store.
     #[cfg(feature = "kat")]
-    pub async fn set_key<KS: KeyStore>(
-        &mut self,
-        key_store: &KS,
+    pub async fn set_key<BKS: BatchedKeyStore>(
+        &self,
+        key_store: &BKS,
         private_key: &[u8],
     ) -> Result<PublicKey, CreateKeypairError> {
         let server = VoprfServer::<Ristretto255>::new_with_key(private_key)

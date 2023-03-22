@@ -57,7 +57,7 @@ pub enum RedeemTokenError {
 /// Minimal trait for a key store to store key material on the server-side. Note
 /// that the store requires inner mutability.
 #[async_trait]
-pub trait KeyStore: Send + Sync {
+pub trait PrivateKeyStore: Send + Sync {
     /// Inserts a keypair with a given `token_key_id` into the key store.
     async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP384>);
     /// Returns a keypair with a given `token_key_id` from the key store.
@@ -81,34 +81,32 @@ pub fn deserialize_public_key(slice: &[u8]) -> Result<PublicKey, Error> {
 
 /// Server side implementation of Privately Verifiable Token protocol.
 #[derive(Default, Debug)]
-pub struct Server {
-    rng: OsRng,
-}
+pub struct Server {}
 
 impl Server {
     /// Creates a new server.
     #[must_use]
     pub const fn new() -> Self {
-        Self { rng: OsRng }
+        Self {}
     }
 
     /// Creates a new keypair and inserts it into the key store.
     ///
     /// # Errors
     /// Returns an error if creating the keypair failed.
-    pub async fn create_keypair<KS: KeyStore>(
-        &mut self,
+    pub async fn create_keypair<KS: PrivateKeyStore>(
+        &self,
         key_store: &KS,
     ) -> Result<PublicKey, CreateKeypairError> {
         let mut seed = GenericArray::<_, <NistP384 as Group>::ScalarLen>::default();
-        self.rng.fill_bytes(&mut seed);
+        OsRng.fill_bytes(&mut seed);
         self.create_keypair_internal(key_store, &seed, b"PrivacyPass")
             .await
     }
 
     /// Creates a new keypair and inserts it into the key store.
-    async fn create_keypair_internal<KS: KeyStore>(
-        &mut self,
+    async fn create_keypair_internal<KS: PrivateKeyStore>(
+        &self,
         key_store: &KS,
         seed: &[u8],
         info: &[u8],
@@ -124,8 +122,8 @@ impl Server {
     /// Creates a new keypair with explicit parameters and inserts it into the
     /// key store.
     #[cfg(feature = "kat")]
-    pub async fn create_keypair_with_params<KS: KeyStore>(
-        &mut self,
+    pub async fn create_keypair_with_params<KS: PrivateKeyStore>(
+        &self,
         key_store: &KS,
         seed: &[u8],
         info: &[u8],
@@ -137,8 +135,8 @@ impl Server {
     ///
     /// # Errors
     /// Returns an error if the token request is invalid.
-    pub async fn issue_token_response<KS: KeyStore>(
-        &mut self,
+    pub async fn issue_token_response<KS: PrivateKeyStore>(
+        &self,
         key_store: &KS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
@@ -151,7 +149,7 @@ impl Server {
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
         let blinded_element = BlindedElement::<NistP384>::deserialize(&token_request.blinded_msg)
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
-        let evaluated_result = server.blind_evaluate(&mut self.rng, &blinded_element);
+        let evaluated_result = server.blind_evaluate(&mut OsRng, &blinded_element);
         let mut evaluate_proof = [0u8; NS + NS];
         evaluate_proof[..(NS + NS)].copy_from_slice(&evaluated_result.proof.serialize());
         Ok(TokenResponse {
@@ -164,8 +162,8 @@ impl Server {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<KS: KeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
-        &mut self,
+    pub async fn redeem_token<KS: PrivateKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
+        &self,
         key_store: &KS,
         nonce_store: &NS,
         token: Token<Nk>,
@@ -204,8 +202,8 @@ impl Server {
 
     /// Sets a keypair with a given `private_key` into the key store.
     #[cfg(feature = "kat")]
-    pub async fn set_key<KS: KeyStore>(
-        &mut self,
+    pub async fn set_key<KS: PrivateKeyStore>(
+        &self,
         key_store: &KS,
         private_key: &[u8],
     ) -> Result<PublicKey, CreateKeypairError> {

@@ -92,10 +92,10 @@ impl IssuerServer {
     ///
     /// # Errors
     /// Returns an error if creating the keypair fails.
-    pub async fn create_keypair<KS: IssuerKeyStore, R: RngCore + CryptoRng>(
+    pub async fn create_keypair<IKS: IssuerKeyStore, R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
-        key_store: &KS,
+        key_store: &IKS,
     ) -> Result<KeyPair, CreateKeypairError> {
         let key_pair =
             KeyPair::generate(rng, KEYSIZE_IN_BITS).map_err(|_| CreateKeypairError::SeedError)?;
@@ -108,9 +108,9 @@ impl IssuerServer {
     ///
     /// # Errors
     /// Returns an error if the token request is invalid.
-    pub async fn issue_token_response<KS: IssuerKeyStore>(
+    pub async fn issue_token_response<IKS: IssuerKeyStore>(
         &self,
-        key_store: &KS,
+        key_store: &IKS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
         let rng = &mut OsRng;
@@ -138,7 +138,7 @@ impl IssuerServer {
 
     /// Sets the given keypair.
     #[cfg(feature = "kat")]
-    pub async fn set_keypair<KS: IssuerKeyStore>(&self, key_store: &KS, key_pair: KeyPair) {
+    pub async fn set_keypair<IKS: IssuerKeyStore>(&self, key_store: &IKS, key_pair: KeyPair) {
         let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&key_pair.pk));
         key_store.insert(token_key_id, key_pair).await;
     }
@@ -159,9 +159,9 @@ impl OriginServer {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<KS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
+    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
         &self,
-        key_store: &KS,
+        key_store: &OKS,
         nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {

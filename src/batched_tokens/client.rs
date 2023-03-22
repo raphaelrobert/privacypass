@@ -44,7 +44,6 @@ pub enum IssueTokenError {
 /// The client side of the batched token issuance protocol.
 #[derive(Debug)]
 pub struct Client {
-    rng: OsRng,
     key_id: KeyId,
     public_key: PublicKey,
 }
@@ -55,11 +54,7 @@ impl Client {
     pub fn new(public_key: PublicKey) -> Self {
         let key_id = public_key_to_key_id(&public_key);
 
-        Self {
-            rng: OsRng,
-            key_id,
-            public_key,
-        }
+        Self { key_id, public_key }
     }
 
     /// Issue a token request.
@@ -67,14 +62,14 @@ impl Client {
     /// # Errors
     /// Returns an error if the token blinding fails.
     pub fn issue_token_request(
-        &mut self,
+        &self,
         challenge: &TokenChallenge,
         nr: u16,
     ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
         let mut nonces = Vec::with_capacity(nr as usize);
 
         for _ in 0..nr {
-            let nonce: Nonce = self.rng.gen();
+            let nonce: Nonce = OsRng.gen();
             nonces.push(nonce);
         }
 
@@ -83,7 +78,7 @@ impl Client {
 
     /// Issue a token request.
     fn issue_token_request_internal(
-        &mut self,
+        &self,
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
         _blinds: Option<Vec<<Ristretto255 as voprf::Group>::Scalar>>,
@@ -108,7 +103,7 @@ impl Client {
                 TokenInput::new(TokenType::Batched, nonce, challenge_digest, self.key_id);
 
             let blinded_element =
-                VoprfClient::<Ristretto255>::blind(&token_input.serialize(), &mut self.rng)
+                VoprfClient::<Ristretto255>::blind(&token_input.serialize(), &mut OsRng)
                     .map_err(|_| IssueTokenRequestError::BlindingError)?;
 
             #[cfg(feature = "kat")]
@@ -148,7 +143,7 @@ impl Client {
     #[cfg(feature = "kat")]
     /// Issue a token request.
     pub fn issue_token_request_with_params(
-        &mut self,
+        &self,
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
         blind: Vec<<Ristretto255 as voprf::Group>::Scalar>,

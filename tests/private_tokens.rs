@@ -15,13 +15,13 @@ async fn private_tokens_cycle() {
     let nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
-    let mut server = Server::new();
+    let server = Server::new();
 
     // Server: Create a new keypair
     let public_key = server.create_keypair(&key_store).await.unwrap();
 
     // Client: Create client
-    let mut client = Client::new(public_key);
+    let client = Client::new(public_key);
 
     // Generate a challenge
     let challenge = TokenChallenge::new(

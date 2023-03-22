@@ -31,7 +31,7 @@ pub struct MemoryKeyStore {
 }
 
 #[async_trait]
-impl KeyStore for MemoryKeyStore {
+impl PrivateKeyStore for MemoryKeyStore {
     async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP384>) {
         let mut keys = self.keys.lock().await;
         keys.insert(token_key_id, server);
