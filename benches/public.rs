@@ -1,4 +1,4 @@
-use privacypass::public_tokens::server::OriginKeyStore;
+use privacypass::public_tokens::{public_key_to_token_key_id, server::OriginKeyStore};
 #[path = "../tests/public_memory_stores.rs"]
 mod public_memory_stores;
 
@@ -163,9 +163,15 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                         .create_keypair(rng, &issuer_key_store)
                         .await
                         .unwrap();
-                    origin_key_store.insert(1, key_pair.pk.clone()).await;
+                    origin_key_store
+                        .insert(
+                            public_key_to_token_key_id(&key_pair.pk),
+                            key_pair.pk.clone(),
+                        )
+                        .await;
                     key_pair
                 });
+
                 let mut client = privacypass::public_tokens::client::Client::new(key_pair.pk);
 
                 let token_challenge = TokenChallenge::new(

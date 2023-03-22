@@ -69,36 +69,67 @@ impl Client {
     pub fn issue_token_request(
         &mut self,
         challenge: &TokenChallenge,
-        nr: usize,
+        nr: u16,
+    ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
+        let mut nonces = Vec::with_capacity(nr as usize);
+
+        for _ in 0..nr {
+            let nonce: Nonce = self.rng.gen();
+            nonces.push(nonce);
+        }
+
+        self.issue_token_request_internal(challenge, nonces, None)
+    }
+
+    /// Issue a token request.
+    fn issue_token_request_internal(
+        &mut self,
+        challenge: &TokenChallenge,
+        nonces: Vec<Nonce>,
+        _blinds: Option<Vec<<Ristretto255 as voprf::Group>::Scalar>>,
     ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
         let challenge_digest = challenge
             .digest()
             .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
+
         let mut blinded_elements = Vec::new();
         let mut token_states = Vec::new();
 
-        for _ in 0..nr {
+        #[cfg(feature = "kat")]
+        let mut blinds_iter = _blinds.iter().flatten();
+
+        for nonce in nonces {
             // nonce = random(32)
             // challenge_digest = SHA256(challenge)
             // token_input = concat(0xF91A, nonce, challenge_digest, key_id)
             // blind, blinded_element = client_context.Blind(token_input)
 
-            let nonce: Nonce = self.rng.gen();
-
             let token_input =
                 TokenInput::new(TokenType::Batched, nonce, challenge_digest, self.key_id);
 
-            let blind = VoprfClient::<Ristretto255>::blind(&token_input.serialize(), &mut self.rng)
-                .map_err(|_| IssueTokenRequestError::BlindingError)?;
+            let blinded_element =
+                VoprfClient::<Ristretto255>::blind(&token_input.serialize(), &mut self.rng)
+                    .map_err(|_| IssueTokenRequestError::BlindingError)?;
+
+            #[cfg(feature = "kat")]
+            let blinded_element = if _blinds.is_some() {
+                VoprfClient::<Ristretto255>::deterministic_blind_unchecked(
+                    &token_input.serialize(),
+                    *blinds_iter.next().unwrap(),
+                )
+                .map_err(|_| IssueTokenRequestError::BlindingError)?
+            } else {
+                blinded_element
+            };
 
             let token_state = TokenState {
-                client: blind.state,
+                client: blinded_element.state,
                 token_input,
                 challenge_digest,
             };
 
             let blinded_element = BlindedElement {
-                blinded_element: blind.message.serialize().into(),
+                blinded_element: blinded_element.message.serialize().into(),
             };
 
             blinded_elements.push(blinded_element);
@@ -114,11 +145,22 @@ impl Client {
         Ok((token_request, token_states))
     }
 
+    #[cfg(feature = "kat")]
+    /// Issue a token request.
+    pub fn issue_token_request_with_params(
+        &mut self,
+        challenge: &TokenChallenge,
+        nonces: Vec<Nonce>,
+        blind: Vec<<Ristretto255 as voprf::Group>::Scalar>,
+    ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
+        self.issue_token_request_internal(challenge, nonces, Some(blind))
+    }
+
     /// Issue a token.
     ///
     /// # Errors
     /// Returns an error if the token response is invalid.
-    pub fn issue_token(
+    pub fn issue_tokens(
         &self,
         token_response: &TokenResponse,
         token_states: &[TokenState],
@@ -138,7 +180,6 @@ impl Client {
             &token_states
                 .iter()
                 .map(|token_state| token_state.token_input.serialize())
-                .into_iter()
                 .collect::<Vec<_>>(),
             &token_states
                 .iter()

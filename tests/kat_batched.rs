@@ -1,4 +1,4 @@
-mod private_memory_stores;
+mod batched_memory_stores;
 
 use std::{fs::File, io::Write};
 
@@ -6,46 +6,64 @@ use generic_array::GenericArray;
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use p384::{elliptic_curve::Field, NistP384};
-use private_memory_stores::*;
+use batched_memory_stores::*;
 use tls_codec::Serialize as TlsSerializeTrait;
-use voprf::{derive_key, Group, Mode};
+use voprf::{derive_key, Group, Mode, Ristretto255};
 
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    private_tokens::{client::*, server::*, NE},
+    batched_tokens::{client::*, server::*, NE},
 };
 
 #[derive(Serialize, Deserialize)]
-struct PrivateTokenTestVector {
+struct BatchedTokenTestVector {
     #[serde(with = "hex", alias = "skS")]
     sk_s: Vec<u8>,
     #[serde(with = "hex", alias = "pkS")]
     pk_s: Vec<u8>,
     #[serde(with = "hex")]
     token_challenge: Vec<u8>,
-    #[serde(with = "hex")]
-    nonce: Vec<u8>,
-    #[serde(with = "hex")]
-    blind: Vec<u8>,
+    nonces: Vec<HexNonce>,
+    blinds: Vec<HexBlind>,
     #[serde(with = "hex")]
     token_request: Vec<u8>,
     #[serde(with = "hex")]
     token_response: Vec<u8>,
-    #[serde(with = "hex")]
-    token: Vec<u8>,
+    tokens: Vec<HexToken>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct HexNonce(#[serde(with = "hex")] Vec<u8>);
+
+#[derive(Serialize, Deserialize)]
+struct HexBlind(#[serde(with = "hex")] Vec<u8>);
+
+#[derive(Serialize, Deserialize)]
+struct HexToken(#[serde(with = "hex")] Vec<u8>);
+
 #[tokio::test]
-async fn read_kat_private_token() {
-    let list: Vec<PrivateTokenTestVector> =
-        serde_json::from_str(include_str!("kat_vectors/private_vectors.json").trim()).unwrap();
+async fn read_kat_batched_token() {
+    // Check own KAT vectors
+    let list: Vec<BatchedTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/batched_vectors_privacypass.json").trim())
+            .unwrap();
+
+    evaluate_kat(list).await;
+
+    // Check KAT vectors from the Go implementation
+    let list: Vec<BatchedTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/batched_vectors_go.json").trim()).unwrap();
 
     evaluate_kat(list).await;
 }
 
-async fn evaluate_kat(list: Vec<PrivateTokenTestVector>) {
+async fn evaluate_kat(list: Vec<BatchedTokenTestVector>) {
     for (_, vector) in list.iter().enumerate() {
+        // Make sure we have the same amount of nonces and blinds
+        assert_eq!(vector.blinds.len(), vector.nonces.len());
+
+        let nr = vector.blinds.len();
+
         // Server: Instantiate in-memory keystore and nonce store.
         let key_store = MemoryKeyStore::default();
         let nonce_store = MemoryNonceStore::default();
@@ -66,12 +84,20 @@ async fn evaluate_kat(list: Vec<PrivateTokenTestVector>) {
         let token_challenge =
             TokenChallenge::deserialize(vector.token_challenge.as_slice()).unwrap();
         let challenge_digest: [u8; 32] = token_challenge.digest().unwrap();
-        let nonce: [u8; 32] = <[u8; 32]>::try_from(vector.nonce.as_ref()).unwrap();
-        let blind = NistP384::deserialize_scalar(&vector.blind).unwrap();
+        let nonces: Vec<[u8; 32]> = vector
+            .nonces
+            .iter()
+            .map(|nonce| <[u8; 32]>::try_from(nonce.0.clone()).unwrap())
+            .collect();
+        let blinds = vector
+            .blinds
+            .iter()
+            .map(|blind| Ristretto255::deserialize_scalar(&blind.0).unwrap())
+            .collect();
 
         // Client: Prepare a TokenRequest after having received a challenge
-        let (token_request, token_state) = client
-            .issue_token_request_with_params(&token_challenge, nonce, blind)
+        let (token_request, token_states) = client
+            .issue_token_request_with_params(&token_challenge, nonces, blinds)
             .unwrap();
 
         // KAT: Check token request
@@ -93,25 +119,28 @@ async fn evaluate_kat(list: Vec<PrivateTokenTestVector>) {
         );
 
         // Client: Turn the TokenResponse into a Token
-        let token = client.issue_token(&token_response, &token_state).unwrap();
+        let tokens = client.issue_tokens(&token_response, &token_states).unwrap();
 
         // Server: Compare the challenge digest
-        assert_eq!(token.challenge_digest(), &challenge_digest);
+        for (i, token) in tokens.iter().enumerate().take(nr) {
+            assert_eq!(token.challenge_digest(), &challenge_digest);
 
-        // Server: Redeem the token
-        assert!(server
-            .redeem_token(&key_store, &nonce_store, token.clone())
-            .await
-            .is_ok());
+            // Server: Redeem the token
+            assert!(server
+                .redeem_token(&key_store, &nonce_store, token.clone())
+                .await
+                .is_ok());
 
-        // KAT: Check token
-        assert_eq!(token.tls_serialize_detached().unwrap(), vector.token);
+            // KAT: Check token
+            assert_eq!(token.tls_serialize_detached().unwrap(), vector.tokens[i].0);
+        }
     }
 }
 
 #[tokio::test]
-async fn write_kat_private_token() {
-    let mut elements = Vec::new();
+async fn write_kat_batched_token() {
+    let nr = 5u16;
+    let mut elements = Vec::with_capacity(nr as usize);
 
     for _ in 0..5 {
         // Server: Instantiate in-memory keystore and nonce store.
@@ -122,7 +151,7 @@ async fn write_kat_private_token() {
         let mut server = Server::new();
 
         // Server: Create a new keypair
-        let mut seed = GenericArray::<_, <NistP384 as Group>::ScalarLen>::default();
+        let mut seed = GenericArray::<_, <Ristretto255 as Group>::ScalarLen>::default();
         OsRng.fill_bytes(&mut seed);
 
         let info = b"PrivacyPass";
@@ -132,7 +161,7 @@ async fn write_kat_private_token() {
             .await
             .unwrap();
 
-        let sk_s = derive_key::<NistP384>(&seed, info, Mode::Voprf)
+        let sk_s = derive_key::<Ristretto255>(&seed, info, Mode::Voprf)
             .unwrap()
             .to_bytes()
             .to_vec();
@@ -151,7 +180,7 @@ async fn write_kat_private_token() {
         };
 
         let kat_token_challenge = TokenChallenge::new(
-            privacypass::TokenType::Private,
+            privacypass::TokenType::Batched,
             "Issuer Name",
             redemption_context,
             &["a".to_string(), "b".to_string(), "c".to_string()],
@@ -162,17 +191,31 @@ async fn write_kat_private_token() {
 
         let challenge_digest: [u8; 32] = kat_token_challenge.digest().unwrap();
 
-        let mut kat_nonce = [0u8; 32];
-        OsRng.fill_bytes(&mut kat_nonce);
-        let nonce = kat_nonce.to_vec();
+        let mut kat_nonces = Vec::with_capacity(nr as usize);
 
-        let kat_blind = <NistP384 as Group>::Scalar::random(&mut OsRng);
+        for _ in 0..nr {
+            let mut nonce = [0u8; 32];
+            OsRng.fill_bytes(&mut nonce);
+            kat_nonces.push(nonce);
+        }
 
-        let blind = kat_blind.to_bytes().to_vec();
+        let nonces = kat_nonces
+            .iter()
+            .map(|nonce| HexNonce(nonce.clone().to_vec()))
+            .collect();
+
+        let kat_blinds = (0..nr)
+            .map(|_| <Ristretto255 as Group>::Scalar::random(&mut OsRng))
+            .collect::<Vec<_>>();
+
+        let blinds = kat_blinds
+            .iter()
+            .map(|blind| HexBlind(blind.to_bytes().to_vec()))
+            .collect::<Vec<_>>();
 
         // Client: Prepare a TokenRequest after having received a challenge
-        let (kat_token_request, token_state) = client
-            .issue_token_request_with_params(&kat_token_challenge, kat_nonce, kat_blind)
+        let (kat_token_request, token_states) = client
+            .issue_token_request_with_params(&kat_token_challenge, kat_nonces, kat_blinds)
             .unwrap();
 
         let token_request = kat_token_request.tls_serialize_detached().unwrap();
@@ -186,30 +229,34 @@ async fn write_kat_private_token() {
         let token_response = kat_token_response.tls_serialize_detached().unwrap();
 
         // Client: Turn the TokenResponse into a Token
-        let kat_token = client
-            .issue_token(&kat_token_response, &token_state)
+        let kat_tokens = client
+            .issue_tokens(&kat_token_response, &token_states)
             .unwrap();
 
-        let token = kat_token.tls_serialize_detached().unwrap();
+        for token in kat_tokens.iter().take(nr as usize) {
+            assert_eq!(token.challenge_digest(), &challenge_digest);
 
-        // Server: Compare the challenge digest
-        assert_eq!(kat_token.challenge_digest(), &challenge_digest);
+            // Server: Redeem the token
+            assert!(server
+                .redeem_token(&key_store, &nonce_store, token.clone())
+                .await
+                .is_ok());
+        }
 
-        // Server: Redeem the token
-        assert!(server
-            .redeem_token(&key_store, &nonce_store, kat_token.clone())
-            .await
-            .is_ok());
+        let tokens = kat_tokens
+            .into_iter()
+            .map(|token| HexToken(token.tls_serialize_detached().unwrap()))
+            .collect::<Vec<_>>();
 
-        let vector = PrivateTokenTestVector {
+        let vector = BatchedTokenTestVector {
             sk_s,
             pk_s,
             token_challenge,
-            nonce,
-            blind,
+            nonces,
+            blinds,
             token_request,
             token_response,
-            token,
+            tokens,
         };
 
         elements.push(vector);
@@ -219,6 +266,6 @@ async fn write_kat_private_token() {
 
     evaluate_kat(elements).await;
 
-    let mut file = File::create("tests/kat_vectors/private_vectors_privacypass-new.json").unwrap();
+    let mut file = File::create("tests/kat_vectors/batched_vectors_privacypass-new.json").unwrap();
     file.write_all(data.as_bytes()).unwrap();
 }

@@ -14,14 +14,14 @@ async fn batched_tokens_cycle() {
     let nr = 100;
 
     // Server: Instantiate in-memory keystore and nonce store.
-    let mut key_store = MemoryKeyStore::default();
+    let key_store = MemoryKeyStore::default();
     let nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
     let mut server = Server::new();
 
     // Server: Create a new keypair
-    let public_key = server.create_keypair(&mut key_store).await.unwrap();
+    let public_key = server.create_keypair(&key_store).await.unwrap();
 
     // Client: Create client
     let mut client = Client::new(public_key);
@@ -44,7 +44,7 @@ async fn batched_tokens_cycle() {
         .unwrap();
 
     // Client: Turn the TokenResponse into a Token
-    let tokens = client.issue_token(&token_response, &token_states).unwrap();
+    let tokens = client.issue_tokens(&token_response, &token_states).unwrap();
 
     // Server: Compare the challenge digest
     for token in &tokens {

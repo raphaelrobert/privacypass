@@ -39,7 +39,9 @@ pub(crate) fn is_alpha_or_dash(c: char) -> bool {
 }
 
 pub(crate) fn surrounded_by_alphanumeric(input: &str) -> bool {
-    if input.starts_with("-") || input.ends_with("-") {
+    let dash = '-';
+
+    if input.starts_with(dash) || input.ends_with(dash) {
         return false;
     }
 
