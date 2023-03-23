@@ -4,9 +4,9 @@ pub mod client;
 pub mod server;
 
 use sha2::{Digest, Sha256};
-use std::io::Write;
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize, Size, TlsVecU16};
+use tls_codec::{Deserialize, TlsVecU16};
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use typenum::U64;
 pub use voprf::*;
 
@@ -51,8 +51,7 @@ pub enum SerializationError {
 ///     uint8_t blinded_element[Ne];
 /// } BlindedElement;
 /// ```
-
-#[derive(Debug)]
+#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct BlindedElement {
     blinded_element: [u8; NE],
 }
@@ -66,8 +65,7 @@ pub struct BlindedElement {
 ///     BlindedElement blinded_element[Nr];
 /// } TokenRequest;
 /// ```
-
-#[derive(Debug)]
+#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct TokenRequest {
     token_type: TokenType,
     token_key_id: TokenKeyId,
@@ -90,7 +88,7 @@ impl TokenRequest {
 /// } EvaluatedElement;
 /// ```
 
-#[derive(Debug)]
+#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct EvaluatedElement {
     evaluated_element: [u8; NE],
 }
@@ -103,7 +101,7 @@ pub struct EvaluatedElement {
 ///     uint8_t evaluated_proof[Ns + Ns];
 ///  } TokenResponse;
 /// ```
-#[derive(Debug)]
+#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct TokenResponse {
     evaluated_elements: TlsVecU16<EvaluatedElement>,
     evaluated_proof: [u8; NS + NS],
@@ -118,138 +116,5 @@ impl TokenResponse {
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, SerializationError> {
         let mut bytes = bytes;
         Self::tls_deserialize(&mut bytes).map_err(|_| SerializationError::InvalidData)
-    }
-}
-
-// === TLS codecs ===
-
-impl Size for BlindedElement {
-    fn tls_serialized_len(&self) -> usize {
-        NE
-    }
-}
-
-impl Serialize for BlindedElement {
-    fn tls_serialize<W: Write>(
-        &self,
-        writer: &mut W,
-    ) -> std::result::Result<usize, tls_codec::Error> {
-        Ok(writer.write(&self.blinded_element)?)
-    }
-}
-
-impl Deserialize for BlindedElement {
-    fn tls_deserialize<R: std::io::Read>(
-        bytes: &mut R,
-    ) -> std::result::Result<Self, tls_codec::Error>
-    where
-        Self: Sized,
-    {
-        let mut blinded_element = [0u8; NE];
-        bytes.read_exact(&mut blinded_element)?;
-        Ok(Self { blinded_element })
-    }
-}
-
-impl Size for EvaluatedElement {
-    fn tls_serialized_len(&self) -> usize {
-        NE
-    }
-}
-
-impl Serialize for EvaluatedElement {
-    fn tls_serialize<W: Write>(
-        &self,
-        writer: &mut W,
-    ) -> std::result::Result<usize, tls_codec::Error> {
-        Ok(writer.write(&self.evaluated_element)?)
-    }
-}
-
-impl Deserialize for EvaluatedElement {
-    fn tls_deserialize<R: std::io::Read>(
-        bytes: &mut R,
-    ) -> std::result::Result<Self, tls_codec::Error>
-    where
-        Self: Sized,
-    {
-        let mut evaluated_element = [0u8; NE];
-        bytes.read_exact(&mut evaluated_element)?;
-        Ok(Self { evaluated_element })
-    }
-}
-
-impl Size for TokenRequest {
-    fn tls_serialized_len(&self) -> usize {
-        self.token_type.tls_serialized_len()
-            + self.token_key_id.tls_serialized_len()
-            + self
-                .blinded_elements
-                .iter()
-                .map(tls_codec::Size::tls_serialized_len)
-                .sum::<usize>()
-    }
-}
-
-impl Serialize for TokenRequest {
-    fn tls_serialize<W: Write>(
-        &self,
-        writer: &mut W,
-    ) -> std::result::Result<usize, tls_codec::Error> {
-        Ok(self.token_type.tls_serialize(writer)?
-            + self.token_key_id.tls_serialize(writer)?
-            + self.blinded_elements.tls_serialize(writer)?)
-    }
-}
-
-impl Deserialize for TokenRequest {
-    fn tls_deserialize<R: std::io::Read>(
-        bytes: &mut R,
-    ) -> std::result::Result<Self, tls_codec::Error>
-    where
-        Self: Sized,
-    {
-        let token_type = TokenType::tls_deserialize(bytes)?;
-        let token_key_id = TokenKeyId::tls_deserialize(bytes)?;
-        let blinded_elements = TlsVecU16::tls_deserialize(bytes)?;
-
-        Ok(Self {
-            token_type,
-            token_key_id,
-            blinded_elements,
-        })
-    }
-}
-
-impl Size for TokenResponse {
-    fn tls_serialized_len(&self) -> usize {
-        self.evaluated_elements.tls_serialized_len() + self.evaluated_proof.tls_serialized_len()
-    }
-}
-
-impl Serialize for TokenResponse {
-    fn tls_serialize<W: Write>(
-        &self,
-        writer: &mut W,
-    ) -> std::result::Result<usize, tls_codec::Error> {
-        Ok(self.evaluated_elements.tls_serialize(writer)?
-            + self.evaluated_proof.tls_serialize(writer)?)
-    }
-}
-
-impl Deserialize for TokenResponse {
-    fn tls_deserialize<R: std::io::Read>(
-        bytes: &mut R,
-    ) -> std::result::Result<Self, tls_codec::Error>
-    where
-        Self: Sized,
-    {
-        let evaluated_elements = TlsVecU16::tls_deserialize(bytes)?;
-        let mut evaluated_proof = [0u8; NS + NS];
-        bytes.read_exact(&mut evaluated_proof)?;
-        Ok(Self {
-            evaluated_elements,
-            evaluated_proof,
-        })
     }
 }

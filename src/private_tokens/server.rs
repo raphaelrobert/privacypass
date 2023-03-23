@@ -8,15 +8,11 @@ use rand::{rngs::OsRng, RngCore};
 use thiserror::Error;
 use voprf::{BlindedElement, Error, Group, Result, VoprfServer};
 
-use crate::TokenInput;
-use crate::{auth::authorize::Token, NonceStore, TokenKeyId, TokenType};
+use crate::{auth::authorize::Token, NonceStore, TokenInput, TokenKeyId, TokenType};
 
-use super::key_id_to_token_key_id;
-use super::public_key_to_key_id;
-use super::PublicKey;
-use super::NK;
-use super::NS;
-use super::{TokenRequest, TokenResponse};
+use super::{
+    key_id_to_token_key_id, public_key_to_key_id, PublicKey, TokenRequest, TokenResponse, NK, NS,
+};
 
 /// Errors that can occur when creating a keypair.
 #[derive(Error, Debug, PartialEq, Eq)]

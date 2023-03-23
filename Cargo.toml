@@ -15,17 +15,17 @@ async-trait = "0.1.56"
 base64 = "0.21.0"
 generic-array = "0.14.5"
 rand = "0.8.5"
-serde = "1.0.138"
+serde = "1"
 sha2 = "0.10.2"
-thiserror = "1.0.31"
-tls_codec = "0.2.0"
+thiserror = "1"
+tls_codec = "0.3.0-pre.1"
+tls_codec_derive = "0.3.0-pre.1"
 voprf = "0.5.0-pre.3"
 p384 = { version = "0.13.0", default-features = false, features = [
   "hash2curve",
   "voprf",
 ] }
 blind-rsa-signatures = "0.15.0"
-tls_codec_derive = "0.2.0"
 http = "0.2.8"
 typenum = "1.15.0"
 nom = "7"
