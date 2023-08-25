@@ -7,7 +7,13 @@ license = "MIT"
 documentation = "https://docs.rs/privacypass"
 repository = "https://github.com/raphaelrobert/privacypass"
 readme = "README.md"
-keywords = ["privacy pass", "privacypass", "privacy", "pass", "ietf privacypass"]
+keywords = [
+  "privacy pass",
+  "privacypass",
+  "privacy",
+  "pass",
+  "ietf privacypass",
+]
 categories = ["cryptography", "privacy"]
 
 [dependencies]
@@ -18,9 +24,9 @@ rand = "0.8.5"
 serde = "1"
 sha2 = "0.10.2"
 thiserror = "1"
-tls_codec = "0.3.0-pre.1"
-tls_codec_derive = "0.3.0-pre.1"
-voprf = "0.5.0-pre.3"
+tls_codec = "0.3.0"
+tls_codec_derive = "0.3.0"
+voprf = "0.5.0-pre.6"
 p384 = { version = "0.13.0", default-features = false, features = [
   "hash2curve",
   "voprf",
@@ -37,8 +43,8 @@ kat = ["voprf/danger"]
 [dev-dependencies]
 privacypass = { path = ".", features = ["kat"] }
 tokio = { version = "1.20.0", features = ["full"] }
-criterion = { version = "0.4.0", features = ["async_futures", "async_tokio"] }
-hex = { version = "0.4.3", features = ["serde"]}
+criterion = { version = "0.5.0", features = ["async_futures", "async_tokio"] }
+hex = { version = "0.4.3", features = ["serde"] }
 serde_json = "1.0"
 
 [[bench]]
@@ -46,4 +52,4 @@ name = "benchmark"
 harness = false
 
 [patch.crates-io]
-voprf = { git = "https://github.com/facebook/voprf",  branch = "main"  }
+voprf = { git = "https://github.com/facebook/voprf", branch = "main" }
