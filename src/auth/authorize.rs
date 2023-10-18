@@ -1,7 +1,7 @@
 //! This module contains the authorization logic for redemption phase of the
 //! protocol.
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use generic_array::{ArrayLength, GenericArray};
 use http::{header::HeaderName, HeaderValue};
 use nom::{
@@ -137,7 +137,7 @@ pub fn build_authorization_header<Nk: ArrayLength<u8>>(
 ) -> Result<(HeaderName, HeaderValue), BuildError> {
     let value = format!(
         "PrivateToken token={}",
-        STANDARD.encode(
+        URL_SAFE.encode(
             token
                 .tls_serialize_detached()
                 .map_err(|_| BuildError::InvalidToken)?
@@ -238,7 +238,7 @@ fn parse_header_value<Nk: ArrayLength<u8>>(input: &str) -> Result<Vec<Token<Nk>>
         .into_iter()
         .map(|token_value| {
             Token::tls_deserialize(
-                &mut STANDARD
+                &mut URL_SAFE
                     .decode(token_value)
                     .map_err(|_| ParseError::InvalidToken)?
                     .as_slice(),
