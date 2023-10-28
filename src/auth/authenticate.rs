@@ -1,7 +1,7 @@
 //! This module contains the authentication logic for the challenge phase of the
 //! protocol.
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use http::{header::HeaderName, HeaderValue};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -81,7 +81,7 @@ impl TokenChallenge {
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be serialized.
     pub fn to_base64(&self) -> Result<String, SerializationError> {
-        Ok(STANDARD.encode(self.serialize()?))
+        Ok(URL_SAFE.encode(self.serialize()?))
     }
 
     /// Deserializes a `TokenChallenge` from a base64 encoded string.
@@ -89,7 +89,7 @@ impl TokenChallenge {
     /// # Errors
     /// Returns an error if the `TokenChallenge` cannot be deserialized.
     pub fn from_base64(s: &str) -> Result<Self, SerializationError> {
-        STANDARD
+        URL_SAFE
             .decode(s)
             .map_err(|_| SerializationError::InvalidTokenChallenge)
             .and_then(|data| Self::deserialize(&data))
@@ -129,7 +129,7 @@ pub fn build_www_authenticate_header(
     let challenge_value = token_challenge
         .to_base64()
         .map_err(|_| BuildError::InvalidTokenChallenge)?;
-    let token_key_value = STANDARD.encode(token_key);
+    let token_key_value = URL_SAFE.encode(token_key);
     let max_age_string =
         max_age.map_or_else(|| "".to_string(), |max_age| format!(", max-age={max_age}"));
 
@@ -235,7 +235,7 @@ fn parse_private_token(input: &str) -> IResult<&str, Challenge> {
         let err = nom::Err::Failure(nom::error::make_error(input, nom::error::ErrorKind::Tag));
         match key.to_lowercase().as_str() {
             "challenge" => challenge = Some(TokenChallenge::from_base64(value).map_err(|_| err)?),
-            "token-key" => token_key = Some(STANDARD.decode(value).map_err(|_| err)?),
+            "token-key" => token_key = Some(URL_SAFE.decode(value).map_err(|_| err)?),
             "max-age" => {
                 let parsed_max_age = parse_u32(value).map_err(|_| err)?;
                 max_age = Some(parsed_max_age);
@@ -279,7 +279,7 @@ fn builder_test() {
     let expected_value = format!(
         "PrivateToken challenge={}, token-key={}, max-age={}",
         serialized_token_challenge,
-        STANDARD.encode(&token_key),
+        URL_SAFE.encode(&token_key),
         max_age
     );
     assert_eq!(header_name, http::header::WWW_AUTHENTICATE);
@@ -308,9 +308,9 @@ fn parser_test() {
     let input = HeaderValue::from_str(&format!(
             "PrivateToken challenge={}, token-key={}, max-age=10, PrivateToken challenge={}, token-key={}", 
             challenge1.to_base64().unwrap(),
-            STANDARD.encode(&token_key1),
+            URL_SAFE.encode(&token_key1),
             challenge2.to_base64().unwrap(),
-            STANDARD.encode(&token_key2)))
+            URL_SAFE.encode(&token_key2)))
         .unwrap();
 
     let (_, challenge_list) = parse_private_tokens(input.to_str().unwrap()).unwrap();
