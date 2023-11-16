@@ -20,6 +20,7 @@ categories = ["cryptography", "privacy"]
 async-trait = "0.1.56"
 base64 = "0.21.0"
 generic-array = "0.14.5"
+hkdf = "0.12.3"
 rand = "0.8.5"
 serde = "1"
 sha2 = "0.10.2"
@@ -32,6 +33,7 @@ p384 = { version = "0.13.0", default-features = false, features = [
   "voprf",
 ] }
 blind-rsa-signatures = "0.15.0"
+num-bigint-dig = "0.8"
 http = "0.2.8"
 typenum = "1.15.0"
 nom = "7"
