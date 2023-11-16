@@ -148,6 +148,30 @@ pub fn build_authorization_header<Nk: ArrayLength<u8>>(
     Ok((header_name, header_value))
 }
 
+/// Builds a `Authorize` header according to the following scheme:
+///
+/// `PrivateToken token=...,extensions=...`
+///
+/// # Errors
+/// Returns an error if the token is not valid.
+pub fn build_authorization_header_ext<Nk: ArrayLength<u8>>(
+    token: &Token<Nk>,
+    extensions: &[u8],
+) -> Result<(HeaderName, HeaderValue), BuildError> {
+    let value = format!(
+        "PrivateToken token={},extensions={}",
+        URL_SAFE.encode(
+            token
+                .tls_serialize_detached()
+                .map_err(|_| BuildError::InvalidToken)?
+        ),
+        URL_SAFE.encode(extensions),
+    );
+    let header_name = http::header::AUTHORIZATION;
+    let header_value = HeaderValue::from_str(&value).map_err(|_| BuildError::InvalidToken)?;
+    Ok((header_name, header_value))
+}
+
 /// Building error for the `Authorization` header values
 #[derive(Error, Debug)]
 pub enum BuildError {
@@ -167,8 +191,22 @@ pub fn parse_authorization_header<Nk: ArrayLength<u8>>(
 ) -> Result<Token<Nk>, ParseError> {
     let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
     let tokens = parse_header_value(s)?;
-    let token = tokens[0].clone();
+    let token = tokens[0].0.clone();
     Ok(token)
+}
+
+/// Parses an `Authorization` header according to the following scheme:
+///
+/// `PrivateToken token=... [extensions=...]`
+///
+/// # Errors
+/// Returns an error if the header value is not valid.
+pub fn parse_authorization_header_ext<Nk: ArrayLength<u8>>(
+    value: &HeaderValue,
+) -> Result<(Token<Nk>, Option<Vec<u8>>), ParseError> {
+    let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
+    let mut tokens = parse_header_value(s)?;
+    Ok(tokens.pop().unwrap())
 }
 
 /// Parsing error for the `WWW-Authenticate` header values
@@ -189,7 +227,7 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
     let (input, _) = tag("=")(input)?;
     let (input, _) = opt_spaces(input)?;
     let (input, value) = match key.to_lowercase().as_str() {
-        "token" => base64_char(input)?,
+        "token" | "extensions" => base64_char(input)?,
         _ => {
             return Err(nom::Err::Failure(nom::error::make_error(
                 input,
@@ -200,13 +238,14 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
     Ok((input, (key, value)))
 }
 
-fn parse_private_token(input: &str) -> IResult<&str, &str> {
+fn parse_private_token(input: &str) -> IResult<&str, (&str, Option<&str>)> {
     let (input, _) = opt_spaces(input)?;
     let (input, _) = tag_no_case("PrivateToken")(input)?;
     let (input, _) = many1(space)(input)?;
     let (input, key_values) = separated_list1(tag(","), parse_key_value)(input)?;
 
     let mut token = None;
+    let mut extensions = None;
     let err = nom::Err::Failure(nom::error::make_error(input, nom::error::ErrorKind::Tag));
 
     for (key, value) in key_values {
@@ -217,33 +256,45 @@ fn parse_private_token(input: &str) -> IResult<&str, &str> {
                 }
                 token = Some(value)
             }
+            "extensions" => {
+                if extensions.is_some() {
+                    return Err(err);
+                }
+                extensions = Some(value)
+            }
             _ => return Err(err),
         }
     }
     let token = token.ok_or(err)?;
 
-    Ok((input, token))
+    Ok((input, (token, extensions)))
 }
 
-fn parse_private_tokens(input: &str) -> IResult<&str, Vec<&str>> {
+fn parse_private_tokens(input: &str) -> IResult<&str, Vec<(&str, Option<&str>)>> {
     separated_list1(tag(","), parse_private_token)(input)
 }
 
-fn parse_header_value<Nk: ArrayLength<u8>>(input: &str) -> Result<Vec<Token<Nk>>, ParseError> {
+fn parse_header_value<Nk: ArrayLength<u8>>(
+    input: &str,
+) -> Result<Vec<(Token<Nk>, Option<Vec<u8>>)>, ParseError> {
     let (output, tokens) = parse_private_tokens(input).map_err(|_| ParseError::InvalidInput)?;
     if !output.is_empty() {
         return Err(ParseError::InvalidInput);
     }
     let tokens = tokens
         .into_iter()
-        .map(|token_value| {
-            Token::tls_deserialize(
-                &mut URL_SAFE
-                    .decode(token_value)
-                    .map_err(|_| ParseError::InvalidToken)?
-                    .as_slice(),
-            )
-            .map_err(|_| ParseError::InvalidToken)
+        .map(|(token_value, extensions_value)| {
+            let ext = extensions_value.and_then(|x| URL_SAFE.decode(x).ok());
+            Ok((
+                Token::tls_deserialize(
+                    &mut URL_SAFE
+                        .decode(token_value)
+                        .map_err(|_| ParseError::InvalidToken)?
+                        .as_slice(),
+                )
+                .map_err(|_| ParseError::InvalidToken)?,
+                ext,
+            ))
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(tokens)
@@ -274,4 +325,33 @@ fn builder_parser_test() {
     assert_eq!(token.challenge_digest(), &challenge_digest);
     assert_eq!(token.token_key_id(), &token_key_id);
     assert_eq!(token.authenticator(), &authenticator);
+}
+
+#[test]
+fn builder_parser_extensions_test() {
+    use generic_array::typenum::U32;
+
+    let nonce = [1u8; 32];
+    let challenge_digest = [2u8; 32];
+    let token_key_id = [3u8; 32];
+    let authenticator = [4u8; 32];
+    let token = Token::<U32>::new(
+        TokenType::Private,
+        nonce,
+        challenge_digest,
+        token_key_id,
+        GenericArray::clone_from_slice(&authenticator),
+    );
+    let extensions = b"hello world";
+    let (header_name, header_value) = build_authorization_header_ext(&token, extensions).unwrap();
+
+    assert_eq!(header_name, http::header::AUTHORIZATION);
+
+    let (token, maybe_extensions) = parse_authorization_header_ext::<U32>(&header_value).unwrap();
+    assert_eq!(token.token_type(), TokenType::Private);
+    assert_eq!(token.nonce(), nonce);
+    assert_eq!(token.challenge_digest(), &challenge_digest);
+    assert_eq!(token.token_key_id(), &token_key_id);
+    assert_eq!(token.authenticator(), &authenticator);
+    assert_eq!(maybe_extensions, Some(extensions.to_vec()));
 }
