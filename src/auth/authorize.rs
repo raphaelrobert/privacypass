@@ -1,9 +1,12 @@
 //! This module contains the authorization logic for redemption phase of the
 //! protocol.
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use generic_array::{ArrayLength, GenericArray};
 use http::{header::HeaderName, HeaderValue};
+use nom::branch::alt;
+use nom::sequence::delimited;
 use nom::{
     bytes::complete::{tag, tag_no_case},
     multi::{many1, separated_list1},
@@ -150,7 +153,7 @@ pub fn build_authorization_header<Nk: ArrayLength<u8>>(
 
 /// Builds a `Authorize` header according to the following scheme:
 ///
-/// `PrivateToken token=...,extensions=...`
+/// `PrivateToken token=... extensions=...`
 ///
 /// # Errors
 /// Returns an error if the token is not valid.
@@ -159,7 +162,7 @@ pub fn build_authorization_header_ext<Nk: ArrayLength<u8>>(
     extensions: &[u8],
 ) -> Result<(HeaderName, HeaderValue), BuildError> {
     let value = format!(
-        "PrivateToken token={},extensions={}",
+        "PrivateToken token={} extensions={}",
         URL_SAFE.encode(
             token
                 .tls_serialize_detached()
@@ -227,7 +230,10 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
     let (input, _) = tag("=")(input)?;
     let (input, _) = opt_spaces(input)?;
     let (input, value) = match key.to_lowercase().as_str() {
-        "token" | "extensions" => base64_char(input)?,
+        "token" | "extensions" => {
+            // Values may or may not be delimited with quotes.
+            alt((delimited(tag("\""), base64_char, tag("\"")), base64_char))(input)?
+        }
         _ => {
             return Err(nom::Err::Failure(nom::error::make_error(
                 input,
@@ -242,7 +248,7 @@ fn parse_private_token(input: &str) -> IResult<&str, (&str, Option<&str>)> {
     let (input, _) = opt_spaces(input)?;
     let (input, _) = tag_no_case("PrivateToken")(input)?;
     let (input, _) = many1(space)(input)?;
-    let (input, key_values) = separated_list1(tag(","), parse_key_value)(input)?;
+    let (input, key_values) = separated_list1(tag(" "), parse_key_value)(input)?;
 
     let mut token = None;
     let mut extensions = None;
@@ -284,7 +290,12 @@ fn parse_header_value<Nk: ArrayLength<u8>>(
     let tokens = tokens
         .into_iter()
         .map(|(token_value, extensions_value)| {
-            let ext = extensions_value.and_then(|x| URL_SAFE.decode(x).ok());
+            let ext = extensions_value.and_then(|x| {
+                URL_SAFE_NO_PAD
+                    .decode(x)
+                    .or_else(|_| URL_SAFE.decode(x))
+                    .ok()
+            });
             Ok((
                 Token::tls_deserialize(
                     &mut URL_SAFE
