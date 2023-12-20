@@ -37,6 +37,10 @@ pub enum TokenType {
     Public = 2,
     /// Batched token
     Batched = 0xF91A,
+    /// Publicly verifiable token with public metadata
+    PublicMetadata = 0xDA7A,
+    /// Privately verifiable token with public metadata
+    PrivateMetadata = 0xDA7B,
 }
 
 /// Token key ID

@@ -6,9 +6,11 @@ use generic_array::ArrayLength;
 use rand::{rngs::OsRng, CryptoRng, RngCore};
 use thiserror::Error;
 
-use crate::{auth::authorize::Token, NonceStore, TokenInput, TokenKeyId, TokenType};
+use crate::{auth::authorize::Token, NonceStore, TokenInput, TokenKeyId};
 
-use super::{key_id_to_token_key_id, public_key_to_key_id, TokenRequest, TokenResponse, NK};
+use super::{
+    key_id_to_token_key_id, public_key_to_key_id, TokenProtocol, TokenRequest, TokenResponse, NK,
+};
 
 /// Errors that can occur when creating a keypair.
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -104,17 +106,18 @@ impl IssuerServer {
         Ok(key_pair)
     }
 
-    /// Issues a new token response.
+    /// Issues a new token response using the specified Privacy Pass issuance protocol.
     ///
     /// # Errors
     /// Returns an error if the token request is invalid.
-    pub async fn issue_token_response<IKS: IssuerKeyStore>(
+    pub async fn issue_token_response_protocol<IKS: IssuerKeyStore>(
         &self,
         key_store: &IKS,
         token_request: TokenRequest,
+        protocol: TokenProtocol<'_>,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
         let rng = &mut OsRng;
-        if token_request.token_type != TokenType::Public {
+        if token_request.token_type != protocol.token_type() {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
         let key_pair = key_store
@@ -124,8 +127,8 @@ impl IssuerServer {
 
         // blind_sig = rsabssa_blind_sign(skI, TokenRequest.blinded_msg)
         let options = Options::default();
-        let blind_signature = key_pair
-            .sk
+        let secret_key = protocol.augment_private_key(key_pair.sk);
+        let blind_signature = secret_key
             .blind_sign(rng, token_request.blinded_msg, &options)
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
 
@@ -134,6 +137,19 @@ impl IssuerServer {
         blind_sig.copy_from_slice(blind_signature.as_slice());
 
         Ok(TokenResponse { blind_sig })
+    }
+
+    /// Issues a new token response.
+    ///
+    /// # Errors
+    /// Returns an error if the token request is invalid.
+    pub async fn issue_token_response<IKS: IssuerKeyStore>(
+        &self,
+        key_store: &IKS,
+        token_request: TokenRequest,
+    ) -> Result<TokenResponse, IssueTokenResponseError> {
+        self.issue_token_response_protocol(key_store, token_request, TokenProtocol::Basic)
+            .await
     }
 
     /// Sets the given keypair.
@@ -155,17 +171,18 @@ impl OriginServer {
         Self {}
     }
 
-    /// Redeems a token.
+    /// Redeems a token using the specified Privacy Pass issuance protocol.
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
+    pub async fn redeem_token_protocol<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
         &self,
         key_store: &OKS,
         nonce_store: &NS,
         token: Token<Nk>,
+        protocol: TokenProtocol<'_>,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != TokenType::Public {
+        if token.token_type() != protocol.token_type() {
             return Err(RedeemTokenError::InvalidToken);
         }
         if token.authenticator().len() != KEYSIZE_IN_BYTES {
@@ -186,13 +203,32 @@ impl OriginServer {
             .await
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
 
+        let public_key = protocol
+            .augment_public_key(&public_key)
+            .unwrap_or(public_key);
+
         let options = Options::default();
         let signature = Signature(token.authenticator().to_vec());
+        let input_message = protocol.prepare_message(token_input.serialize());
 
         signature
-            .verify(&public_key, None, token_input.serialize(), &options)
+            .verify(&public_key, None, input_message, &options)
             .map_err(|_| RedeemTokenError::InvalidToken)?;
         nonce_store.insert(token.nonce()).await;
         Ok(())
+    }
+
+    /// Redeems a token.
+    ///
+    /// # Errors
+    /// Returns an error if the token is invalid.
+    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
+        &self,
+        key_store: &OKS,
+        nonce_store: &NS,
+        token: Token<Nk>,
+    ) -> Result<(), RedeemTokenError> {
+        self.redeem_token_protocol(key_store, nonce_store, token, TokenProtocol::Basic)
+            .await
     }
 }
