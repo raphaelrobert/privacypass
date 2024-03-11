@@ -1,8 +1,8 @@
 [package]
 name = "privacypass"
-version = "0.1.0"
+version = "0.2.0-pre.0"
 edition = "2021"
-description = "WIP implementation of Privacy Pass"
+description = "Implementation of Privacy Pass"
 license = "MIT"
 documentation = "https://docs.rs/privacypass"
 repository = "https://github.com/raphaelrobert/privacypass"
@@ -18,7 +18,7 @@ categories = ["cryptography", "privacy"]
 
 [dependencies]
 async-trait = "0.1.56"
-base64 = "0.21.0"
+base64 = "0.22.0"
 generic-array = "0.14.5"
 rand = "0.8.5"
 serde = "1"
@@ -26,7 +26,7 @@ sha2 = "0.10.2"
 thiserror = "1"
 tls_codec = "0.4.0"
 tls_codec_derive = "0.4.0"
-voprf = { version = "0.5.0-pre.7", features = ["serde"] }
+voprf = { version = "0.5", features = ["serde"] }
 p384 = { version = "0.13.0", default-features = false, features = [
   "hash2curve",
   "voprf",
@@ -50,6 +50,3 @@ serde_json = "1.0"
 [[bench]]
 name = "benchmark"
 harness = false
-
-[patch.crates-io]
-voprf = { git = "https://github.com/facebook/voprf", branch = "main" }
