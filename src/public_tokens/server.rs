@@ -114,7 +114,7 @@ impl IssuerServer {
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
         let rng = &mut OsRng;
-        if token_request.token_type != TokenType::Public {
+        if token_request.token_type != TokenType::PublicToken {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
         let key_pair = key_store
@@ -165,7 +165,7 @@ impl OriginServer {
         nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != TokenType::Public {
+        if token.token_type() != TokenType::PublicToken {
             return Err(RedeemTokenError::InvalidToken);
         }
         if token.authenticator().len() != KEYSIZE_IN_BYTES {

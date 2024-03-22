@@ -76,7 +76,8 @@ impl Client {
         // token_input = concat(0x0002, nonce, challenge_digest, token_key_id)
         // blinded_msg, blind_inv = rsabssa_blind(pkI, token_input)
 
-        let token_input = TokenInput::new(TokenType::Public, nonce, challenge_digest, self.key_id);
+        let token_input =
+            TokenInput::new(TokenType::PublicToken, nonce, challenge_digest, self.key_id);
 
         let options = Options::default();
         let blinding_result = self
@@ -89,7 +90,7 @@ impl Client {
         blinded_msg.copy_from_slice(blinding_result.blind_msg.as_slice());
 
         let token_request = TokenRequest {
-            token_type: TokenType::Public,
+            token_type: TokenType::PublicToken,
             token_key_id: key_id_to_token_key_id(&self.key_id),
             blinded_msg,
         };
@@ -128,7 +129,7 @@ impl Client {
         let authenticator: GenericArray<u8, U256> =
             GenericArray::clone_from_slice(&signature[0..256]);
         Ok(Token::new(
-            TokenType::Public,
+            TokenType::PublicToken,
             token_state.token_input.nonce,
             token_state.challenge_digest,
             token_state.token_input.key_id,

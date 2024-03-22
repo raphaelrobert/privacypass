@@ -268,8 +268,12 @@ fn parse_private_tokens(input: &str) -> IResult<&str, Vec<Challenge>> {
 #[test]
 fn builder_test() {
     let token_key = b"sample token key".to_vec();
-    let token_challenge =
-        TokenChallenge::new(TokenType::Private, "issuer", None, &["origin".to_string()]);
+    let token_challenge = TokenChallenge::new(
+        TokenType::PrivateToken,
+        "issuer",
+        None,
+        &["origin".to_string()],
+    );
     let serialized_token_challenge = token_challenge.to_base64().unwrap();
     let max_age = 100;
 
@@ -292,14 +296,14 @@ fn parser_test() {
     let token_key2 = b"sample token key 2".to_vec();
 
     let challenge1 = TokenChallenge::new(
-        TokenType::Private,
+        TokenType::PrivateToken,
         "issuer1",
         None,
         &["origin1".to_string()],
     );
 
     let challenge2 = TokenChallenge::new(
-        TokenType::Private,
+        TokenType::PrivateToken,
         "issuer2",
         None,
         &["origin2".to_string()],
@@ -334,13 +338,19 @@ fn parser_test() {
 
 #[test]
 fn builder_parser_test() {
-    use crate::batched_tokens::server::{deserialize_public_key, serialize_public_key};
+    use crate::batched_tokens_ristretto255::server::{
+        deserialize_public_key, serialize_public_key,
+    };
     use voprf::{Group, Ristretto255};
 
     let public_key = Ristretto255::base_elem();
     let token_key = serialize_public_key(public_key);
-    let token_challenge =
-        TokenChallenge::new(TokenType::Private, "issuer", None, &["origin".to_string()]);
+    let token_challenge = TokenChallenge::new(
+        TokenType::PrivateToken,
+        "issuer",
+        None,
+        &["origin".to_string()],
+    );
     let max_age = 100u32;
     let (_header_name, header_value) =
         build_www_authenticate_header(&token_challenge, &token_key, Some(max_age)).unwrap();

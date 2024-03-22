@@ -2,18 +2,18 @@
 
 use async_trait::async_trait;
 use generic_array::GenericArray;
+use p384::NistP384;
 use rand::{rngs::OsRng, RngCore};
 use thiserror::Error;
 use voprf::{
-    BlindedElement, Error, Group, Result, Ristretto255, VoprfServer,
-    VoprfServerBatchEvaluateFinishResult,
+    BlindedElement, Error, Group, Result, VoprfServer, VoprfServerBatchEvaluateFinishResult,
 };
 
-use crate::{batched_tokens::EvaluatedElement, NonceStore, TokenInput, TokenKeyId, TokenType};
+use crate::{NonceStore, TokenInput, TokenKeyId, TokenType};
 
 use super::{
     key_id_to_token_key_id, public_key_to_key_id, BatchedToken, PublicKey, TokenRequest,
-    TokenResponse, NK,
+    TokenResponse, NK, NS,
 };
 
 /// Errors that can occur when creating a keypair.
@@ -57,15 +57,15 @@ pub enum RedeemTokenError {
 #[async_trait]
 pub trait BatchedKeyStore: Send + Sync {
     /// Inserts a keypair with a given `token_key_id` into the key store.
-    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<Ristretto255>);
+    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP384>);
     /// Returns a keypair with a given `token_key_id` from the key store.
-    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<Ristretto255>>;
+    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<NistP384>>;
 }
 
 /// Serializes a public key.
 #[must_use]
 pub fn serialize_public_key(public_key: PublicKey) -> Vec<u8> {
-    <Ristretto255 as Group>::serialize_elem(public_key).to_vec()
+    <NistP384 as Group>::serialize_elem(public_key).to_vec()
 }
 
 /// Deserializes a public key from a slice of bytes.
@@ -73,7 +73,7 @@ pub fn serialize_public_key(public_key: PublicKey) -> Vec<u8> {
 /// # Errors
 /// Returns an error if the slice is not a valid public key.
 pub fn deserialize_public_key(slice: &[u8]) -> Result<PublicKey, Error> {
-    <Ristretto255 as Group>::deserialize_elem(slice)
+    <NistP384 as Group>::deserialize_elem(slice)
 }
 
 /// Server-side component of the batched token issuance protocol.
@@ -95,7 +95,7 @@ impl Server {
         &self,
         key_store: &BKS,
     ) -> Result<PublicKey, CreateKeypairError> {
-        let mut seed = GenericArray::<_, <Ristretto255 as Group>::ScalarLen>::default();
+        let mut seed = GenericArray::<_, <NistP384 as Group>::ScalarLen>::default();
         OsRng.fill_bytes(&mut seed);
         self.create_keypair_internal(key_store, &seed, b"PrivacyPass")
             .await
@@ -108,7 +108,7 @@ impl Server {
         seed: &[u8],
         info: &[u8],
     ) -> Result<PublicKey, CreateKeypairError> {
-        let server = VoprfServer::<Ristretto255>::new_from_seed(seed, info)
+        let server = VoprfServer::<NistP384>::new_from_seed(seed, info)
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
         let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
@@ -137,7 +137,7 @@ impl Server {
         key_store: &BKS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
-        if token_request.token_type != TokenType::Batched {
+        if token_request.token_type != TokenType::BatchedTokenP384 {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
         let server = key_store
@@ -147,9 +147,8 @@ impl Server {
 
         let mut blinded_elements = Vec::new();
         for element in token_request.blinded_elements.iter() {
-            let blinded_element =
-                BlindedElement::<Ristretto255>::deserialize(&element.blinded_element)
-                    .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
+            let blinded_element = BlindedElement::<NistP384>::deserialize(&element.blinded_element)
+                .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
             blinded_elements.push(blinded_element);
         }
 
@@ -160,14 +159,17 @@ impl Server {
             .batch_blind_evaluate_finish(&mut OsRng, blinded_elements.iter(), &prepared_elements)
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
         let evaluated_elements = messages
-            .map(|m| EvaluatedElement {
+            .map(|m| super::EvaluatedElement {
                 evaluated_element: m.serialize().into(),
             })
             .collect();
 
+        let mut evaluated_proof = [0u8; NS + NS];
+        evaluated_proof[..(NS + NS)].copy_from_slice(&proof.serialize());
+
         Ok(TokenResponse {
             evaluated_elements,
-            evaluated_proof: proof.serialize().into(),
+            evaluated_proof,
         })
     }
 
@@ -181,7 +183,7 @@ impl Server {
         nonce_store: &NS,
         token: BatchedToken,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != TokenType::Batched {
+        if token.token_type() != TokenType::BatchedTokenP384 {
             return Err(RedeemTokenError::InvalidToken);
         }
         if token.authenticator().len() != (NK) {
@@ -219,7 +221,7 @@ impl Server {
         key_store: &BKS,
         private_key: &[u8],
     ) -> Result<PublicKey, CreateKeypairError> {
-        let server = VoprfServer::<Ristretto255>::new_with_key(private_key)
+        let server = VoprfServer::<NistP384>::new_with_key(private_key)
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
         let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
@@ -230,7 +232,7 @@ impl Server {
 
 #[test]
 fn key_serialization() {
-    let pk = Ristretto255::base_elem();
+    let pk = NistP384::base_elem();
     let bytes = serialize_public_key(pk);
     let pk2 = deserialize_public_key(&bytes).unwrap();
     assert_eq!(pk, pk2);

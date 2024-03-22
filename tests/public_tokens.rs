@@ -39,7 +39,7 @@ async fn public_tokens_cycle() {
 
     // Generate a challenge
     let token_challenge = TokenChallenge::new(
-        TokenType::Public,
+        TokenType::PublicToken,
         "example.com",
         None,
         &["example.com".to_string()],

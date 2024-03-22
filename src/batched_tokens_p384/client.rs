@@ -1,8 +1,9 @@
 //! Client-side implementation of the Batched Tokens protocol.
 
+use p384::NistP384;
 use rand::{rngs::OsRng, Rng};
 use thiserror::Error;
-use voprf::{EvaluationElement, Proof, Result, Ristretto255, VoprfClient};
+use voprf::{EvaluationElement, Proof, Result, VoprfClient};
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
@@ -10,14 +11,14 @@ use crate::{
 };
 
 use super::{
-    key_id_to_token_key_id, public_key_to_key_id, BatchedToken, BlindedElement, Nonce, PublicKey,
-    TokenRequest, TokenResponse,
+    key_id_to_token_key_id, public_key_to_key_id, BatchedToken, Nonce, PublicKey, TokenRequest,
+    TokenResponse,
 };
 
 /// Client-side state that is kept between the token requests and token responses.
 #[derive(Debug)]
 pub struct TokenState {
-    client: VoprfClient<Ristretto255>,
+    client: VoprfClient<NistP384>,
     token_input: TokenInput,
     challenge_digest: ChallengeDigest,
 }
@@ -81,7 +82,7 @@ impl Client {
         &self,
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
-        _blinds: Option<Vec<<Ristretto255 as voprf::Group>::Scalar>>,
+        _blinds: Option<Vec<<NistP384 as voprf::Group>::Scalar>>,
     ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
         let challenge_digest = challenge
             .digest()
@@ -96,19 +97,23 @@ impl Client {
         for nonce in nonces {
             // nonce = random(32)
             // challenge_digest = SHA256(challenge)
-            // token_input = concat(0xF91A, nonce, challenge_digest, key_id)
+            // token_input = concat(0xF901, nonce, challenge_digest, key_id)
             // blind, blinded_element = client_context.Blind(token_input)
 
-            let token_input =
-                TokenInput::new(TokenType::Batched, nonce, challenge_digest, self.key_id);
+            let token_input = TokenInput::new(
+                TokenType::BatchedTokenP384,
+                nonce,
+                challenge_digest,
+                self.key_id,
+            );
 
             let blinded_element =
-                VoprfClient::<Ristretto255>::blind(&token_input.serialize(), &mut OsRng)
+                VoprfClient::<NistP384>::blind(&token_input.serialize(), &mut OsRng)
                     .map_err(|_| IssueTokenRequestError::BlindingError)?;
 
             #[cfg(feature = "kat")]
             let blinded_element = if _blinds.is_some() {
-                VoprfClient::<Ristretto255>::deterministic_blind_unchecked(
+                VoprfClient::<NistP384>::deterministic_blind_unchecked(
                     &token_input.serialize(),
                     *blinds_iter.next().unwrap(),
                 )
@@ -123,7 +128,7 @@ impl Client {
                 challenge_digest,
             };
 
-            let blinded_element = BlindedElement {
+            let blinded_element = super::BlindedElement {
                 blinded_element: blinded_element.message.serialize().into(),
             };
 
@@ -132,7 +137,7 @@ impl Client {
         }
 
         let token_request = TokenRequest {
-            token_type: TokenType::Batched,
+            token_type: TokenType::BatchedTokenP384,
             token_key_id: key_id_to_token_key_id(&self.key_id),
             blinded_elements: blinded_elements.into(),
         };
@@ -146,7 +151,7 @@ impl Client {
         &self,
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
-        blind: Vec<<Ristretto255 as voprf::Group>::Scalar>,
+        blind: Vec<<NistP384 as voprf::Group>::Scalar>,
     ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
         self.issue_token_request_internal(challenge, nonces, Some(blind))
     }
@@ -163,7 +168,7 @@ impl Client {
         let mut evaluated_elements = Vec::new();
         for element in token_response.evaluated_elements.iter() {
             let evaluated_element =
-                EvaluationElement::<Ristretto255>::deserialize(&element.evaluated_element)
+                EvaluationElement::<NistP384>::deserialize(&element.evaluated_element)
                     .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
             evaluated_elements.push(evaluated_element);
         }
@@ -194,7 +199,7 @@ impl Client {
             client_batch_finalize_result.iter().zip(token_states.iter())
         {
             let token = Token::new(
-                TokenType::Batched,
+                TokenType::BatchedTokenP384,
                 token_state.token_input.nonce,
                 token_state.challenge_digest,
                 token_state.token_input.key_id,

@@ -87,7 +87,12 @@ impl Client {
         // token_input = concat(0x0001, nonce, challenge_digest, key_id)
         // blind, blinded_element = client_context.Blind(token_input)
 
-        let token_input = TokenInput::new(TokenType::Private, nonce, challenge_digest, self.key_id);
+        let token_input = TokenInput::new(
+            TokenType::PrivateToken,
+            nonce,
+            challenge_digest,
+            self.key_id,
+        );
 
         let blinded_element = VoprfClient::<NistP384>::blind(&token_input.serialize(), &mut OsRng)
             .map_err(|_| IssueTokenRequestError::BlindingError)?;
@@ -101,7 +106,7 @@ impl Client {
         };
 
         let token_request = TokenRequest {
-            token_type: TokenType::Private,
+            token_type: TokenType::PrivateToken,
             token_key_id: key_id_to_token_key_id(&self.key_id),
             blinded_msg: blinded_element.message.serialize().into(),
         };
@@ -145,7 +150,7 @@ impl Client {
             .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
 
         Ok(Token::new(
-            TokenType::Private,
+            TokenType::PrivateToken,
             token_state.token_input.nonce,
             token_state.challenge_digest,
             token_state.token_input.key_id,
