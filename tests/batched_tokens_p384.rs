@@ -4,17 +4,17 @@ use batched_memory_stores::*;
 
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    batched_tokens::{client::*, server::*},
+    batched_tokens_p384::{client::*, server::*},
     TokenType,
 };
 
 #[tokio::test]
-async fn batched_tokens_cycle() {
+async fn batched_tokens_p384_cycle() {
     // Number of tokens to issue
     let nr = 100;
 
     // Server: Instantiate in-memory keystore and nonce store.
-    let key_store = MemoryKeyStore::default();
+    let key_store = MemoryKeyStoreP384::default();
     let nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
@@ -28,7 +28,7 @@ async fn batched_tokens_cycle() {
 
     // Generate a challenge
     let challenge = TokenChallenge::new(
-        TokenType::Batched,
+        TokenType::BatchedTokenP384,
         "example.com",
         None,
         &["example.com".to_string()],

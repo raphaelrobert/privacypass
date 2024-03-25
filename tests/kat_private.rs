@@ -45,7 +45,7 @@ async fn read_kat_private_token() {
 }
 
 async fn evaluate_kat(list: Vec<PrivateTokenTestVector>) {
-    for (_, vector) in list.iter().enumerate() {
+    for vector in list {
         // Server: Instantiate in-memory keystore and nonce store.
         let key_store = MemoryKeyStore::default();
         let nonce_store = MemoryNonceStore::default();
@@ -151,7 +151,7 @@ async fn write_kat_private_token() {
         };
 
         let kat_token_challenge = TokenChallenge::new(
-            privacypass::TokenType::Private,
+            privacypass::TokenType::PrivateToken,
             "Issuer Name",
             redemption_context,
             &["a".to_string(), "b".to_string(), "c".to_string()],

@@ -61,7 +61,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                 let client = privacypass::private_tokens::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
-                    TokenType::Private,
+                    TokenType::PrivateToken,
                     "example.com",
                     None,
                     &["example.com".to_string()],
@@ -85,7 +85,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                 let client = privacypass::private_tokens::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
-                    TokenType::Private,
+                    TokenType::PrivateToken,
                     "example.com",
                     None,
                     &["example.com".to_string()],
@@ -110,7 +110,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                 let client = privacypass::private_tokens::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
-                    TokenType::Private,
+                    TokenType::PrivateToken,
                     "example.com",
                     None,
                     &["example.com".to_string()],
@@ -142,7 +142,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                 let client = privacypass::private_tokens::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
-                    TokenType::Private,
+                    TokenType::PrivateToken,
                     "example.com",
                     None,
                     &["example.com".to_string()],
