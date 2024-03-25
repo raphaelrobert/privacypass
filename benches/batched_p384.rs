@@ -1,3 +1,4 @@
+#[allow(clippy::duplicate_mod)]
 #[path = "../tests/batched_memory_stores.rs"]
 mod batched_memory_stores;
 
@@ -7,17 +8,17 @@ use tokio::runtime::Runtime;
 use privacypass::{auth::authenticate::TokenChallenge, TokenType};
 
 async fn create_batched_keypair(
-    key_store: batched_memory_stores::MemoryKeyStore,
-    server: privacypass::batched_tokens::server::Server,
+    key_store: batched_memory_stores::MemoryKeyStoreP384,
+    server: privacypass::batched_tokens_p384::server::Server,
 ) {
     let _public_key = server.create_keypair(&key_store).await.unwrap();
 }
 
 async fn issue_batched_token_response(
-    key_store: batched_memory_stores::MemoryKeyStore,
-    server: privacypass::batched_tokens::server::Server,
-    token_request: privacypass::batched_tokens::TokenRequest,
-) -> privacypass::batched_tokens::TokenResponse {
+    key_store: batched_memory_stores::MemoryKeyStoreP384,
+    server: privacypass::batched_tokens_p384::server::Server,
+    token_request: privacypass::batched_tokens_p384::TokenRequest,
+) -> privacypass::batched_tokens_p384::TokenResponse {
     server
         .issue_token_response(&key_store, token_request)
         .await
@@ -25,10 +26,10 @@ async fn issue_batched_token_response(
 }
 
 async fn redeem_batched_token(
-    key_store: batched_memory_stores::MemoryKeyStore,
+    key_store: batched_memory_stores::MemoryKeyStoreP384,
     nonce_store: batched_memory_stores::MemoryNonceStore,
-    token: privacypass::batched_tokens::BatchedToken,
-    server: privacypass::batched_tokens::server::Server,
+    token: privacypass::batched_tokens_p384::BatchedToken,
+    server: privacypass::batched_tokens_p384::server::Server,
 ) {
     server
         .redeem_token(&key_store, &nonce_store, token)
@@ -36,14 +37,14 @@ async fn redeem_batched_token(
         .unwrap();
 }
 
-pub fn criterion_batched_benchmark(c: &mut Criterion) {
+pub fn criterion_batched_p384_benchmark(c: &mut Criterion) {
     const NR: u16 = 100;
     // Key pair generation
-    c.bench_function("BATCHED SERVER: Generate key pair", move |b| {
+    c.bench_function("BATCHED P384 SERVER: Generate key pair", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
-                let key_store = batched_memory_stores::MemoryKeyStore::default();
-                let server = privacypass::batched_tokens::server::Server::new();
+                let key_store = batched_memory_stores::MemoryKeyStoreP384::default();
+                let server = privacypass::batched_tokens_p384::server::Server::new();
                 (key_store, server)
             },
             |(key_store, server)| create_batched_keypair(key_store, server),
@@ -52,18 +53,18 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
 
     // Issue token request
     c.bench_function(
-        &format!("BATCHED CLIENT: Issue token request for {NR} tokens"),
+        &format!("BATCHED P384 CLIENT: Issue token request for {NR} tokens"),
         move |b| {
             b.iter_with_setup(
                 || {
-                    let key_store = batched_memory_stores::MemoryKeyStore::default();
-                    let server = privacypass::batched_tokens::server::Server::new();
+                    let key_store = batched_memory_stores::MemoryKeyStoreP384::default();
+                    let server = privacypass::batched_tokens_p384::server::Server::new();
                     let rt = Runtime::new().unwrap();
                     let public_key =
                         rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
-                    let client = privacypass::batched_tokens::client::Client::new(public_key);
+                    let client = privacypass::batched_tokens_p384::client::Client::new(public_key);
                     let challenge = TokenChallenge::new(
-                        TokenType::Batched,
+                        TokenType::BatchedTokenP384,
                         "example.com",
                         None,
                         &["example.com".to_string()],
@@ -79,18 +80,18 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
 
     // Issue token response
     c.bench_function(
-        &format!("BATCHED SERVER: Issue token response for {NR} tokens"),
+        &format!("BATCHED P384 SERVER: Issue token response for {NR} tokens"),
         move |b| {
             b.to_async(FuturesExecutor).iter_with_setup(
                 || {
-                    let key_store = batched_memory_stores::MemoryKeyStore::default();
-                    let server = privacypass::batched_tokens::server::Server::new();
+                    let key_store = batched_memory_stores::MemoryKeyStoreP384::default();
+                    let server = privacypass::batched_tokens_p384::server::Server::new();
                     let rt = Runtime::new().unwrap();
                     let public_key =
                         rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
-                    let client = privacypass::batched_tokens::client::Client::new(public_key);
+                    let client = privacypass::batched_tokens_p384::client::Client::new(public_key);
                     let challenge = TokenChallenge::new(
-                        TokenType::Batched,
+                        TokenType::BatchedTokenP384,
                         "example.com",
                         None,
                         &["example.com".to_string()],
@@ -107,50 +108,53 @@ pub fn criterion_batched_benchmark(c: &mut Criterion) {
     );
 
     // Issue token
-    c.bench_function(&format!("BATCHED CLIENT: Issue {NR} tokens"), move |b| {
-        b.iter_with_setup(
-            || {
-                let key_store = batched_memory_stores::MemoryKeyStore::default();
-                let server = privacypass::batched_tokens::server::Server::new();
-                let rt = Runtime::new().unwrap();
-                let public_key =
-                    rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
-                let client = privacypass::batched_tokens::client::Client::new(public_key);
-                let challenge = TokenChallenge::new(
-                    TokenType::Batched,
-                    "example.com",
-                    None,
-                    &["example.com".to_string()],
-                );
-                let (token_request, token_states) =
-                    client.issue_token_request(&challenge, NR).unwrap();
-                let token_response = rt.block_on(async {
-                    server
-                        .issue_token_response(&key_store, token_request)
-                        .await
-                        .unwrap()
-                });
-                (client, token_response, token_states)
-            },
-            |(client, token_response, token_states)| {
-                client.issue_tokens(&token_response, &token_states).unwrap();
-            },
-        );
-    });
+    c.bench_function(
+        &format!("BATCHED P384 CLIENT: Issue {NR} tokens"),
+        move |b| {
+            b.iter_with_setup(
+                || {
+                    let key_store = batched_memory_stores::MemoryKeyStoreP384::default();
+                    let server = privacypass::batched_tokens_p384::server::Server::new();
+                    let rt = Runtime::new().unwrap();
+                    let public_key =
+                        rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
+                    let client = privacypass::batched_tokens_p384::client::Client::new(public_key);
+                    let challenge = TokenChallenge::new(
+                        TokenType::BatchedTokenP384,
+                        "example.com",
+                        None,
+                        &["example.com".to_string()],
+                    );
+                    let (token_request, token_states) =
+                        client.issue_token_request(&challenge, NR).unwrap();
+                    let token_response = rt.block_on(async {
+                        server
+                            .issue_token_response(&key_store, token_request)
+                            .await
+                            .unwrap()
+                    });
+                    (client, token_response, token_states)
+                },
+                |(client, token_response, token_states)| {
+                    client.issue_tokens(&token_response, &token_states).unwrap();
+                },
+            );
+        },
+    );
 
     // Redeem token
-    c.bench_function("BATCHED SERVER: Redeem token", move |b| {
+    c.bench_function("BATCHED P384 SERVER: Redeem token", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
-                let key_store = batched_memory_stores::MemoryKeyStore::default();
+                let key_store = batched_memory_stores::MemoryKeyStoreP384::default();
                 let nonce_store = batched_memory_stores::MemoryNonceStore::default();
-                let server = privacypass::batched_tokens::server::Server::new();
+                let server = privacypass::batched_tokens_p384::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
-                let client = privacypass::batched_tokens::client::Client::new(public_key);
+                let client = privacypass::batched_tokens_p384::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
-                    TokenType::Batched,
+                    TokenType::BatchedTokenP384,
                     "example.com",
                     None,
                     &["example.com".to_string()],

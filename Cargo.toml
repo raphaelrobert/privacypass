@@ -24,8 +24,8 @@ rand = "0.8.5"
 serde = "1"
 sha2 = "0.10.2"
 thiserror = "1"
-tls_codec = "0.4.0"
-tls_codec_derive = "0.4.0"
+tls_codec = { version = "0.4.2-pre.1", git = "https://github.com/rustcrypto/formats" }
+tls_codec_derive = "0.4.1"
 voprf = { version = "0.5", features = ["serde"] }
 p384 = { version = "0.13.0", default-features = false, features = [
   "hash2curve",

@@ -18,7 +18,8 @@
 #![deny(unsafe_code)]
 
 pub mod auth;
-pub mod batched_tokens;
+pub mod batched_tokens_p384;
+pub mod batched_tokens_ristretto255;
 pub mod private_tokens;
 pub mod public_tokens;
 
@@ -32,11 +33,13 @@ pub use tls_codec::{Deserialize, Serialize};
 #[repr(u16)]
 pub enum TokenType {
     /// Privately verifiable token
-    Private = 1,
+    PrivateToken = 1,
     /// Publicly verifiable token
-    Public = 2,
+    PublicToken = 2,
     /// Batched token
-    Batched = 0xF91A,
+    BatchedTokenRistretto255 = 0xF91A,
+    /// Batched token 2
+    BatchedTokenP384 = 0xF901,
 }
 
 /// Token key ID

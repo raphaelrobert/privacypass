@@ -69,7 +69,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                     .block_on(async { server.create_keypair(&mut rng, &key_store).await.unwrap() });
                 let client = privacypass::public_tokens::client::Client::new(key_pair.pk);
                 let token_challenge = TokenChallenge::new(
-                    TokenType::Public,
+                    TokenType::PublicToken,
                     "example.com",
                     None,
                     &["example.com".to_string()],
@@ -97,7 +97,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                     rt.block_on(async { server.create_keypair(rng, &key_store).await.unwrap() });
                 let mut client = privacypass::public_tokens::client::Client::new(key_pair.pk);
                 let token_challenge = TokenChallenge::new(
-                    TokenType::Public,
+                    TokenType::PublicToken,
                     "example.com",
                     None,
                     &["example.com".to_string()],
@@ -125,7 +125,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                     rt.block_on(async { server.create_keypair(rng, &key_store).await.unwrap() });
                 let mut client = privacypass::public_tokens::client::Client::new(key_pair.pk);
                 let token_challenge = TokenChallenge::new(
-                    TokenType::Public,
+                    TokenType::PublicToken,
                     "example.com",
                     None,
                     &["example.com".to_string()],
@@ -175,7 +175,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                 let mut client = privacypass::public_tokens::client::Client::new(key_pair.pk);
 
                 let token_challenge = TokenChallenge::new(
-                    TokenType::Public,
+                    TokenType::PublicToken,
                     "example.com",
                     None,
                     &["example.com".to_string()],
