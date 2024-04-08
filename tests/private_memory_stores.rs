@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use voprf::*;
 
 use privacypass::private_tokens::server::*;
-use privacypass::{Nonce, NonceStore, TokenKeyId};
+use privacypass::{Nonce, NonceStore, TruncatedTokenKeyId};
 
 #[derive(Default)]
 pub struct MemoryNonceStore {
@@ -27,17 +27,24 @@ impl NonceStore for MemoryNonceStore {
 
 #[derive(Default)]
 pub struct MemoryKeyStore {
-    keys: Mutex<HashMap<TokenKeyId, VoprfServer<NistP384>>>,
+    keys: Mutex<HashMap<TruncatedTokenKeyId, VoprfServer<NistP384>>>,
 }
 
 #[async_trait]
 impl PrivateKeyStore for MemoryKeyStore {
-    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP384>) {
+    async fn insert(
+        &self,
+        truncated_token_key_id: TruncatedTokenKeyId,
+        server: VoprfServer<NistP384>,
+    ) {
         let mut keys = self.keys.lock().await;
-        keys.insert(token_key_id, server);
+        keys.insert(truncated_token_key_id, server);
     }
 
-    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<NistP384>> {
-        self.keys.lock().await.get(token_key_id).cloned()
+    async fn get(
+        &self,
+        truncated_token_key_id: &TruncatedTokenKeyId,
+    ) -> Option<VoprfServer<NistP384>> {
+        self.keys.lock().await.get(truncated_token_key_id).cloned()
     }
 }

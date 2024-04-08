@@ -9,10 +9,10 @@ use voprf::{
     BlindedElement, Error, Group, Result, VoprfServer, VoprfServerBatchEvaluateFinishResult,
 };
 
-use crate::{NonceStore, TokenInput, TokenKeyId, TokenType};
+use crate::{NonceStore, TokenInput, TokenType, TruncatedTokenKeyId};
 
 use super::{
-    key_id_to_token_key_id, public_key_to_key_id, BatchedToken, PublicKey, TokenRequest,
+    public_key_to_token_key_id, truncate_token_key_id, BatchedToken, PublicKey, TokenRequest,
     TokenResponse, NK, NS,
 };
 
@@ -56,10 +56,17 @@ pub enum RedeemTokenError {
 /// that the store requires inner mutability.
 #[async_trait]
 pub trait BatchedKeyStore: Send + Sync {
-    /// Inserts a keypair with a given `token_key_id` into the key store.
-    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP384>);
-    /// Returns a keypair with a given `token_key_id` from the key store.
-    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<NistP384>>;
+    /// Inserts a keypair with a given `truncated_token_key_id` into the key store.
+    async fn insert(
+        &self,
+        truncated_token_key_id: TruncatedTokenKeyId,
+        server: VoprfServer<NistP384>,
+    );
+    /// Returns a keypair with a given `truncated_token_key_id` from the key store.
+    async fn get(
+        &self,
+        truncated_token_key_id: &TruncatedTokenKeyId,
+    ) -> Option<VoprfServer<NistP384>>;
 }
 
 /// Serializes a public key.
@@ -111,8 +118,9 @@ impl Server {
         let server = VoprfServer::<NistP384>::new_from_seed(seed, info)
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
-        let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
-        key_store.insert(token_key_id, server).await;
+        let truncated_token_key_id =
+            truncate_token_key_id(&public_key_to_token_key_id(&server.get_public_key()));
+        key_store.insert(truncated_token_key_id, server).await;
         Ok(public_key)
     }
 
@@ -141,7 +149,7 @@ impl Server {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
         let server = key_store
-            .get(&token_request.token_key_id)
+            .get(&token_request.truncated_token_key_id)
             .await
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
 
@@ -196,10 +204,10 @@ impl Server {
             token_type: token.token_type(),
             nonce: token.nonce(),
             challenge_digest: *token.challenge_digest(),
-            key_id: *token.token_key_id(),
+            token_key_id: *token.token_key_id(),
         };
         let server = key_store
-            .get(&key_id_to_token_key_id(token.token_key_id()))
+            .get(&truncate_token_key_id(token.token_key_id()))
             .await
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
         let token_authenticator = server
@@ -224,8 +232,10 @@ impl Server {
         let server = VoprfServer::<NistP384>::new_with_key(private_key)
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
-        let token_key_id = key_id_to_token_key_id(&public_key_to_key_id(&server.get_public_key()));
-        key_store.insert(token_key_id, server).await;
+        let token_key_id = public_key_to_token_key_id(&server.get_public_key());
+        key_store
+            .insert(truncate_token_key_id(&token_key_id), server)
+            .await;
         Ok(public_key)
     }
 }
