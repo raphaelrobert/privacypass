@@ -13,7 +13,7 @@ use std::io::Write;
 use thiserror::Error;
 use tls_codec::{Deserialize, Error, Serialize, Size};
 
-use crate::{ChallengeDigest, KeyId, Nonce, TokenType};
+use crate::{ChallengeDigest, Nonce, TokenKeyId, TokenType};
 
 use super::{base64_char, key_name, opt_spaces, space};
 
@@ -34,7 +34,7 @@ pub struct Token<Nk: ArrayLength<u8>> {
     token_type: TokenType,
     nonce: Nonce,
     challenge_digest: ChallengeDigest,
-    token_key_id: KeyId,
+    token_key_id: TokenKeyId,
     authenticator: GenericArray<u8, Nk>,
 }
 
@@ -66,7 +66,7 @@ impl<Nk: ArrayLength<u8>> Deserialize for Token<Nk> {
         let token_type = TokenType::tls_deserialize(bytes)?;
         let nonce = Nonce::tls_deserialize(bytes)?;
         let challenge_digest = ChallengeDigest::tls_deserialize(bytes)?;
-        let token_key_id = KeyId::tls_deserialize(bytes)?;
+        let token_key_id = TokenKeyId::tls_deserialize(bytes)?;
         let mut authenticator = vec![0u8; Nk::to_usize()];
         let len = bytes.read(authenticator.as_mut_slice())?;
         if len != Nk::to_usize() {
@@ -88,7 +88,7 @@ impl<Nk: ArrayLength<u8>> Token<Nk> {
         token_type: TokenType,
         nonce: Nonce,
         challenge_digest: ChallengeDigest,
-        token_key_id: KeyId,
+        token_key_id: TokenKeyId,
         authenticator: GenericArray<u8, Nk>,
     ) -> Self {
         Self {
@@ -116,7 +116,7 @@ impl<Nk: ArrayLength<u8>> Token<Nk> {
     }
 
     /// Returns the token key ID.
-    pub const fn token_key_id(&self) -> &KeyId {
+    pub const fn token_key_id(&self) -> &TokenKeyId {
         &self.token_key_id
     }
 

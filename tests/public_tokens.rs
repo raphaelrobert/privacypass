@@ -4,7 +4,7 @@ use public_memory_stores::*;
 
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    public_tokens::{client::*, public_key_to_token_key_id, server::*},
+    public_tokens::{client::*, public_key_to_truncated_token_key_id, server::*},
     TokenType,
 };
 use rand::thread_rng;
@@ -31,7 +31,10 @@ async fn public_tokens_cycle() {
     let public_key = key_pair.pk;
 
     origin_key_store
-        .insert(public_key_to_token_key_id(&public_key), public_key.clone())
+        .insert(
+            public_key_to_truncated_token_key_id(&public_key),
+            public_key.clone(),
+        )
         .await;
 
     // Client: Create client

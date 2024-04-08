@@ -43,9 +43,9 @@ pub enum TokenType {
 }
 
 /// Token key ID
-pub type TokenKeyId = u8;
+pub type TruncatedTokenKeyId = u8;
 /// Key ID
-pub type KeyId = [u8; 32];
+pub type TokenKeyId = [u8; 32];
 /// Nonce
 pub type Nonce = [u8; 32];
 /// Challenge digest
@@ -66,7 +66,7 @@ pub(crate) struct TokenInput {
     token_type: TokenType,
     nonce: Nonce,
     challenge_digest: ChallengeDigest,
-    key_id: KeyId,
+    token_key_id: TokenKeyId,
 }
 
 impl TokenInput {
@@ -74,13 +74,13 @@ impl TokenInput {
         token_type: TokenType,
         nonce: Nonce,
         challenge_digest: ChallengeDigest,
-        key_id: KeyId,
+        token_key_id: TokenKeyId,
     ) -> Self {
         Self {
             token_type,
             nonce,
             challenge_digest,
-            key_id,
+            token_key_id,
         }
     }
 
@@ -90,7 +90,7 @@ impl TokenInput {
         token_input.extend_from_slice((self.token_type as u16).to_be_bytes().as_slice());
         token_input.extend_from_slice(self.nonce.as_slice());
         token_input.extend_from_slice(self.challenge_digest.as_slice());
-        token_input.extend_from_slice(self.key_id.as_slice());
+        token_input.extend_from_slice(self.token_key_id.as_slice());
         token_input
     }
 }

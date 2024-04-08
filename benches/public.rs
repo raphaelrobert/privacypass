@@ -1,4 +1,4 @@
-use privacypass::public_tokens::{public_key_to_token_key_id, server::OriginKeyStore};
+use privacypass::public_tokens::{public_key_to_truncated_token_key_id, server::OriginKeyStore};
 #[path = "../tests/public_memory_stores.rs"]
 mod public_memory_stores;
 
@@ -165,7 +165,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                         .unwrap();
                     origin_key_store
                         .insert(
-                            public_key_to_token_key_id(&key_pair.pk),
+                            public_key_to_truncated_token_key_id(&key_pair.pk),
                             key_pair.pk.clone(),
                         )
                         .await;

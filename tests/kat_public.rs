@@ -12,7 +12,7 @@ use tls_codec::Serialize as TlsSerializeTrait;
 
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    public_tokens::{client::*, public_key_to_token_key_id, server::*},
+    public_tokens::{client::*, public_key_to_truncated_token_key_id, server::*},
     Nonce,
 };
 
@@ -80,7 +80,10 @@ async fn evaluate_kat(list: Vec<PublicTokenTestVector>) {
 
         // Origin key store: Set the public key
         origin_key_store
-            .insert(public_key_to_token_key_id(&pub_key), pub_key.clone())
+            .insert(
+                public_key_to_truncated_token_key_id(&pub_key),
+                pub_key.clone(),
+            )
             .await;
 
         // Client: Create client
@@ -162,7 +165,10 @@ async fn write_kat_public_token() {
 
         // Origin key store: Set the public key
         origin_key_store
-            .insert(public_key_to_token_key_id(&keypair.pk), keypair.pk.clone())
+            .insert(
+                public_key_to_truncated_token_key_id(&keypair.pk),
+                keypair.pk.clone(),
+            )
             .await;
 
         // Client: Create client
