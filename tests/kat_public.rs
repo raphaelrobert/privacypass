@@ -99,6 +99,12 @@ async fn evaluate_kat(list: Vec<PublicTokenTestVector>) {
             TokenChallenge::deserialize(vector.token_challenge.as_slice()).unwrap();
         let challenge_digest: [u8; 32] = token_challenge.digest().unwrap();
 
+        // KAT: Check token challenge type
+        assert_eq!(
+            token_challenge.token_type(),
+            privacypass::TokenType::PublicToken
+        );
+
         let (token_request, token_state) = client
             .issue_token_request(det_rng, token_challenge)
             .unwrap();

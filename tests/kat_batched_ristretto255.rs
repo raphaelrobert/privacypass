@@ -98,6 +98,12 @@ async fn evaluate_kat(list: Vec<BatchedTokenTestVector>) {
             .map(|blind| Ristretto255::deserialize_scalar(&blind.0).unwrap())
             .collect();
 
+        // KAT: Check token challenge type
+        assert_eq!(
+            token_challenge.token_type(),
+            privacypass::TokenType::BatchedTokenRistretto255
+        );
+
         // Client: Prepare a TokenRequest after having received a challenge
         let (token_request, token_states) = client
             .issue_token_request_with_params(&token_challenge, nonces, blinds)
@@ -183,7 +189,7 @@ async fn write_kat_batched_token_ristretto255() {
         };
 
         let kat_token_challenge = TokenChallenge::new(
-            privacypass::TokenType::BatchedTokenP384,
+            privacypass::TokenType::BatchedTokenRistretto255,
             "Issuer Name",
             redemption_context,
             &["a".to_string(), "b".to_string(), "c".to_string()],
