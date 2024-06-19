@@ -74,6 +74,12 @@ async fn evaluate_kat(list: Vec<PrivateTokenTestVector>) {
             .issue_token_request_with_params(&token_challenge, nonce, blind)
             .unwrap();
 
+        // KAT: Check token challenge type
+        assert_eq!(
+            token_challenge.token_type(),
+            privacypass::TokenType::PrivateToken
+        );
+
         // KAT: Check token request
         assert_eq!(
             token_request.tls_serialize_detached().unwrap(),

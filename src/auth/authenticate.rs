@@ -59,6 +59,37 @@ impl TokenChallenge {
         }
     }
 
+    /// Returns the token type.
+    #[must_use]
+    pub const fn token_type(&self) -> TokenType {
+        self.token_type
+    }
+
+    /// Returns the issuer name.
+    #[must_use]
+    pub fn issuer_name(&self) -> String {
+        String::from_utf8_lossy(self.issuer_name.as_slice()).to_string()
+    }
+
+    /// Returns the redemption context.
+    #[must_use]
+    pub fn redemption_context(&self) -> Option<RedemptionContext> {
+        if self.redemption_context.is_empty() {
+            None
+        } else {
+            Some(self.redemption_context.as_slice().try_into().unwrap())
+        }
+    }
+
+    /// Returns the origin info.
+    #[must_use]
+    pub fn origin_info(&self) -> Vec<String> {
+        String::from_utf8_lossy(self.origin_info.as_slice())
+            .split(',')
+            .map(|s| s.to_string())
+            .collect()
+    }
+
     /// Serializes the `TokenChallenge`.
     ///
     /// # Errors
