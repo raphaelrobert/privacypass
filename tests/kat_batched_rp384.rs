@@ -93,6 +93,12 @@ async fn evaluate_kat(list: Vec<BatchedTokenTestVector>) {
             .map(|blind| NistP384::deserialize_scalar(&blind.0).unwrap())
             .collect();
 
+        // KAT: Check token challenge type
+        assert_eq!(
+            token_challenge.token_type(),
+            privacypass::TokenType::BatchedTokenP384
+        );
+
         // Client: Prepare a TokenRequest after having received a challenge
         let (token_request, token_states) = client
             .issue_token_request_with_params(&token_challenge, nonces, blinds)

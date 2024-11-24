@@ -10,7 +10,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use typenum::U64;
 pub use voprf::*;
 
-use crate::{auth::authorize::Token, KeyId, Nonce, TokenKeyId, TokenType};
+use crate::{auth::authorize::Token, Nonce, TokenKeyId, TokenType, TruncatedTokenKeyId};
 
 use self::server::serialize_public_key;
 
@@ -26,14 +26,14 @@ pub type BatchedToken = Token<U64>;
 /// Public key alias
 pub type PublicKey = <Ristretto255 as Group>::Elem;
 
-fn public_key_to_key_id(public_key: &PublicKey) -> KeyId {
+fn public_key_to_token_key_id(public_key: &PublicKey) -> TokenKeyId {
     let public_key = serialize_public_key(*public_key);
 
     Sha256::digest(public_key).into()
 }
 
-fn key_id_to_token_key_id(key_id: &KeyId) -> TokenKeyId {
-    *key_id.iter().last().unwrap_or(&0)
+fn truncate_token_key_id(token_key_id: &TokenKeyId) -> TruncatedTokenKeyId {
+    *token_key_id.iter().last().unwrap_or(&0)
 }
 
 /// Serialization error
@@ -61,14 +61,14 @@ pub struct BlindedElement {
 /// ```c
 /// struct {
 ///     uint16_t token_type = 0xF91A;
-///     uint8_t token_key_id;
+///     uint8_t truncated_token_key_id;
 ///     BlindedElement blinded_element[Nr];
 /// } TokenRequest;
 /// ```
 #[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct TokenRequest {
     token_type: TokenType,
-    token_key_id: TokenKeyId,
+    truncated_token_key_id: TruncatedTokenKeyId,
     blinded_elements: TlsVecU16<BlindedElement>,
 }
 

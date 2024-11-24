@@ -6,7 +6,7 @@ use voprf::*;
 
 //use privacypass::batched_tokens::server::BatchedKeyStore;
 //use privacypass::batched_tokens_2::server;
-use privacypass::{Nonce, NonceStore, TokenKeyId};
+use privacypass::{Nonce, NonceStore, TruncatedTokenKeyId};
 
 #[derive(Default)]
 pub struct MemoryNonceStore {
@@ -28,36 +28,50 @@ impl NonceStore for MemoryNonceStore {
 
 #[derive(Default)]
 pub struct MemoryKeyStoreRistretto255 {
-    keys: Mutex<HashMap<TokenKeyId, VoprfServer<Ristretto255>>>,
+    keys: Mutex<HashMap<TruncatedTokenKeyId, VoprfServer<Ristretto255>>>,
 }
 
 #[async_trait]
 impl privacypass::batched_tokens_ristretto255::server::BatchedKeyStore
     for MemoryKeyStoreRistretto255
 {
-    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<Ristretto255>) {
+    async fn insert(
+        &self,
+        truncated_token_key_id: TruncatedTokenKeyId,
+        server: VoprfServer<Ristretto255>,
+    ) {
         let mut keys = self.keys.lock().await;
-        keys.insert(token_key_id, server);
+        keys.insert(truncated_token_key_id, server);
     }
 
-    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<Ristretto255>> {
-        self.keys.lock().await.get(token_key_id).cloned()
+    async fn get(
+        &self,
+        truncated_token_key_id: &TruncatedTokenKeyId,
+    ) -> Option<VoprfServer<Ristretto255>> {
+        self.keys.lock().await.get(truncated_token_key_id).cloned()
     }
 }
 
 #[derive(Default)]
 pub struct MemoryKeyStoreP384 {
-    keys: Mutex<HashMap<TokenKeyId, VoprfServer<NistP384>>>,
+    keys: Mutex<HashMap<TruncatedTokenKeyId, VoprfServer<NistP384>>>,
 }
 
 #[async_trait]
 impl privacypass::batched_tokens_p384::server::BatchedKeyStore for MemoryKeyStoreP384 {
-    async fn insert(&self, token_key_id: TokenKeyId, server: VoprfServer<NistP384>) {
+    async fn insert(
+        &self,
+        truncated_token_key_id: TruncatedTokenKeyId,
+        server: VoprfServer<NistP384>,
+    ) {
         let mut keys = self.keys.lock().await;
-        keys.insert(token_key_id, server);
+        keys.insert(truncated_token_key_id, server);
     }
 
-    async fn get(&self, token_key_id: &TokenKeyId) -> Option<VoprfServer<NistP384>> {
-        self.keys.lock().await.get(token_key_id).cloned()
+    async fn get(
+        &self,
+        truncated_token_key_id: &TruncatedTokenKeyId,
+    ) -> Option<VoprfServer<NistP384>> {
+        self.keys.lock().await.get(truncated_token_key_id).cloned()
     }
 }

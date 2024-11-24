@@ -6,12 +6,12 @@ use voprf::{EvaluationElement, Proof, Result, Ristretto255, VoprfClient};
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
-    ChallengeDigest, KeyId, TokenInput, TokenType,
+    ChallengeDigest, TokenInput, TokenKeyId, TokenType,
 };
 
 use super::{
-    key_id_to_token_key_id, public_key_to_key_id, BatchedToken, Nonce, PublicKey, TokenRequest,
-    TokenResponse,
+    public_key_to_token_key_id, truncate_token_key_id, BatchedToken, Nonce, PublicKey,
+    TokenRequest, TokenResponse,
 };
 
 /// Client-side state that is kept between the token requests and token responses.
@@ -44,7 +44,7 @@ pub enum IssueTokenError {
 /// The client side of the batched token issuance protocol.
 #[derive(Debug)]
 pub struct Client {
-    key_id: KeyId,
+    token_key_id: TokenKeyId,
     public_key: PublicKey,
 }
 
@@ -52,9 +52,12 @@ impl Client {
     /// Create a new client from a public key.
     #[must_use]
     pub fn new(public_key: PublicKey) -> Self {
-        let key_id = public_key_to_key_id(&public_key);
+        let token_key_id = public_key_to_token_key_id(&public_key);
 
-        Self { key_id, public_key }
+        Self {
+            token_key_id,
+            public_key,
+        }
     }
 
     /// Issue a token request.
@@ -96,14 +99,14 @@ impl Client {
         for nonce in nonces {
             // nonce = random(32)
             // challenge_digest = SHA256(challenge)
-            // token_input = concat(0xF91A, nonce, challenge_digest, key_id)
+            // token_input = concat(0xF91A, nonce, challenge_digest, token_key_id)
             // blind, blinded_element = client_context.Blind(token_input)
 
             let token_input = TokenInput::new(
                 TokenType::BatchedTokenRistretto255,
                 nonce,
                 challenge_digest,
-                self.key_id,
+                self.token_key_id,
             );
 
             let blinded_element =
@@ -137,7 +140,7 @@ impl Client {
 
         let token_request = TokenRequest {
             token_type: TokenType::BatchedTokenRistretto255,
-            token_key_id: key_id_to_token_key_id(&self.key_id),
+            truncated_token_key_id: truncate_token_key_id(&self.token_key_id),
             blinded_elements: blinded_elements.into(),
         };
 
@@ -201,7 +204,7 @@ impl Client {
                 TokenType::BatchedTokenRistretto255,
                 token_state.token_input.nonce,
                 token_state.challenge_digest,
-                token_state.token_input.key_id,
+                token_state.token_input.token_key_id,
                 *authenticator,
             );
             tokens.push(token);
