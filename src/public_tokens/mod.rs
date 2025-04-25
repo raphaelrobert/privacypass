@@ -2,15 +2,18 @@
 
 use sha2::{Digest, Sha256};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-use typenum::U64;
+use typenum::U256;
 
 use crate::{auth::authorize::Token, Nonce, TokenKeyId, TokenType, TruncatedTokenKeyId};
 
 pub mod client;
 pub mod server;
 
+#[cfg(feature = "kat")]
+pub mod det_rng;
+
 /// Publicly Verifiable Token alias
-pub type PublicToken = Token<U64>;
+pub type PublicToken = Token<U256>;
 pub use blind_rsa_signatures::PublicKey;
 
 use self::server::serialize_public_key;
@@ -42,7 +45,7 @@ fn truncate_token_key_id(token_key_id: &TokenKeyId) -> TruncatedTokenKeyId {
 ///     uint8_t blinded_msg[Nk];
 ///  } TokenRequest;
 /// ```
-#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct TokenRequest {
     token_type: TokenType,
     truncated_token_key_id: u8,
@@ -56,7 +59,7 @@ pub struct TokenRequest {
 ///     uint8_t blind_sig[Nk];
 ///  } TokenResponse;
 /// ```
-#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct TokenResponse {
     blind_sig: [u8; NK],
 }

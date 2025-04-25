@@ -1,13 +1,13 @@
+//! This module contains in-memory implementations of the `NonceStore` and `PrivateKeyStore` traits.
+use crate::{private_tokens::server::*, Nonce, NonceStore, TruncatedTokenKeyId};
 use async_trait::async_trait;
 use p384::NistP384;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 use voprf::*;
 
-use privacypass::private_tokens::server::*;
-use privacypass::{Nonce, NonceStore, TruncatedTokenKeyId};
-
-#[derive(Default)]
+/// Private key store that stores nonces in memory.
+#[derive(Default, Debug)]
 pub struct MemoryNonceStore {
     nonces: Mutex<HashSet<Nonce>>,
 }
@@ -25,7 +25,8 @@ impl NonceStore for MemoryNonceStore {
     }
 }
 
-#[derive(Default)]
+/// Private key store that stores keys in memory.
+#[derive(Default, Debug)]
 pub struct MemoryKeyStore {
     keys: Mutex<HashMap<TruncatedTokenKeyId, VoprfServer<NistP384>>>,
 }

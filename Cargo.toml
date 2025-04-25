@@ -20,12 +20,12 @@ categories = ["cryptography", "privacy"]
 async-trait = "0.1.56"
 base64 = "0.22.0"
 generic-array = "0.14.5"
-rand = "0.8.5"
+rand = "0.8"
 serde = "1"
 sha2 = "0.10.2"
-thiserror = "1"
-tls_codec = { version = "0.4.1" }
-tls_codec_derive = "0.4.1"
+thiserror = "2"
+tls_codec = { version = "0.4.2" }
+tls_codec_derive = "0.4.2"
 voprf = { version = "0.5", features = ["serde"] }
 p384 = { version = "0.13.0", default-features = false, features = [
   "hash2curve",
@@ -35,14 +35,16 @@ blind-rsa-signatures = "0.15.0"
 http = "1"
 typenum = "1.15.0"
 nom = "7"
+tokio = { version = "1.20.0", features = ["full"], optional = true }
 
 [features]
 default = []
 kat = ["voprf/danger"]
+test-utils = ["tokio"]
 
 [dev-dependencies]
-privacypass = { path = ".", features = ["kat"] }
-tokio = { version = "1.20.0", features = ["full"] }
+privacypass = { path = ".", features = ["kat", "test-utils"] }
+futures = "0.3"
 criterion = { version = "0.5.0", features = ["async_futures", "async_tokio"] }
 hex = { version = "0.4.3", features = ["serde"] }
 serde_json = "1.0"

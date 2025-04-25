@@ -7,19 +7,21 @@ use thiserror::Error;
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
-    ChallengeDigest, TokenInput, TokenKeyId, TokenType,
+    ChallengeDigest, TokenInput, TokenType,
 };
 
 use super::{
-    public_key_to_token_key_id, truncate_token_key_id, Nonce, TokenRequest, TokenResponse, NK,
+    public_key_to_token_key_id, truncate_token_key_id, Nonce, PublicToken, TokenRequest,
+    TokenResponse, NK,
 };
 
 /// Client-side state that is kept between the token requests and token responses.
 #[derive(Debug)]
 pub struct TokenState {
-    blinding_result: BlindingResult,
     token_input: TokenInput,
     challenge_digest: ChallengeDigest,
+    blinding_result: BlindingResult,
+    public_key: PublicKey,
 }
 
 /// Errors that can occur when issuing token requests.
@@ -41,33 +43,15 @@ pub enum IssueTokenError {
     InvalidTokenResponse,
 }
 
-/// The client side of the Publicly Verifiable Token protocol.
-#[derive(Debug)]
-pub struct Client {
-    token_key_id: TokenKeyId,
-    public_key: PublicKey,
-}
-
-impl Client {
-    /// Create a new client from a public key.
-    #[must_use]
-    pub fn new(public_key: PublicKey) -> Self {
-        let token_key_id = public_key_to_token_key_id(&public_key);
-
-        Self {
-            token_key_id,
-            public_key,
-        }
-    }
-
-    /// Issue a token request.
+impl TokenRequest {
+    /// Issue a new token request.
     ///
     /// # Errors
     /// Returns an error if the challenge is invalid.
-    pub fn issue_token_request<R: RngCore + CryptoRng>(
-        &mut self,
+    pub fn new<R: RngCore + CryptoRng>(
         rng: &mut R,
-        challenge: TokenChallenge,
+        public_key: PublicKey,
+        challenge: &TokenChallenge,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
         let mut nonce: Nonce = [0u8; 32];
         rng.fill_bytes(&mut nonce);
@@ -75,6 +59,8 @@ impl Client {
         let challenge_digest = challenge
             .digest()
             .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
+
+        let token_key_id = public_key_to_token_key_id(&public_key);
 
         // nonce = random(32)
         // challenge_digest = SHA256(challenge)
@@ -85,12 +71,11 @@ impl Client {
             TokenType::PublicToken,
             nonce,
             challenge_digest,
-            self.token_key_id,
+            token_key_id,
         );
 
         let options = Options::default();
-        let blinding_result = self
-            .public_key
+        let blinding_result = public_key
             .blind(rng, token_input.serialize(), false, &options)
             .map_err(|_| IssueTokenRequestError::BlindingError)?;
 
@@ -100,7 +85,7 @@ impl Client {
 
         let token_request = TokenRequest {
             token_type: TokenType::PublicToken,
-            truncated_token_key_id: truncate_token_key_id(&self.token_key_id),
+            truncated_token_key_id: truncate_token_key_id(&token_key_id),
             blinded_msg,
         };
 
@@ -108,24 +93,23 @@ impl Client {
             blinding_result,
             token_input,
             challenge_digest,
+            public_key,
         };
         Ok((token_request, token_state))
     }
+}
 
+impl TokenResponse {
     /// Issue a token.
     ///
     /// # Errors
     /// Returns an error if the token response is invalid.
-    pub fn issue_token(
-        &self,
-        token_response: TokenResponse,
-        token_state: &TokenState,
-    ) -> Result<Token<U256>, IssueTokenError> {
+    pub fn issue_token(self, token_state: &TokenState) -> Result<PublicToken, IssueTokenError> {
         // authenticator = rsabssa_finalize(pkI, nonce, blind_sig, blind_inv)
         let token_input = token_state.token_input.serialize();
         let options = Options::default();
-        let blind_sig = BlindSignature(token_response.blind_sig.to_vec());
-        let signature = self
+        let blind_sig = BlindSignature(self.blind_sig.to_vec());
+        let signature = token_state
             .public_key
             .finalize(
                 &blind_sig,

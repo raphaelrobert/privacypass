@@ -59,7 +59,7 @@ pub enum SerializationError {
 ///     uint8_t blinded_msg[Ne];
 ///  } TokenRequest;
 /// ```
-#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct TokenRequest {
     token_type: TokenType,
     truncated_token_key_id: u8,
@@ -74,7 +74,7 @@ pub struct TokenRequest {
 ///     uint8_t evaluate_proof[Ns+Ns];
 ///  } TokenResponse;
 /// ```
-#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct TokenResponse {
     evaluate_msg: [u8; NE],
     evaluate_proof: [u8; NS + NS],
