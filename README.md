@@ -7,6 +7,6 @@ Pass IETF WG
 The library implements both the server side and the client side components
 for the following token types:
 
- - Privately Verfifiable Tokens
- - Publicly Verfifiable Tokens
+ - Privately Verifiable Tokens
+ - Publicly Verifiable Tokens
  - Batched Tokens
