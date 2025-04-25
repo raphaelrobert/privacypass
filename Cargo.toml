@@ -34,7 +34,7 @@ p384 = { version = "0.13.0", default-features = false, features = [
 blind-rsa-signatures = "0.15.0"
 http = "1"
 typenum = "1.15.0"
-nom = "7"
+nom = "8"
 tokio = { version = "1.20.0", features = ["full"], optional = true }
 
 [features]

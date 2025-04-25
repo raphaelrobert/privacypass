@@ -12,7 +12,7 @@ use nom::{
     bytes::complete::{tag, tag_no_case},
     character::complete::digit1,
     multi::{many1, separated_list1},
-    IResult,
+    IResult, Parser,
 };
 
 use crate::{ChallengeDigest, TokenType};
@@ -255,8 +255,8 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
 fn parse_private_token(input: &str) -> IResult<&str, Challenge> {
     let (input, _) = opt_spaces(input)?;
     let (input, _) = tag_no_case("PrivateToken")(input)?;
-    let (input, _) = many1(space)(input)?;
-    let (input, key_values) = separated_list1(tag(","), parse_key_value)(input)?;
+    let (input, _) = many1(space).parse(input)?;
+    let (input, key_values) = separated_list1(tag(","), parse_key_value).parse(input)?;
 
     let mut challenge = None;
     let mut token_key = None;
@@ -293,7 +293,7 @@ fn parse_private_token(input: &str) -> IResult<&str, Challenge> {
 }
 
 fn parse_private_tokens(input: &str) -> IResult<&str, Vec<Challenge>> {
-    separated_list1(tag(","), parse_private_token)(input)
+    separated_list1(tag(","), parse_private_token).parse(input)
 }
 
 #[test]
