@@ -6,7 +6,7 @@ use voprf::{EvaluationElement, Proof, Result, Ristretto255, VoprfClient};
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
-    ChallengeDigest, TokenInput, TokenKeyId, TokenType,
+    ChallengeDigest, TokenInput, TokenType,
 };
 
 use super::{
@@ -17,9 +17,10 @@ use super::{
 /// Client-side state that is kept between the token requests and token responses.
 #[derive(Debug)]
 pub struct TokenState {
-    client: VoprfClient<Ristretto255>,
-    token_input: TokenInput,
+    clients: Vec<VoprfClient<Ristretto255>>,
+    token_inputs: Vec<TokenInput>,
     challenge_digest: ChallengeDigest,
+    public_key: PublicKey,
 }
 
 /// Errors that can occur when issuing token requests.
@@ -41,57 +42,42 @@ pub enum IssueTokenError {
     InvalidTokenResponse,
 }
 
-/// The client side of the batched token issuance protocol.
-#[derive(Debug)]
-pub struct Client {
-    token_key_id: TokenKeyId,
-    public_key: PublicKey,
-}
-
-impl Client {
-    /// Create a new client from a public key.
-    #[must_use]
-    pub fn new(public_key: PublicKey) -> Self {
-        let token_key_id = public_key_to_token_key_id(&public_key);
-
-        Self {
-            token_key_id,
-            public_key,
-        }
-    }
-
-    /// Issue a token request.
+impl TokenRequest {
+    /// Issue a new token request.
     ///
     /// # Errors
-    /// Returns an error if the token blinding fails.
-    pub fn issue_token_request(
-        &self,
+    /// Returns an error if the challenge is invalid.
+    pub fn new(
+        public_key: PublicKey,
         challenge: &TokenChallenge,
         nr: u16,
-    ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
+    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
         let mut nonces = Vec::with_capacity(nr as usize);
 
         for _ in 0..nr {
-            let nonce: Nonce = OsRng.gen();
+            let nonce: Nonce = OsRng.r#gen();
             nonces.push(nonce);
         }
 
-        self.issue_token_request_internal(challenge, nonces, None)
+        Self::issue_token_request_internal(public_key, challenge, nonces, None)
     }
 
     /// Issue a token request.
     fn issue_token_request_internal(
-        &self,
+        public_key: PublicKey,
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
         _blinds: Option<Vec<<Ristretto255 as voprf::Group>::Scalar>>,
-    ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
+    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
         let challenge_digest = challenge
             .digest()
             .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
 
-        let mut blinded_elements = Vec::new();
-        let mut token_states = Vec::new();
+        let token_key_id = public_key_to_token_key_id(&public_key);
+
+        let mut clients = Vec::with_capacity(nonces.len());
+        let mut token_inputs = Vec::with_capacity(nonces.len());
+        let mut blinded_elements = Vec::with_capacity(nonces.len());
 
         #[cfg(feature = "kat")]
         let mut blinds_iter = _blinds.iter().flatten();
@@ -99,97 +85,98 @@ impl Client {
         for nonce in nonces {
             // nonce = random(32)
             // challenge_digest = SHA256(challenge)
-            // token_input = concat(0xF91A, nonce, challenge_digest, token_key_id)
+            // token_input = concat(0xF901, nonce, challenge_digest, token_key_id)
             // blind, blinded_element = client_context.Blind(token_input)
 
             let token_input = TokenInput::new(
                 TokenType::BatchedTokenRistretto255,
                 nonce,
                 challenge_digest,
-                self.token_key_id,
+                token_key_id,
             );
 
-            let blinded_element =
-                VoprfClient::<Ristretto255>::blind(&token_input.serialize(), &mut OsRng)
-                    .map_err(|_| IssueTokenRequestError::BlindingError)?;
+            let blind = VoprfClient::<Ristretto255>::blind(&token_input.serialize(), &mut OsRng)
+                .map_err(|_| IssueTokenRequestError::BlindingError)?;
 
             #[cfg(feature = "kat")]
-            let blinded_element = if _blinds.is_some() {
+            let blind = if _blinds.is_some() {
                 VoprfClient::<Ristretto255>::deterministic_blind_unchecked(
                     &token_input.serialize(),
                     *blinds_iter.next().unwrap(),
                 )
                 .map_err(|_| IssueTokenRequestError::BlindingError)?
             } else {
-                blinded_element
+                blind
             };
 
-            let token_state = TokenState {
-                client: blinded_element.state,
-                token_input,
-                challenge_digest,
-            };
-
+            let serialized_blinded_element = blind.message.serialize().into();
             let blinded_element = super::BlindedElement {
-                blinded_element: blinded_element.message.serialize().into(),
+                blinded_element: serialized_blinded_element,
             };
 
+            clients.push(blind.state);
+            token_inputs.push(token_input);
             blinded_elements.push(blinded_element);
-            token_states.push(token_state);
         }
 
         let token_request = TokenRequest {
             token_type: TokenType::BatchedTokenRistretto255,
-            truncated_token_key_id: truncate_token_key_id(&self.token_key_id),
+            truncated_token_key_id: truncate_token_key_id(&token_key_id),
             blinded_elements: blinded_elements.into(),
         };
 
-        Ok((token_request, token_states))
+        let token_state = TokenState {
+            clients,
+            token_inputs,
+            challenge_digest,
+            public_key,
+        };
+
+        Ok((token_request, token_state))
     }
 
     #[cfg(feature = "kat")]
     /// Issue a token request.
     pub fn issue_token_request_with_params(
-        &self,
+        public_key: PublicKey,
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
         blind: Vec<<Ristretto255 as voprf::Group>::Scalar>,
-    ) -> Result<(TokenRequest, Vec<TokenState>), IssueTokenRequestError> {
-        self.issue_token_request_internal(challenge, nonces, Some(blind))
+    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+        Self::issue_token_request_internal(public_key, challenge, nonces, Some(blind))
     }
+}
 
+impl TokenResponse {
     /// Issue a token.
     ///
     /// # Errors
     /// Returns an error if the token response is invalid.
     pub fn issue_tokens(
-        &self,
-        token_response: &TokenResponse,
-        token_states: &[TokenState],
+        self,
+        token_state: &TokenState,
     ) -> Result<Vec<BatchedToken>, IssueTokenError> {
         let mut evaluated_elements = Vec::new();
-        for element in token_response.evaluated_elements.iter() {
+        for element in self.evaluated_elements.iter() {
             let evaluated_element =
                 EvaluationElement::<Ristretto255>::deserialize(&element.evaluated_element)
                     .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
             evaluated_elements.push(evaluated_element);
         }
 
-        let proof = Proof::deserialize(&token_response.evaluated_proof)
+        let proof = Proof::deserialize(&self.evaluated_proof)
             .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
 
         let client_batch_finalize_result = VoprfClient::batch_finalize(
-            &token_states
+            &token_state
+                .token_inputs
                 .iter()
-                .map(|token_state| token_state.token_input.serialize())
+                .map(|token_input| token_input.serialize())
                 .collect::<Vec<_>>(),
-            &token_states
-                .iter()
-                .map(|token_state| token_state.client.clone())
-                .collect::<Vec<_>>(),
+            &token_state.clients.to_vec(),
             &evaluated_elements,
             &proof,
-            self.public_key,
+            token_state.public_key,
         )
         .map_err(|_| IssueTokenError::InvalidTokenResponse)?
         .collect::<Result<Vec<_>>>()
@@ -197,14 +184,15 @@ impl Client {
 
         let mut tokens = Vec::new();
 
-        for (authenticator, token_state) in
-            client_batch_finalize_result.iter().zip(token_states.iter())
+        for (authenticator, token_input) in client_batch_finalize_result
+            .iter()
+            .zip(token_state.token_inputs.iter())
         {
             let token = Token::new(
                 TokenType::BatchedTokenRistretto255,
-                token_state.token_input.nonce,
+                token_input.nonce,
                 token_state.challenge_digest,
-                token_state.token_input.token_key_id,
+                token_input.token_key_id,
                 *authenticator,
             );
             tokens.push(token);

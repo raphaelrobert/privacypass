@@ -4,7 +4,7 @@ use batched_memory_stores::*;
 
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    batched_tokens_p384::{client::*, server::*},
+    batched_tokens_p384::{server::*, TokenRequest},
     TokenType,
 };
 
@@ -23,9 +23,6 @@ async fn batched_tokens_p384_cycle() {
     // Server: Create a new keypair
     let public_key = server.create_keypair(&key_store).await.unwrap();
 
-    // Client: Create client
-    let client = Client::new(public_key);
-
     // Generate a challenge
     let challenge = TokenChallenge::new(
         TokenType::BatchedTokenP384,
@@ -35,7 +32,7 @@ async fn batched_tokens_p384_cycle() {
     );
 
     // Client: Prepare a TokenRequest after having received a challenge
-    let (token_request, token_states) = client.issue_token_request(&challenge, nr).unwrap();
+    let (token_request, token_state) = TokenRequest::new(public_key, &challenge, nr).unwrap();
 
     // Server: Issue a TokenResponse
     let token_response = server
@@ -44,7 +41,7 @@ async fn batched_tokens_p384_cycle() {
         .unwrap();
 
     // Client: Turn the TokenResponse into a Token
-    let tokens = client.issue_tokens(&token_response, &token_states).unwrap();
+    let tokens = token_response.issue_tokens(&token_state).unwrap();
 
     // Server: Compare the challenge digest
     for token in &tokens {

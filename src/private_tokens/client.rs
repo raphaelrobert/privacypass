@@ -7,7 +7,7 @@ use voprf::{EvaluationElement, Proof, Result, VoprfClient};
 
 use crate::{
     auth::{authenticate::TokenChallenge, authorize::Token},
-    ChallengeDigest, TokenInput, TokenKeyId, TokenType,
+    ChallengeDigest, TokenInput, TokenType,
 };
 
 use super::{
@@ -21,6 +21,7 @@ pub struct TokenState {
     token_input: TokenInput,
     challenge_digest: ChallengeDigest,
     client: VoprfClient<NistP384>,
+    public_key: PublicKey,
 }
 
 /// Errors that can occur when issuing token requests.
@@ -42,41 +43,23 @@ pub enum IssueTokenError {
     InvalidTokenResponse,
 }
 
-/// The client side of the Privately Verifiable Token protocol.
-#[derive(Debug)]
-pub struct Client {
-    token_key_id: TokenKeyId,
-    public_key: PublicKey,
-}
-
-impl Client {
-    /// Create a new client from a public key.
-    #[must_use]
-    pub fn new(public_key: PublicKey) -> Self {
-        let token_key_id = public_key_to_token_key_id(&public_key);
-
-        Self {
-            token_key_id,
-            public_key,
-        }
-    }
-
-    /// Issue a token request.
+impl TokenRequest {
+    /// Issue a new token request.
     ///
     /// # Errors
     /// Returns an error if the challenge is invalid.
-    pub fn issue_token_request(
-        &self,
+    pub fn new(
+        public_key: PublicKey,
         challenge: &TokenChallenge,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
-        let nonce: Nonce = OsRng.gen();
+        let nonce: Nonce = OsRng.r#gen();
 
-        self.issue_token_request_internal(challenge, nonce, None)
+        Self::issue_token_request_internal(public_key, challenge, nonce, None)
     }
 
     /// Issue a token request.
     fn issue_token_request_internal(
-        &self,
+        public_key: PublicKey,
         challenge: &TokenChallenge,
         nonce: Nonce,
         _blind: Option<<NistP384 as voprf::Group>::Scalar>,
@@ -84,6 +67,8 @@ impl Client {
         let challenge_digest = challenge
             .digest()
             .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
+
+        let token_key_id = public_key_to_token_key_id(&public_key);
 
         // nonce = random(32)
         // challenge_digest = SHA256(challenge)
@@ -94,7 +79,7 @@ impl Client {
             TokenType::PrivateToken,
             nonce,
             challenge_digest,
-            self.token_key_id,
+            token_key_id,
         );
 
         let blinded_element = VoprfClient::<NistP384>::blind(&token_input.serialize(), &mut OsRng)
@@ -110,13 +95,14 @@ impl Client {
 
         let token_request = TokenRequest {
             token_type: TokenType::PrivateToken,
-            truncated_token_key_id: truncate_token_key_id(&self.token_key_id),
+            truncated_token_key_id: truncate_token_key_id(&token_key_id),
             blinded_msg: blinded_element.message.serialize().into(),
         };
         let token_state = TokenState {
             client: blinded_element.state,
             token_input,
             challenge_digest,
+            public_key,
         };
         Ok((token_request, token_state))
     }
@@ -124,32 +110,35 @@ impl Client {
     #[cfg(feature = "kat")]
     /// Issue a token request.
     pub fn issue_token_request_with_params(
-        &self,
+        public_key: PublicKey,
         challenge: &TokenChallenge,
         nonce: Nonce,
         blind: <NistP384 as voprf::Group>::Scalar,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
-        self.issue_token_request_internal(challenge, nonce, Some(blind))
+        Self::issue_token_request_internal(public_key, challenge, nonce, Some(blind))
     }
+}
 
+impl TokenResponse {
     /// Issue a token.
     ///
     /// # Errors
     /// Returns an error if the response is invalid.
-    pub fn issue_token(
-        &self,
-        token_response: &TokenResponse,
-        token_state: &TokenState,
-    ) -> Result<PrivateToken, IssueTokenError> {
-        let evaluation_element = EvaluationElement::deserialize(&token_response.evaluate_msg)
+    pub fn issue_token(self, token_state: &TokenState) -> Result<PrivateToken, IssueTokenError> {
+        let evaluation_element = EvaluationElement::deserialize(&self.evaluate_msg)
             .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
-        let proof = Proof::deserialize(&token_response.evaluate_proof)
+        let proof = Proof::deserialize(&self.evaluate_proof)
             .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
         let token_input = token_state.token_input.serialize();
         // authenticator = client_context.Finalize(token_input, blind, evaluated_element, blinded_element, proof)
         let authenticator = token_state
             .client
-            .finalize(&token_input, &evaluation_element, &proof, self.public_key)
+            .finalize(
+                &token_input,
+                &evaluation_element,
+                &proof,
+                token_state.public_key,
+            )
             .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
 
         Ok(Token::new(

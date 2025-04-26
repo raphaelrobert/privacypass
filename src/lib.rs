@@ -10,6 +10,7 @@
 //!  - Privately Verfifiable Tokens
 //!  - Publicly Verfifiable Tokens
 //!  - Batched Tokens
+//!  - Arbitrary Batched Tokens
 //!
 
 #![warn(missing_docs)]
@@ -17,11 +18,14 @@
 #![deny(missing_debug_implementations)]
 #![deny(unsafe_code)]
 
+pub mod arbitrary_batched_tokens;
 pub mod auth;
 pub mod batched_tokens_p384;
 pub mod batched_tokens_ristretto255;
 pub mod private_tokens;
 pub mod public_tokens;
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
 
 use async_trait::async_trait;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};

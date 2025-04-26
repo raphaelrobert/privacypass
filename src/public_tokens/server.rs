@@ -96,7 +96,7 @@ impl IssuerServer {
         &self,
         rng: &mut R,
         key_store: &IKS,
-    ) -> Result<KeyPair, CreateKeypairError> {
+    ) -> Result<PublicKey, CreateKeypairError> {
         let key_pair =
             KeyPair::generate(rng, KEYSIZE_IN_BITS).map_err(|_| CreateKeypairError::SeedError)?;
         let truncated_token_key_id =
@@ -104,7 +104,7 @@ impl IssuerServer {
         key_store
             .insert(truncated_token_key_id, key_pair.clone())
             .await;
-        Ok(key_pair)
+        Ok(key_pair.pk)
     }
 
     /// Issues a new token response.

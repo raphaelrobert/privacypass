@@ -4,6 +4,7 @@
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use generic_array::{ArrayLength, GenericArray};
 use http::{header::HeaderName, HeaderValue};
+use nom::Parser;
 use nom::{
     bytes::complete::{tag, tag_no_case},
     multi::{many1, separated_list1},
@@ -186,7 +187,7 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
     let (input, _) = opt_spaces(input)?;
     let (input, key) = key_name(input)?;
     let (input, _) = opt_spaces(input)?;
-    let (input, _) = tag("=")(input)?;
+    let (input, _) = tag("=").parse(input)?;
     let (input, _) = opt_spaces(input)?;
     let (input, value) = match key.to_lowercase().as_str() {
         "token" => base64_char(input)?,
@@ -202,9 +203,9 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
 
 fn parse_private_token(input: &str) -> IResult<&str, &str> {
     let (input, _) = opt_spaces(input)?;
-    let (input, _) = tag_no_case("PrivateToken")(input)?;
-    let (input, _) = many1(space)(input)?;
-    let (input, key_values) = separated_list1(tag(","), parse_key_value)(input)?;
+    let (input, _) = tag_no_case("PrivateToken").parse(input)?;
+    let (input, _) = many1(space).parse(input)?;
+    let (input, key_values) = separated_list1(tag(","), parse_key_value).parse(input)?;
 
     let mut token = None;
     let err = nom::Err::Failure(nom::error::make_error(input, nom::error::ErrorKind::Tag));
@@ -226,7 +227,7 @@ fn parse_private_token(input: &str) -> IResult<&str, &str> {
 }
 
 fn parse_private_tokens(input: &str) -> IResult<&str, Vec<&str>> {
-    separated_list1(tag(","), parse_private_token)(input)
+    separated_list1(tag(","), parse_private_token).parse(input)
 }
 
 fn parse_header_value<Nk: ArrayLength<u8>>(input: &str) -> Result<Vec<Token<Nk>>, ParseError> {

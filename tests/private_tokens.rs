@@ -1,10 +1,7 @@
-mod private_memory_stores;
-
-use private_memory_stores::*;
-
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    private_tokens::{client::*, server::*},
+    private_tokens::{server::*, TokenRequest},
+    test_utils::private_memory_stores::{MemoryKeyStore, MemoryNonceStore},
     TokenType,
 };
 
@@ -20,9 +17,6 @@ async fn private_tokens_cycle() {
     // Server: Create a new keypair
     let public_key = server.create_keypair(&key_store).await.unwrap();
 
-    // Client: Create client
-    let client = Client::new(public_key);
-
     // Generate a challenge
     let challenge = TokenChallenge::new(
         TokenType::PrivateToken,
@@ -32,7 +26,7 @@ async fn private_tokens_cycle() {
     );
 
     // Client: Prepare a TokenRequest after having received a challenge
-    let (token_request, token_state) = client.issue_token_request(&challenge).unwrap();
+    let (token_request, token_state) = TokenRequest::new(public_key, &challenge).unwrap();
 
     // Server: Issue a TokenResponse
     let token_response = server
@@ -41,7 +35,7 @@ async fn private_tokens_cycle() {
         .unwrap();
 
     // Client: Turn the TokenResponse into a Token
-    let token = client.issue_token(&token_response, &token_state).unwrap();
+    let token = token_response.issue_token(&token_state).unwrap();
 
     // Server: Compare the challenge digest
     assert_eq!(token.challenge_digest(), &challenge.digest().unwrap());

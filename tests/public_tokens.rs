@@ -1,10 +1,10 @@
-mod public_memory_stores;
-
-use public_memory_stores::*;
+use privacypass::public_tokens::TokenRequest;
+use privacypass::test_utils::public_memory_stores::*;
 
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    public_tokens::{client::*, public_key_to_truncated_token_key_id, server::*},
+    public_tokens::{public_key_to_truncated_token_key_id, server::*},
+    test_utils::public_memory_stores::IssuerMemoryKeyStore,
     TokenType,
 };
 use rand::thread_rng;
@@ -23,12 +23,10 @@ async fn public_tokens_cycle() {
     let origin_server = OriginServer::new();
 
     // Issuer server: Create a new keypair
-    let key_pair = issuer_server
-        .create_keypair(&mut rand::thread_rng(), &issuer_key_store)
+    let public_key = issuer_server
+        .create_keypair(rng, &issuer_key_store)
         .await
         .unwrap();
-
-    let public_key = key_pair.pk;
 
     origin_key_store
         .insert(
@@ -36,9 +34,6 @@ async fn public_tokens_cycle() {
             public_key.clone(),
         )
         .await;
-
-    // Client: Create client
-    let mut client = Client::new(public_key);
 
     // Generate a challenge
     let token_challenge = TokenChallenge::new(
@@ -50,7 +45,8 @@ async fn public_tokens_cycle() {
     let challenge_digest = token_challenge.digest().unwrap();
 
     // Client: Prepare a TokenRequest after having received a challenge
-    let (token_request, token_state) = client.issue_token_request(rng, token_challenge).unwrap();
+    let (token_request, token_state) =
+        TokenRequest::new(rng, public_key, &token_challenge).unwrap();
 
     // Issuer server: Issue a TokenResponse
     let token_response = issuer_server
@@ -59,7 +55,7 @@ async fn public_tokens_cycle() {
         .unwrap();
 
     // Client: Turn the TokenResponse into a Token
-    let token = client.issue_token(token_response, &token_state).unwrap();
+    let token = token_response.issue_token(&token_state).unwrap();
 
     // Origin server: Compare the challenge digest
     assert_eq!(token.challenge_digest(), &challenge_digest);
