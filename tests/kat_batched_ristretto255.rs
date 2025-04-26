@@ -12,7 +12,7 @@ use voprf::{derive_key, Group, Mode, Ristretto255};
 
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    batched_tokens_ristretto255::{client::*, server::*, NE},
+    batched_tokens_ristretto255::{server::*, TokenRequest, NE},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -80,9 +80,6 @@ async fn evaluate_kat(list: Vec<BatchedTokenTestVector>) {
         // KAT: Check public key
         assert_eq!(serialize_public_key(public_key), vector.pk_s);
 
-        // Client: Create client
-        let client = Client::new(public_key);
-
         // Convert parameters
         let token_challenge =
             TokenChallenge::deserialize(vector.token_challenge.as_slice()).unwrap();
@@ -105,9 +102,13 @@ async fn evaluate_kat(list: Vec<BatchedTokenTestVector>) {
         );
 
         // Client: Prepare a TokenRequest after having received a challenge
-        let (token_request, token_states) = client
-            .issue_token_request_with_params(&token_challenge, nonces, blinds)
-            .unwrap();
+        let (token_request, token_state) = TokenRequest::issue_token_request_with_params(
+            public_key,
+            &token_challenge,
+            nonces,
+            blinds,
+        )
+        .unwrap();
 
         // KAT: Check token request
         assert_eq!(
@@ -128,7 +129,7 @@ async fn evaluate_kat(list: Vec<BatchedTokenTestVector>) {
         );
 
         // Client: Turn the TokenResponse into a Token
-        let tokens = client.issue_tokens(&token_response, &token_states).unwrap();
+        let tokens = token_response.issue_tokens(&token_state).unwrap();
 
         // Server: Compare the challenge digest
         for (i, token) in tokens.iter().enumerate().take(nr) {
@@ -177,9 +178,6 @@ async fn write_kat_batched_token_ristretto255() {
 
         let pk_s = serialize_public_key(public_key);
 
-        // Client: Create client
-        let client = Client::new(public_key);
-
         let redemption_context = if OsRng.next_u32() % 2 == 0 {
             let mut bytes = [0u8; 32];
             OsRng.fill_bytes(&mut bytes);
@@ -223,9 +221,13 @@ async fn write_kat_batched_token_ristretto255() {
             .collect::<Vec<_>>();
 
         // Client: Prepare a TokenRequest after having received a challenge
-        let (kat_token_request, token_states) = client
-            .issue_token_request_with_params(&kat_token_challenge, kat_nonces, kat_blinds)
-            .unwrap();
+        let (kat_token_request, token_states) = TokenRequest::issue_token_request_with_params(
+            public_key,
+            &kat_token_challenge,
+            kat_nonces,
+            kat_blinds,
+        )
+        .unwrap();
 
         let token_request = kat_token_request.tls_serialize_detached().unwrap();
 
@@ -238,9 +240,7 @@ async fn write_kat_batched_token_ristretto255() {
         let token_response = kat_token_response.tls_serialize_detached().unwrap();
 
         // Client: Turn the TokenResponse into a Token
-        let kat_tokens = client
-            .issue_tokens(&kat_token_response, &token_states)
-            .unwrap();
+        let kat_tokens = kat_token_response.issue_tokens(&token_states).unwrap();
 
         for token in kat_tokens.iter().take(nr as usize) {
             assert_eq!(token.challenge_digest(), &challenge_digest);

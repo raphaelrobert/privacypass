@@ -5,7 +5,9 @@ mod batched_memory_stores;
 use criterion::{async_executor::FuturesExecutor, Criterion};
 use tokio::runtime::Runtime;
 
-use privacypass::{auth::authenticate::TokenChallenge, TokenType};
+use privacypass::{
+    auth::authenticate::TokenChallenge, batched_tokens_ristretto255::TokenRequest, TokenType,
+};
 
 async fn create_batched_keypair(
     key_store: batched_memory_stores::MemoryKeyStoreRistretto255,
@@ -62,18 +64,16 @@ pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
                     let rt = Runtime::new().unwrap();
                     let public_key =
                         rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
-                    let client =
-                        privacypass::batched_tokens_ristretto255::client::Client::new(public_key);
                     let challenge = TokenChallenge::new(
                         TokenType::BatchedTokenRistretto255,
                         "example.com",
                         None,
                         &["example.com".to_string()],
                     );
-                    (client, challenge)
+                    (public_key, challenge)
                 },
-                |(client, challenge)| {
-                    client.issue_token_request(&challenge, NR).unwrap();
+                |(public_key, challenge)| {
+                    TokenRequest::new(public_key, &challenge, NR).unwrap();
                 },
             );
         },
@@ -90,16 +90,14 @@ pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
                     let rt = Runtime::new().unwrap();
                     let public_key =
                         rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
-                    let client =
-                        privacypass::batched_tokens_ristretto255::client::Client::new(public_key);
                     let challenge = TokenChallenge::new(
                         TokenType::BatchedTokenRistretto255,
                         "example.com",
                         None,
                         &["example.com".to_string()],
                     );
-                    let (token_request, _token_states) =
-                        client.issue_token_request(&challenge, NR).unwrap();
+                    let (token_request, _token_state) =
+                        TokenRequest::new(public_key, &challenge, NR).unwrap();
                     (key_store, server, token_request)
                 },
                 |(key_store, server, token_request)| {
@@ -120,26 +118,24 @@ pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
                     let rt = Runtime::new().unwrap();
                     let public_key =
                         rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
-                    let client =
-                        privacypass::batched_tokens_ristretto255::client::Client::new(public_key);
                     let challenge = TokenChallenge::new(
                         TokenType::BatchedTokenRistretto255,
                         "example.com",
                         None,
                         &["example.com".to_string()],
                     );
-                    let (token_request, token_states) =
-                        client.issue_token_request(&challenge, NR).unwrap();
+                    let (token_request, token_state) =
+                        TokenRequest::new(public_key, &challenge, NR).unwrap();
                     let token_response = rt.block_on(async {
                         server
                             .issue_token_response(&key_store, token_request)
                             .await
                             .unwrap()
                     });
-                    (client, token_response, token_states)
+                    (token_response, token_state)
                 },
-                |(client, token_response, token_states)| {
-                    client.issue_tokens(&token_response, &token_states).unwrap();
+                |(token_response, token_state)| {
+                    token_response.issue_tokens(&token_state).unwrap();
                 },
             );
         },
@@ -155,8 +151,6 @@ pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
                 let rt = Runtime::new().unwrap();
                 let public_key =
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
-                let client =
-                    privacypass::batched_tokens_ristretto255::client::Client::new(public_key);
                 let challenge = TokenChallenge::new(
                     TokenType::BatchedTokenRistretto255,
                     "example.com",
@@ -164,14 +158,14 @@ pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
                     &["example.com".to_string()],
                 );
                 let (token_request, token_state) =
-                    client.issue_token_request(&challenge, NR).unwrap();
+                    TokenRequest::new(public_key, &challenge, NR).unwrap();
                 let token_response = rt.block_on(async {
                     server
                         .issue_token_response(&key_store, token_request)
                         .await
                         .unwrap()
                 });
-                let tokens = client.issue_tokens(&token_response, &token_state).unwrap();
+                let tokens = token_response.issue_tokens(&token_state).unwrap();
                 (key_store, nonce_store, tokens, server)
             },
             |(key_store, nonce_store, tokens, server)| {
