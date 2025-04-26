@@ -52,7 +52,7 @@ impl TokenRequest {
         public_key: PublicKey,
         challenge: &TokenChallenge,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
-        let nonce: Nonce = OsRng.gen();
+        let nonce: Nonce = OsRng.r#gen();
 
         Self::issue_token_request_internal(public_key, challenge, nonce, None)
     }

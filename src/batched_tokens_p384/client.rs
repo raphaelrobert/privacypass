@@ -56,7 +56,7 @@ impl TokenRequest {
         let mut nonces = Vec::with_capacity(nr as usize);
 
         for _ in 0..nr {
-            let nonce: Nonce = OsRng.gen();
+            let nonce: Nonce = OsRng.r#gen();
             nonces.push(nonce);
         }
 
