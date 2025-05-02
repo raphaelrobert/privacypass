@@ -1,26 +1,43 @@
-//! Client-side implementation of the Privately Verifiable Token protocol.
+//! Request implementation of the Privately Verifiable Token protocol.
 
 use rand::{Rng, rngs::OsRng};
-use voprf::{EvaluationElement, Group, Proof, Result, VoprfClient};
+use tls_codec::{Deserialize, Serialize, Size};
+use typenum::Unsigned;
+use voprf::{Group, Result, VoprfClient};
 
 use crate::{
-    ChallengeDigest, PPCipherSuite, TokenInput,
-    auth::{authenticate::TokenChallenge, authorize::Token},
+    ChallengeDigest, Nonce, PPCipherSuite, TokenInput, TokenType, TruncatedTokenKeyId,
+    auth::authenticate::TokenChallenge,
     common::{
-        errors::{IssueTokenError, IssueTokenRequestError},
+        errors::IssueTokenRequestError,
         private::{PublicKey, public_key_to_token_key_id},
     },
     truncate_token_key_id,
 };
 
-use super::{Nonce, PrivateToken, TokenRequest, TokenResponse};
+/// Token request as specified in the spec:
+///
+/// ```c
+/// struct {
+///     uint16_t token_type = 0x0001;
+///     uint8_t truncated_token_key_id;
+///     uint8_t blinded_msg[Ne];
+///  } TokenRequest;
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenRequest<CS: PPCipherSuite> {
+    pub(crate) _marker: std::marker::PhantomData<CS>,
+    pub(crate) token_type: TokenType,
+    pub(crate) truncated_token_key_id: u8,
+    pub(crate) blinded_msg: Vec<u8>,
+}
 
-/// Client-side state that is kept between the token requests and token responses.
+/// State that is kept between the token requests and token responses.
 pub struct TokenState<CS: PPCipherSuite> {
-    token_input: TokenInput,
-    challenge_digest: ChallengeDigest,
-    client: VoprfClient<CS>,
-    public_key: PublicKey<CS>,
+    pub(crate) token_input: TokenInput,
+    pub(crate) challenge_digest: ChallengeDigest,
+    pub(crate) client: VoprfClient<CS>,
+    pub(crate) public_key: PublicKey<CS>,
 }
 
 impl<CS: PPCipherSuite> std::fmt::Debug for TokenState<CS> {
@@ -106,37 +123,45 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> TokenResponse<CS> {
-    /// Issue a token.
-    ///
-    /// # Errors
-    /// Returns an error if the response is invalid.
-    pub fn issue_token(
-        self,
-        token_state: &TokenState<CS>,
-    ) -> Result<PrivateToken<CS>, IssueTokenError> {
-        let evaluation_element = EvaluationElement::deserialize(&self.evaluate_msg)
-            .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
-        let proof = Proof::deserialize(&self.evaluate_proof)
-            .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
-        let token_input = token_state.token_input.serialize();
-        // authenticator = client_context.Finalize(token_input, blind, evaluated_element, blinded_element, proof)
-        let authenticator = token_state
-            .client
-            .finalize(
-                &token_input,
-                &evaluation_element,
-                &proof,
-                token_state.public_key,
-            )
-            .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
+impl<CS: PPCipherSuite> Size for TokenRequest<CS> {
+    fn tls_serialized_len(&self) -> usize {
+        let len = <<CS::Group as Group>::ElemLen as Unsigned>::USIZE;
+        self.token_type.tls_serialized_len()
+            + self.truncated_token_key_id.tls_serialized_len()
+            + len
+    }
+}
 
-        Ok(Token::new(
-            CS::token_type(),
-            token_state.token_input.nonce,
-            token_state.challenge_digest,
-            token_state.token_input.token_key_id,
-            authenticator,
-        ))
+impl<CS: PPCipherSuite> Serialize for TokenRequest<CS> {
+    fn tls_serialize<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+    ) -> std::result::Result<usize, tls_codec::Error> {
+        self.token_type.tls_serialize(writer)?;
+        self.truncated_token_key_id.tls_serialize(writer)?;
+        writer.write_all(&self.blinded_msg)?;
+        Ok(self.token_type.tls_serialized_len()
+            + self.truncated_token_key_id.tls_serialized_len()
+            + self.blinded_msg.len())
+    }
+}
+
+impl<CS: PPCipherSuite> Deserialize for TokenRequest<CS> {
+    fn tls_deserialize<R: std::io::Read>(
+        bytes: &mut R,
+    ) -> std::result::Result<Self, tls_codec::Error>
+    where
+        Self: Sized,
+    {
+        let token_type = TokenType::tls_deserialize(bytes)?;
+        let truncated_token_key_id = TruncatedTokenKeyId::tls_deserialize(bytes)?;
+        let mut blinded_msg = vec![0u8; <<CS::Group as Group>::ElemLen as Unsigned>::USIZE];
+        bytes.read_exact(&mut blinded_msg)?;
+        Ok(TokenRequest {
+            _marker: std::marker::PhantomData,
+            token_type,
+            truncated_token_key_id,
+            blinded_msg,
+        })
     }
 }

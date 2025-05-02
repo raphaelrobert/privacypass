@@ -1,26 +1,27 @@
-//! Client-side implementation of the Batched Tokens protocol.
+//! Request implementation of the Batched Tokens protocol.
 
 use rand::{Rng, rngs::OsRng};
-use voprf::{EvaluationElement, Group, Proof, Result, VoprfClient};
+use tls_codec::{Deserialize, Serialize, Size};
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use typenum::Unsigned;
+use voprf::{Group, Result, VoprfClient};
 
 use crate::{
-    ChallengeDigest, Nonce, PPCipherSuite, TokenInput,
-    auth::{authenticate::TokenChallenge, authorize::Token},
+    ChallengeDigest, Nonce, PPCipherSuite, TokenInput, TokenType, TruncatedTokenKeyId,
+    auth::authenticate::TokenChallenge,
     common::{
-        errors::{IssueTokenError, IssueTokenRequestError},
+        errors::IssueTokenRequestError,
         private::{PublicKey, public_key_to_token_key_id},
     },
     truncate_token_key_id,
 };
 
-use super::{BatchedToken, TokenRequest, TokenResponse};
-
-/// Client-side state that is kept between the token requests and token responses.
+/// State that is kept between the token requests and token responses.
 pub struct TokenState<CS: PPCipherSuite> {
-    clients: Vec<VoprfClient<CS>>,
-    token_inputs: Vec<TokenInput>,
-    challenge_digest: ChallengeDigest,
-    public_key: PublicKey<CS>,
+    pub(crate) clients: Vec<VoprfClient<CS>>,
+    pub(crate) token_inputs: Vec<TokenInput>,
+    pub(crate) challenge_digest: ChallengeDigest,
+    pub(crate) public_key: PublicKey<CS>,
 }
 
 impl<CS: PPCipherSuite> std::fmt::Debug for TokenState<CS> {
@@ -31,6 +32,43 @@ impl<CS: PPCipherSuite> std::fmt::Debug for TokenState<CS> {
             .field("challenge_digest", &self.challenge_digest)
             .field("public_key", &"public key".to_string())
             .finish()
+    }
+}
+
+/// Blinded element as specified in the spec:
+///
+/// ```c
+/// struct {
+///     uint8_t blinded_element[Ne];
+/// } BlindedElement;
+/// ```
+#[derive(Debug)]
+pub struct BlindedElement<CS: PPCipherSuite> {
+    pub(crate) _marker: std::marker::PhantomData<CS>,
+    pub(crate) blinded_element: Vec<u8>,
+}
+
+/// Token request as specified in the spec:
+///
+/// ```c
+/// struct {
+///     uint16_t token_type = 0xF901;
+///     uint8_t truncated_token_key_id;
+///     BlindedElement blinded_element[Nr];
+/// } TokenRequest;
+/// ```
+#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct TokenRequest<CS: PPCipherSuite> {
+    pub(crate) token_type: TokenType,
+    pub(crate) truncated_token_key_id: TruncatedTokenKeyId,
+    pub(crate) blinded_elements: Vec<BlindedElement<CS>>,
+}
+
+impl<CS: PPCipherSuite> TokenRequest<CS> {
+    /// Returns the number of blinded elements
+    #[must_use]
+    pub fn nr(&self) -> usize {
+        self.blinded_elements.len()
     }
 }
 
@@ -102,7 +140,7 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
             };
 
             let serialized_blinded_element = blind.message.serialize().to_vec();
-            let blinded_element = super::BlindedElement {
+            let blinded_element = BlindedElement {
                 _marker: std::marker::PhantomData,
                 blinded_element: serialized_blinded_element,
             };
@@ -140,57 +178,34 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> TokenResponse<CS> {
-    /// Issue a token.
-    ///
-    /// # Errors
-    /// Returns an error if the token response is invalid.
-    pub fn issue_tokens(
-        self,
-        token_state: &TokenState<CS>,
-    ) -> Result<Vec<BatchedToken<CS>>, IssueTokenError> {
-        let mut evaluated_elements = Vec::new();
-        for element in self.evaluated_elements.iter() {
-            let evaluated_element =
-                EvaluationElement::<CS>::deserialize(&element.evaluated_element)
-                    .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
-            evaluated_elements.push(evaluated_element);
-        }
+impl<CS: PPCipherSuite> Size for BlindedElement<CS> {
+    fn tls_serialized_len(&self) -> usize {
+        <<CS::Group as Group>::ElemLen as Unsigned>::USIZE
+    }
+}
 
-        let proof = Proof::deserialize(&self.evaluated_proof)
-            .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
+impl<CS: PPCipherSuite> Serialize for BlindedElement<CS> {
+    fn tls_serialize<W: std::io::Write>(
+        &self,
+        writer: &mut W,
+    ) -> std::result::Result<usize, tls_codec::Error> {
+        writer.write_all(&self.blinded_element)?;
+        Ok(self.blinded_element.len())
+    }
+}
 
-        let client_batch_finalize_result = VoprfClient::batch_finalize(
-            &token_state
-                .token_inputs
-                .iter()
-                .map(|token_input| token_input.serialize())
-                .collect::<Vec<_>>(),
-            &token_state.clients.to_vec(),
-            &evaluated_elements,
-            &proof,
-            token_state.public_key,
-        )
-        .map_err(|_| IssueTokenError::InvalidTokenResponse)?
-        .collect::<Result<Vec<_>>>()
-        .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
-
-        let mut tokens = Vec::new();
-
-        for (authenticator, token_input) in client_batch_finalize_result
-            .iter()
-            .zip(token_state.token_inputs.iter())
-        {
-            let token = Token::new(
-                token_input.token_type,
-                token_input.nonce,
-                token_state.challenge_digest,
-                token_input.token_key_id,
-                authenticator.to_owned(),
-            );
-            tokens.push(token);
-        }
-
-        Ok(tokens)
+impl<CS: PPCipherSuite> Deserialize for BlindedElement<CS> {
+    fn tls_deserialize<R: std::io::Read>(
+        bytes: &mut R,
+    ) -> std::result::Result<Self, tls_codec::Error>
+    where
+        Self: Sized,
+    {
+        let mut blinded_element = vec![0u8; <<CS::Group as Group>::ElemLen as Unsigned>::USIZE];
+        bytes.read_exact(&mut blinded_element)?;
+        Ok(BlindedElement {
+            _marker: std::marker::PhantomData,
+            blinded_element,
+        })
     }
 }
