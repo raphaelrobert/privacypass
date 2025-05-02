@@ -4,7 +4,10 @@ use sha2::{Digest, Sha256};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use typenum::U256;
 
-use crate::{auth::authorize::Token, Nonce, TokenKeyId, TokenType, TruncatedTokenKeyId};
+use crate::{
+    Nonce, TokenKeyId, TokenType, TruncatedTokenKeyId, auth::authorize::Token,
+    truncate_token_key_id,
+};
 
 pub mod client;
 pub mod server;
@@ -30,10 +33,6 @@ fn public_key_to_token_key_id(public_key: &PublicKey) -> TokenKeyId {
     let public_key = serialize_public_key(public_key);
 
     Sha256::digest(public_key).into()
-}
-
-fn truncate_token_key_id(token_key_id: &TokenKeyId) -> TruncatedTokenKeyId {
-    *token_key_id.iter().last().unwrap_or(&0)
 }
 
 /// Token request as specified in the spec:

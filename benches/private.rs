@@ -1,35 +1,39 @@
-use criterion::{async_executor::FuturesExecutor, Criterion};
+use criterion::{Criterion, async_executor::FuturesExecutor};
 use generic_array::ArrayLength;
+use p384::NistP384;
 use tokio::runtime::Runtime;
 
 use privacypass::{
-    auth::authenticate::TokenChallenge, private_tokens::TokenRequest,
-    test_utils::private_memory_stores, TokenType,
+    PPCipherSuite,
+    auth::{authenticate::TokenChallenge, authorize::Token},
+    private_tokens::{TokenRequest, TokenResponse, server::Server},
+    test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
+use voprf::Ristretto255;
 
-async fn create_private_keypair(
-    key_store: private_memory_stores::MemoryKeyStore,
-    server: privacypass::private_tokens::server::Server,
+async fn create_private_keypair<CS: PPCipherSuite>(
+    key_store: MemoryKeyStoreVoprf<CS>,
+    server: Server<CS>,
 ) {
     let _public_key = server.create_keypair(&key_store).await.unwrap();
 }
 
-async fn issue_private_token_response(
-    key_store: private_memory_stores::MemoryKeyStore,
-    server: privacypass::private_tokens::server::Server,
-    token_request: privacypass::private_tokens::TokenRequest,
-) -> privacypass::private_tokens::TokenResponse {
+async fn issue_private_token_response<CS: PPCipherSuite>(
+    key_store: MemoryKeyStoreVoprf<CS>,
+    server: Server<CS>,
+    token_request: TokenRequest<CS>,
+) -> TokenResponse<CS> {
     server
         .issue_token_response(&key_store, token_request)
         .await
         .unwrap()
 }
 
-async fn redeem_private_token<Nk: ArrayLength<u8>>(
-    key_store: private_memory_stores::MemoryKeyStore,
-    nonce_store: private_memory_stores::MemoryNonceStore,
-    token: privacypass::auth::authorize::Token<Nk>,
-    server: privacypass::private_tokens::server::Server,
+async fn redeem_private_token<Nk: ArrayLength<u8>, CS: PPCipherSuite>(
+    key_store: MemoryKeyStoreVoprf<CS>,
+    nonce_store: MemoryNonceStore,
+    token: Token<Nk>,
+    server: Server<CS>,
 ) {
     server
         .redeem_token(&key_store, &nonce_store, token)
@@ -37,12 +41,20 @@ async fn redeem_private_token<Nk: ArrayLength<u8>>(
         .unwrap();
 }
 
-pub fn criterion_private_benchmark(c: &mut Criterion) {
+pub fn criterion_private_p384_benchmark(c: &mut Criterion) {
+    flow::<NistP384>(c);
+}
+
+pub fn criterion_private_ristretto255_benchmark(c: &mut Criterion) {
+    flow::<Ristretto255>(c);
+}
+
+pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
     // Key pair generation
     c.bench_function("PRIVATE SERVER: Generate key pair", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
-                let key_store = private_memory_stores::MemoryKeyStore::default();
+                let key_store = MemoryKeyStoreVoprf::<CS>::default();
                 let server = privacypass::private_tokens::server::Server::new();
                 (key_store, server)
             },
@@ -54,13 +66,13 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
     c.bench_function("PRIVATE CLIENT: Issue token request", move |b| {
         b.iter_with_setup(
             || {
-                let key_store = private_memory_stores::MemoryKeyStore::default();
+                let key_store = MemoryKeyStoreVoprf::<CS>::default();
                 let server = privacypass::private_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                 let challenge = TokenChallenge::new(
-                    TokenType::PrivateToken,
+                    CS::token_type(),
                     "example.com",
                     None,
                     &["example.com".to_string()],
@@ -68,7 +80,7 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
                 (public_key, challenge)
             },
             |(public_key, challenge)| {
-                TokenRequest::new(public_key, &challenge).unwrap();
+                TokenRequest::<CS>::new(public_key, &challenge).unwrap();
             },
         );
     });
@@ -77,13 +89,13 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
     c.bench_function("PRIVATE SERVER: Issue token response", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
-                let key_store = private_memory_stores::MemoryKeyStore::default();
+                let key_store = MemoryKeyStoreVoprf::<CS>::default();
                 let server = privacypass::private_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                 let challenge = TokenChallenge::new(
-                    TokenType::PrivateToken,
+                    CS::token_type(),
                     "example.com",
                     None,
                     &["example.com".to_string()],
@@ -102,13 +114,13 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
     c.bench_function("PRIVATE CLIENT: Issue token", move |b| {
         b.iter_with_setup(
             || {
-                let key_store = private_memory_stores::MemoryKeyStore::default();
+                let key_store = MemoryKeyStoreVoprf::<CS>::default();
                 let server = privacypass::private_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                 let challenge = TokenChallenge::new(
-                    TokenType::PrivateToken,
+                    CS::token_type(),
                     "example.com",
                     None,
                     &["example.com".to_string()],
@@ -133,14 +145,14 @@ pub fn criterion_private_benchmark(c: &mut Criterion) {
     c.bench_function("PRIVATE SERVER: Redeem token", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
-                let key_store = private_memory_stores::MemoryKeyStore::default();
-                let nonce_store = private_memory_stores::MemoryNonceStore::default();
+                let key_store = MemoryKeyStoreVoprf::<CS>::default();
+                let nonce_store = MemoryNonceStore::default();
                 let server = privacypass::private_tokens::server::Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                 let challenge = TokenChallenge::new(
-                    TokenType::PrivateToken,
+                    CS::token_type(),
                     "example.com",
                     None,
                     &["example.com".to_string()],

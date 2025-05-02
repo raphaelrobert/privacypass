@@ -1,18 +1,18 @@
 //! Client-side implementation of the Privately Verifiable Token protocol.
 
 use blind_rsa_signatures::{BlindSignature, BlindingResult, Options, PublicKey};
-use generic_array::{typenum::U256, GenericArray};
+use generic_array::{GenericArray, typenum::U256};
 use rand::{CryptoRng, RngCore};
-use thiserror::Error;
 
 use crate::{
-    auth::{authenticate::TokenChallenge, authorize::Token},
     ChallengeDigest, TokenInput, TokenType,
+    auth::{authenticate::TokenChallenge, authorize::Token},
+    common::errors::{IssueTokenError, IssueTokenRequestError},
 };
 
 use super::{
-    public_key_to_token_key_id, truncate_token_key_id, Nonce, PublicToken, TokenRequest,
-    TokenResponse, NK,
+    NK, Nonce, PublicToken, TokenRequest, TokenResponse, public_key_to_token_key_id,
+    truncate_token_key_id,
 };
 
 /// Client-side state that is kept between the token requests and token responses.
@@ -22,25 +22,6 @@ pub struct TokenState {
     challenge_digest: ChallengeDigest,
     blinding_result: BlindingResult,
     public_key: PublicKey,
-}
-
-/// Errors that can occur when issuing token requests.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum IssueTokenRequestError {
-    #[error("Token blinding error")]
-    /// Error when blinding the token.
-    BlindingError,
-    #[error("Invalid TokenChallenge")]
-    /// Error when the token challenge is invalid.
-    InvalidTokenChallenge,
-}
-
-/// Errors that can occur when issuing tokens.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum IssueTokenError {
-    #[error("Invalid TokenResponse")]
-    /// Error when the token response is invalid.
-    InvalidTokenResponse,
 }
 
 impl TokenRequest {
@@ -67,12 +48,7 @@ impl TokenRequest {
         // token_input = concat(0x0002, nonce, challenge_digest, token_key_id)
         // blinded_msg, blind_inv = rsabssa_blind(pkI, token_input)
 
-        let token_input = TokenInput::new(
-            TokenType::PublicToken,
-            nonce,
-            challenge_digest,
-            token_key_id,
-        );
+        let token_input = TokenInput::new(TokenType::Public, nonce, challenge_digest, token_key_id);
 
         let options = Options::default();
         let blinding_result = public_key
@@ -84,7 +60,7 @@ impl TokenRequest {
         blinded_msg.copy_from_slice(blinding_result.blind_msg.as_slice());
 
         let token_request = TokenRequest {
-            token_type: TokenType::PublicToken,
+            token_type: TokenType::Public,
             truncated_token_key_id: truncate_token_key_id(&token_key_id),
             blinded_msg,
         };
@@ -122,7 +98,7 @@ impl TokenResponse {
         let authenticator: GenericArray<u8, U256> =
             GenericArray::clone_from_slice(&signature[0..256]);
         Ok(Token::new(
-            TokenType::PublicToken,
+            TokenType::Public,
             token_state.token_input.nonce,
             token_state.challenge_digest,
             token_state.token_input.token_key_id,

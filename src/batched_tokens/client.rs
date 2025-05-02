@@ -1,58 +1,49 @@
 //! Client-side implementation of the Batched Tokens protocol.
 
-use p384::NistP384;
-use rand::{rngs::OsRng, Rng};
-use thiserror::Error;
-use voprf::{EvaluationElement, Proof, Result, VoprfClient};
+use rand::{Rng, rngs::OsRng};
+use voprf::{EvaluationElement, Group, Proof, Result, VoprfClient};
 
 use crate::{
+    ChallengeDigest, Nonce, PPCipherSuite, TokenInput,
     auth::{authenticate::TokenChallenge, authorize::Token},
-    ChallengeDigest, TokenInput, TokenType,
+    common::{
+        errors::{IssueTokenError, IssueTokenRequestError},
+        private::{PublicKey, public_key_to_token_key_id},
+    },
+    truncate_token_key_id,
 };
 
-use super::{
-    public_key_to_token_key_id, truncate_token_key_id, BatchedToken, Nonce, PublicKey,
-    TokenRequest, TokenResponse,
-};
+use super::{BatchedToken, TokenRequest, TokenResponse};
 
 /// Client-side state that is kept between the token requests and token responses.
-#[derive(Debug)]
-pub struct TokenState {
-    clients: Vec<VoprfClient<NistP384>>,
+pub struct TokenState<CS: PPCipherSuite> {
+    clients: Vec<VoprfClient<CS>>,
     token_inputs: Vec<TokenInput>,
     challenge_digest: ChallengeDigest,
-    public_key: PublicKey,
+    public_key: PublicKey<CS>,
 }
 
-/// Errors that can occur when issuing token requests.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum IssueTokenRequestError {
-    #[error("Token blinding error")]
-    /// Error when blinding the token.
-    BlindingError,
-    #[error("Invalid TokenChallenge")]
-    /// Error when the token challenge is invalid.
-    InvalidTokenChallenge,
+impl<CS: PPCipherSuite> std::fmt::Debug for TokenState<CS> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenState")
+            .field("clients", &self.clients.len())
+            .field("token_inputs", &self.token_inputs.len())
+            .field("challenge_digest", &self.challenge_digest)
+            .field("public_key", &"public key".to_string())
+            .finish()
+    }
 }
 
-/// Errors that can occur when issuing tokens.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum IssueTokenError {
-    #[error("Invalid TokenResponse")]
-    /// Error when the token response is invalid.
-    InvalidTokenResponse,
-}
-
-impl TokenRequest {
+impl<CS: PPCipherSuite> TokenRequest<CS> {
     /// Issue a new token request.
     ///
     /// # Errors
     /// Returns an error if the challenge is invalid.
     pub fn new(
-        public_key: PublicKey,
+        public_key: PublicKey<CS>,
         challenge: &TokenChallenge,
         nr: u16,
-    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+    ) -> Result<(TokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
         let mut nonces = Vec::with_capacity(nr as usize);
 
         for _ in 0..nr {
@@ -65,16 +56,16 @@ impl TokenRequest {
 
     /// Issue a token request.
     fn issue_token_request_internal(
-        public_key: PublicKey,
+        public_key: PublicKey<CS>,
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
-        _blinds: Option<Vec<<NistP384 as voprf::Group>::Scalar>>,
-    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+        _blinds: Option<Vec<<CS::Group as Group>::Scalar>>,
+    ) -> Result<(TokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
         let challenge_digest = challenge
             .digest()
             .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
 
-        let token_key_id = public_key_to_token_key_id(&public_key);
+        let token_key_id = public_key_to_token_key_id::<CS::Group>(&public_key);
 
         let mut clients = Vec::with_capacity(nonces.len());
         let mut token_inputs = Vec::with_capacity(nonces.len());
@@ -90,18 +81,18 @@ impl TokenRequest {
             // blind, blinded_element = client_context.Blind(token_input)
 
             let token_input = TokenInput::new(
-                TokenType::BatchedTokenP384,
+                challenge.token_type(),
                 nonce,
                 challenge_digest,
                 token_key_id,
             );
 
-            let blind = VoprfClient::<NistP384>::blind(&token_input.serialize(), &mut OsRng)
+            let blind = VoprfClient::<CS>::blind(&token_input.serialize(), &mut OsRng)
                 .map_err(|_| IssueTokenRequestError::BlindingError)?;
 
             #[cfg(feature = "kat")]
             let blind = if _blinds.is_some() {
-                VoprfClient::<NistP384>::deterministic_blind_unchecked(
+                VoprfClient::<CS>::deterministic_blind_unchecked(
                     &token_input.serialize(),
                     *blinds_iter.next().unwrap(),
                 )
@@ -110,8 +101,9 @@ impl TokenRequest {
                 blind
             };
 
-            let serialized_blinded_element = blind.message.serialize().into();
+            let serialized_blinded_element = blind.message.serialize().to_vec();
             let blinded_element = super::BlindedElement {
+                _marker: std::marker::PhantomData,
                 blinded_element: serialized_blinded_element,
             };
 
@@ -121,9 +113,9 @@ impl TokenRequest {
         }
 
         let token_request = TokenRequest {
-            token_type: TokenType::BatchedTokenP384,
+            token_type: challenge.token_type(),
             truncated_token_key_id: truncate_token_key_id(&token_key_id),
-            blinded_elements: blinded_elements.into(),
+            blinded_elements,
         };
 
         let token_state = TokenState {
@@ -139,28 +131,28 @@ impl TokenRequest {
     #[cfg(feature = "kat")]
     /// Issue a token request.
     pub fn issue_token_request_with_params(
-        public_key: PublicKey,
+        public_key: PublicKey<CS>,
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
-        blind: Vec<<NistP384 as voprf::Group>::Scalar>,
-    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+        blind: Vec<<CS::Group as Group>::Scalar>,
+    ) -> Result<(TokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
         Self::issue_token_request_internal(public_key, challenge, nonces, Some(blind))
     }
 }
 
-impl TokenResponse {
+impl<CS: PPCipherSuite> TokenResponse<CS> {
     /// Issue a token.
     ///
     /// # Errors
     /// Returns an error if the token response is invalid.
     pub fn issue_tokens(
         self,
-        token_state: &TokenState,
-    ) -> Result<Vec<BatchedToken>, IssueTokenError> {
+        token_state: &TokenState<CS>,
+    ) -> Result<Vec<BatchedToken<CS>>, IssueTokenError> {
         let mut evaluated_elements = Vec::new();
         for element in self.evaluated_elements.iter() {
             let evaluated_element =
-                EvaluationElement::<NistP384>::deserialize(&element.evaluated_element)
+                EvaluationElement::<CS>::deserialize(&element.evaluated_element)
                     .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
             evaluated_elements.push(evaluated_element);
         }
@@ -190,11 +182,11 @@ impl TokenResponse {
             .zip(token_state.token_inputs.iter())
         {
             let token = Token::new(
-                TokenType::BatchedTokenP384,
+                token_input.token_type,
                 token_input.nonce,
                 token_state.challenge_digest,
                 token_input.token_key_id,
-                *authenticator,
+                authenticator.to_owned(),
             );
             tokens.push(token);
         }

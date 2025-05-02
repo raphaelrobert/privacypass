@@ -1,31 +1,12 @@
-//! This module contains in-memory implementations of the `NonceStore`, `IssuerKeyStore`, and
+//! This module contains in-memory implementations of the `IssuerKeyStore`, and
 //! `OriginKeyStore` traits.
-use crate::{public_tokens::server::*, Nonce, NonceStore, TruncatedTokenKeyId};
+use crate::{TruncatedTokenKeyId, public_tokens::server::*};
 use async_trait::async_trait;
 use blind_rsa_signatures::{KeyPair, PublicKey};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tokio::sync::Mutex;
 
-/// Private key store that stores nonces in memory.
-#[derive(Default, Debug)]
-pub struct MemoryNonceStore {
-    nonces: Mutex<HashSet<Nonce>>,
-}
-
-#[async_trait]
-impl NonceStore for MemoryNonceStore {
-    async fn exists(&self, nonce: &Nonce) -> bool {
-        let nonces = self.nonces.lock().await;
-        nonces.contains(nonce)
-    }
-
-    async fn insert(&self, nonce: Nonce) {
-        let mut nonces = self.nonces.lock().await;
-        nonces.insert(nonce);
-    }
-}
-
-/// Private key store that stores keys in memory.
+/// Public key store that stores keys in memory.
 #[derive(Default, Debug)]
 pub struct IssuerMemoryKeyStore {
     keys: Mutex<HashMap<TruncatedTokenKeyId, KeyPair>>,

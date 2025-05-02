@@ -1,17 +1,19 @@
 use std::{fs::File, io::Write};
 
 use generic_array::GenericArray;
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 
-use p384::{elliptic_curve::Field, NistP384};
-use tls_codec::Serialize as TlsSerializeTrait;
-use voprf::{derive_key, Group, Mode};
+use p384::NistP384;
+use tls_codec::{Deserialize as _, Serialize as TlsSerializeTrait};
+use voprf::{Group, Mode, Ristretto255, derive_key};
 
 use privacypass::{
+    PPCipherSuite,
     auth::authenticate::TokenChallenge,
-    private_tokens::{server::*, TokenRequest, NE},
-    test_utils::private_memory_stores::{MemoryKeyStore, MemoryNonceStore},
+    common::private::serialize_public_key,
+    private_tokens::{TokenRequest, TokenResponse, server::*},
+    test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,21 +38,31 @@ pub(crate) struct PrivateTokenTestVector {
 
 #[tokio::test]
 async fn read_kat_private_token() {
-    let list: Vec<PrivateTokenTestVector> =
-        serde_json::from_str(include_str!("kat_vectors/private_vectors.json").trim()).unwrap();
+    // === Check own KAT vectors ===
 
-    evaluate_kat(list).await;
+    // P384
+    let list: Vec<PrivateTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/private_p384_rs.json").trim()).unwrap();
+    evaluate_kat::<NistP384>(list).await;
+
+    // Ristretto255
+    let list: Vec<PrivateTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/private_ristretto_rs.json").trim()).unwrap();
+    evaluate_kat::<Ristretto255>(list).await;
+
+    // === Check KAT vectors from Go ===
+    // TODO: Add Go KAT vectors
 }
 
-async fn evaluate_kat(list: Vec<PrivateTokenTestVector>) {
+async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<PrivateTokenTestVector>) {
     for vector in list {
-        evaluate_vector(vector).await;
+        evaluate_vector::<CS>(vector).await;
     }
 }
 
-pub(crate) async fn evaluate_vector(vector: PrivateTokenTestVector) {
+pub(crate) async fn evaluate_vector<CS: PPCipherSuite>(vector: PrivateTokenTestVector) {
     // Server: Instantiate in-memory keystore and nonce store.
-    let key_store = MemoryKeyStore::default();
+    let key_store = MemoryKeyStoreVoprf::<CS>::default();
     let nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
@@ -60,13 +72,13 @@ pub(crate) async fn evaluate_vector(vector: PrivateTokenTestVector) {
     let public_key = server.set_key(&key_store, &vector.sk_s).await.unwrap();
 
     // KAT: Check public key
-    assert_eq!(serialize_public_key(public_key), vector.pk_s);
+    assert_eq!(serialize_public_key::<CS::Group>(public_key), vector.pk_s);
 
     // Convert parameters
     let token_challenge = TokenChallenge::deserialize(vector.token_challenge.as_slice()).unwrap();
     let challenge_digest: [u8; 32] = token_challenge.digest().unwrap();
     let nonce: [u8; 32] = <[u8; 32]>::try_from(vector.nonce.as_ref()).unwrap();
-    let blind = NistP384::deserialize_scalar(&vector.blind).unwrap();
+    let blind = <CS::Group as Group>::deserialize_scalar(&vector.blind).unwrap();
 
     // Client: Prepare a TokenRequest after having received a challenge
     let (token_request, token_state) =
@@ -74,10 +86,7 @@ pub(crate) async fn evaluate_vector(vector: PrivateTokenTestVector) {
             .unwrap();
 
     // KAT: Check token challenge type
-    assert_eq!(
-        token_challenge.token_type(),
-        privacypass::TokenType::PrivateToken
-    );
+    assert_eq!(token_challenge.token_type(), CS::token_type());
 
     // KAT: Check token request
     assert_eq!(
@@ -92,9 +101,12 @@ pub(crate) async fn evaluate_vector(vector: PrivateTokenTestVector) {
         .unwrap();
 
     // KAT: Check token response
+    let kat_token_response =
+        TokenResponse::<CS>::tls_deserialize(&mut vector.token_response.as_slice()).unwrap();
+
     assert_eq!(
-        token_response.tls_serialize_detached().unwrap()[..NE],
-        vector.token_response[..NE]
+        token_response.evaluate_msg(),
+        kat_token_response.evaluate_msg()
     );
 
     // Client: Turn the TokenResponse into a Token
@@ -104,10 +116,12 @@ pub(crate) async fn evaluate_vector(vector: PrivateTokenTestVector) {
     assert_eq!(token.challenge_digest(), &challenge_digest);
 
     // Server: Redeem the token
-    assert!(server
-        .redeem_token(&key_store, &nonce_store, token.clone())
-        .await
-        .is_ok());
+    assert!(
+        server
+            .redeem_token(&key_store, &nonce_store, token.clone())
+            .await
+            .is_ok()
+    );
 
     // KAT: Check token
     assert_eq!(token.tls_serialize_detached().unwrap(), vector.token);
@@ -115,33 +129,39 @@ pub(crate) async fn evaluate_vector(vector: PrivateTokenTestVector) {
 
 #[tokio::test]
 async fn write_kat_private_token() {
+    write_kat_private_token_type::<NistP384>("tests/kat_vectors/private_p384_rs-new.json").await;
+    write_kat_private_token_type::<Ristretto255>("tests/kat_vectors/private_ristretto_rs-new.json")
+        .await;
+}
+
+async fn write_kat_private_token_type<CS: PPCipherSuite>(file: &str) {
     let mut elements = Vec::new();
 
     for _ in 0..5 {
         // Generate a new test vector
-        let vector = generate_kat_private_token().await;
+        let vector = generate_kat_private_token::<CS>().await;
 
         elements.push(vector);
     }
 
     let data = serde_json::to_string_pretty(&elements).unwrap();
 
-    evaluate_kat(elements).await;
+    evaluate_kat::<CS>(elements).await;
 
-    let mut file = File::create("tests/kat_vectors/private_vectors_privacypass-new.json").unwrap();
+    let mut file = File::create(file).unwrap();
     file.write_all(data.as_bytes()).unwrap();
 }
 
-pub(crate) async fn generate_kat_private_token() -> PrivateTokenTestVector {
+pub(crate) async fn generate_kat_private_token<CS: PPCipherSuite>() -> PrivateTokenTestVector {
     // Server: Instantiate in-memory keystore and nonce store.
-    let key_store = MemoryKeyStore::default();
+    let key_store = MemoryKeyStoreVoprf::<CS>::default();
     let nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
     let server = Server::new();
 
     // Server: Create a new keypair
-    let mut seed = GenericArray::<_, <NistP384 as Group>::ScalarLen>::default();
+    let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
     OsRng.fill_bytes(&mut seed);
 
     let info = b"PrivacyPass";
@@ -151,12 +171,11 @@ pub(crate) async fn generate_kat_private_token() -> PrivateTokenTestVector {
         .await
         .unwrap();
 
-    let sk_s = derive_key::<NistP384>(&seed, info, Mode::Voprf)
-        .unwrap()
-        .to_bytes()
-        .to_vec();
+    let scalar = derive_key::<CS>(&seed, info, Mode::Voprf).unwrap();
 
-    let pk_s = serialize_public_key(public_key);
+    let sk_s = <CS::Group as Group>::serialize_scalar(scalar).to_vec();
+
+    let pk_s = serialize_public_key::<CS::Group>(public_key);
 
     let redemption_context = if OsRng.next_u32() % 2 == 0 {
         let mut bytes = [0u8; 32];
@@ -167,7 +186,7 @@ pub(crate) async fn generate_kat_private_token() -> PrivateTokenTestVector {
     };
 
     let kat_token_challenge = TokenChallenge::new(
-        privacypass::TokenType::PrivateToken,
+        CS::token_type(),
         "Issuer Name",
         redemption_context,
         &["a".to_string(), "b".to_string(), "c".to_string()],
@@ -182,12 +201,12 @@ pub(crate) async fn generate_kat_private_token() -> PrivateTokenTestVector {
     OsRng.fill_bytes(&mut kat_nonce);
     let nonce = kat_nonce.to_vec();
 
-    let kat_blind = <NistP384 as Group>::Scalar::random(&mut OsRng);
+    let kat_blind = <CS::Group as Group>::random_scalar(&mut OsRng);
 
-    let blind = kat_blind.to_bytes().to_vec();
+    let blind = <CS::Group as Group>::serialize_scalar(kat_blind).to_vec();
 
     // Client: Prepare a TokenRequest after having received a challenge
-    let (kat_token_request, token_state) = TokenRequest::issue_token_request_with_params(
+    let (kat_token_request, token_state) = TokenRequest::<CS>::issue_token_request_with_params(
         public_key,
         &kat_token_challenge,
         kat_nonce,
@@ -214,10 +233,12 @@ pub(crate) async fn generate_kat_private_token() -> PrivateTokenTestVector {
     assert_eq!(kat_token.challenge_digest(), &challenge_digest);
 
     // Server: Redeem the token
-    assert!(server
-        .redeem_token(&key_store, &nonce_store, kat_token.clone())
-        .await
-        .is_ok());
+    assert!(
+        server
+            .redeem_token(&key_store, &nonce_store, kat_token.clone())
+            .await
+            .is_ok()
+    );
 
     PrivateTokenTestVector {
         sk_s,

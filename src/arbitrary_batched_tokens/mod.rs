@@ -4,58 +4,57 @@ pub mod client;
 pub mod server;
 
 use client::BatchTokenRequestBuilder;
+use p384::NistP384;
 use std::io::Read;
-use thiserror::Error;
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use voprf::Ristretto255;
 
-use crate::{ChallengeDigest, TokenType};
+use crate::{ChallengeDigest, TokenType, common::errors::SerializationError};
 
 /// Arbitrary token
 #[derive(Debug)]
 pub enum ArbitraryBatchToken {
-    /// Private token
-    PrivateToken(Box<crate::private_tokens::PrivateToken>),
+    /// Private p384 token
+    PrivateP384(Box<crate::private_tokens::PrivateToken<NistP384>>),
     /// Public token
-    PublicToken(Box<crate::public_tokens::PublicToken>),
+    Public(Box<crate::public_tokens::PublicToken>),
+    /// Private ristretto255 token
+    PrivateRistretto255(Box<crate::private_tokens::PrivateToken<Ristretto255>>),
 }
 
 impl ArbitraryBatchToken {
     /// Get the token type
     pub fn token_type(&self) -> TokenType {
         match self {
-            ArbitraryBatchToken::PrivateToken(_) => TokenType::PrivateToken,
-            ArbitraryBatchToken::PublicToken(_) => TokenType::PublicToken,
+            ArbitraryBatchToken::PrivateP384(_) => TokenType::PrivateP384,
+            ArbitraryBatchToken::Public(_) => TokenType::Public,
+            ArbitraryBatchToken::PrivateRistretto255(_) => TokenType::PrivateRistretto255,
         }
     }
 
     /// Get the challenge
     pub fn challenge_digest(&self) -> &ChallengeDigest {
         match self {
-            ArbitraryBatchToken::PrivateToken(token) => token.challenge_digest(),
-            ArbitraryBatchToken::PublicToken(token) => token.challenge_digest(),
+            ArbitraryBatchToken::PrivateP384(token) => token.challenge_digest(),
+            ArbitraryBatchToken::Public(token) => token.challenge_digest(),
+            ArbitraryBatchToken::PrivateRistretto255(token) => token.challenge_digest(),
         }
     }
 }
 
-impl From<crate::private_tokens::PrivateToken> for ArbitraryBatchToken {
-    fn from(token: crate::private_tokens::PrivateToken) -> Self {
-        ArbitraryBatchToken::PrivateToken(Box::new(token))
+impl ArbitraryBatchToken {
+    pub(crate) fn from_private_p384(tok: crate::private_tokens::PrivateToken<NistP384>) -> Self {
+        ArbitraryBatchToken::PrivateP384(Box::new(tok))
     }
-}
-
-impl From<crate::public_tokens::PublicToken> for ArbitraryBatchToken {
-    fn from(token: crate::public_tokens::PublicToken) -> Self {
-        ArbitraryBatchToken::PublicToken(Box::new(token))
+    pub(crate) fn from_public(tok: crate::public_tokens::PublicToken) -> Self {
+        ArbitraryBatchToken::Public(Box::new(tok))
     }
-}
-
-/// Serialization error
-#[derive(Error, Debug)]
-pub enum SerializationError {
-    #[error("Invalid serialized data")]
-    /// Invalid serialized data
-    InvalidData,
+    pub(crate) fn from_private_ristretto(
+        tok: crate::private_tokens::PrivateToken<Ristretto255>,
+    ) -> Self {
+        ArbitraryBatchToken::PrivateRistretto255(Box::new(tok))
+    }
 }
 
 /// Arbitrary Batch TokenRequest as specified in the spec:
@@ -76,20 +75,28 @@ pub enum SerializationError {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ArbitraryBatchTokenRequest {
     /// Type VOPRF(P-384, SHA-384), RFC 9578
-    PrivateTokenRequest(Box<crate::private_tokens::TokenRequest>),
+    PrivateP384(Box<crate::private_tokens::TokenRequest<NistP384>>),
     /// Type Blind RSA (2048-bit), RFC 9578
-    PublicTokenRequest(Box<crate::public_tokens::TokenRequest>),
+    Public(Box<crate::public_tokens::TokenRequest>),
+    /// Type VOPRF(Ristretto255, SHA-512), RFC XXXX
+    PrivateRistretto255(Box<crate::private_tokens::TokenRequest<Ristretto255>>),
 }
 
-impl From<crate::private_tokens::TokenRequest> for ArbitraryBatchTokenRequest {
-    fn from(token_request: crate::private_tokens::TokenRequest) -> Self {
-        ArbitraryBatchTokenRequest::PrivateTokenRequest(Box::new(token_request))
+impl From<crate::private_tokens::TokenRequest<NistP384>> for ArbitraryBatchTokenRequest {
+    fn from(token_request: crate::private_tokens::TokenRequest<NistP384>) -> Self {
+        ArbitraryBatchTokenRequest::PrivateP384(Box::new(token_request))
     }
 }
 
 impl From<crate::public_tokens::TokenRequest> for ArbitraryBatchTokenRequest {
     fn from(token_request: crate::public_tokens::TokenRequest) -> Self {
-        ArbitraryBatchTokenRequest::PublicTokenRequest(Box::new(token_request))
+        ArbitraryBatchTokenRequest::Public(Box::new(token_request))
+    }
+}
+
+impl From<crate::private_tokens::TokenRequest<Ristretto255>> for ArbitraryBatchTokenRequest {
+    fn from(token_request: crate::private_tokens::TokenRequest<Ristretto255>) -> Self {
+        ArbitraryBatchTokenRequest::PrivateRistretto255(Box::new(token_request))
     }
 }
 
@@ -124,10 +131,11 @@ impl BatchTokenRequest {
 impl Size for ArbitraryBatchTokenRequest {
     fn tls_serialized_len(&self) -> usize {
         match self {
-            ArbitraryBatchTokenRequest::PrivateTokenRequest(token_request) => {
+            ArbitraryBatchTokenRequest::PrivateP384(token_request) => {
                 token_request.tls_serialized_len()
             }
-            ArbitraryBatchTokenRequest::PublicTokenRequest(token_request) => {
+            ArbitraryBatchTokenRequest::Public(token_request) => token_request.tls_serialized_len(),
+            ArbitraryBatchTokenRequest::PrivateRistretto255(token_request) => {
                 token_request.tls_serialized_len()
             }
         }
@@ -137,10 +145,13 @@ impl Size for ArbitraryBatchTokenRequest {
 impl Serialize for ArbitraryBatchTokenRequest {
     fn tls_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         match self {
-            ArbitraryBatchTokenRequest::PrivateTokenRequest(token_request) => {
+            ArbitraryBatchTokenRequest::PrivateP384(token_request) => {
                 token_request.tls_serialize(writer)
             }
-            ArbitraryBatchTokenRequest::PublicTokenRequest(token_request) => {
+            ArbitraryBatchTokenRequest::Public(token_request) => {
+                token_request.tls_serialize(writer)
+            }
+            ArbitraryBatchTokenRequest::PrivateRistretto255(token_request) => {
                 token_request.tls_serialize(writer)
             }
         }
@@ -157,23 +168,25 @@ impl Deserialize for ArbitraryBatchTokenRequest {
         let mut all_bytes = (peeked).chain(bytes);
 
         match token_type {
-            TokenType::PrivateToken => {
+            TokenType::PrivateP384 => {
                 let token_request =
                     crate::private_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
-                Ok(ArbitraryBatchTokenRequest::PrivateTokenRequest(Box::new(
+                Ok(ArbitraryBatchTokenRequest::PrivateP384(Box::new(
                     token_request,
                 )))
             }
-            TokenType::PublicToken => {
+            TokenType::Public => {
                 let token_request =
                     crate::public_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
-                Ok(ArbitraryBatchTokenRequest::PublicTokenRequest(Box::new(
+                Ok(ArbitraryBatchTokenRequest::Public(Box::new(token_request)))
+            }
+            TokenType::PrivateRistretto255 => {
+                let token_request =
+                    crate::private_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
+                Ok(ArbitraryBatchTokenRequest::PrivateRistretto255(Box::new(
                     token_request,
                 )))
             }
-            _ => Err(tls_codec::Error::DecodingError(
-                "Invalid token type".to_string(),
-            )),
         }
     }
 }
@@ -189,11 +202,14 @@ impl Deserialize for ArbitraryBatchTokenRequest {
 #[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub enum ArbitraryBatchTokenResponse {
     /// Type VOPRF(P-384, SHA-384), RFC 9578
-    #[tls_codec(discriminant = "TokenType::PrivateToken")]
-    PrivateTokenResponse(Box<crate::private_tokens::TokenResponse>),
+    #[tls_codec(discriminant = "TokenType::PrivateP384")]
+    PrivateP384(Box<crate::private_tokens::TokenResponse<NistP384>>),
     /// Type Blind RSA (2048-bit), RFC 9578
-    #[tls_codec(discriminant = "TokenType::PublicToken")]
-    PublicTokenResponse(Box<crate::public_tokens::TokenResponse>),
+    #[tls_codec(discriminant = "TokenType::Public")]
+    Public(Box<crate::public_tokens::TokenResponse>),
+    /// Type VOPRF(Ristretto255, SHA-512), RFC XXXX
+    #[tls_codec(discriminant = "TokenType::PrivateRistretto255")]
+    PrivateRistretto255(Box<crate::private_tokens::TokenResponse<Ristretto255>>),
 }
 
 /// Token response as specified in the spec:
@@ -203,7 +219,7 @@ pub enum ArbitraryBatchTokenResponse {
 ///     TokenResponse token_response<V>; /* Defined by token_type */
 ///   } OptionalTokenResponse;
 ///```
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct OptionalTokenResponse {
     /// Optional token response
     pub token_response: Option<ArbitraryBatchTokenResponse>,
@@ -216,7 +232,7 @@ pub struct OptionalTokenResponse {
 ///     OptionalTokenResponse token_responses<0..2^16-1>;
 ///   } BatchTokenResponse
 /// ```
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct BatchTokenResponse {
     /// Token responses
     pub token_responses: Vec<OptionalTokenResponse>,
@@ -231,150 +247,3 @@ impl BatchTokenResponse {
         Self::tls_deserialize(&mut bytes).map_err(|_| SerializationError::InvalidData)
     }
 }
-
-/*
-impl Size for ArbitraryBatchTokenResponse {
-    fn tls_serialized_len(&self) -> usize {
-        match self {
-            ArbitraryBatchTokenResponse::PrivateTokenResponse(token_response) => {
-                token_response.tls_serialized_len()
-            }
-            ArbitraryBatchTokenResponse::PublicTokenResponse(token_response) => {
-                token_response.tls_serialized_len()
-            }
-        }
-    }
-}
-
-impl Serialize for ArbitraryBatchTokenResponse {
-    fn tls_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        match self {
-            ArbitraryBatchTokenResponse::PrivateTokenResponse(token_response) => {
-                token_response.tls_serialize(writer)
-            }
-            ArbitraryBatchTokenResponse::PublicTokenResponse(token_response) => {
-                token_response.tls_serialize(writer)
-            }
-        }
-    }
-}
-
-impl Deserialize for ArbitraryBatchTokenResponse {
-    fn tls_deserialize<R: std::io::Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
-        // Peek into the first two octets to determine the type
-        let mut peeked = [0u8; 2];
-        bytes.read_exact(&mut peeked)?;
-
-        let token_type = TokenType::tls_deserialize(&mut peeked.as_slice())?;
-        let mut all_bytes = (peeked).chain(bytes);
-
-        match token_type {
-            TokenType::PrivateToken => {
-                let token_response =
-                    crate::private_tokens::TokenResponse::tls_deserialize(&mut all_bytes)?;
-                Ok(ArbitraryBatchTokenResponse::PrivateTokenResponse(Box::new(
-                    token_response,
-                )))
-            }
-            TokenType::PublicToken => {
-                let token_response =
-                    crate::public_tokens::TokenResponse::tls_deserialize(&mut all_bytes)?;
-                Ok(ArbitraryBatchTokenResponse::PublicTokenResponse(Box::new(
-                    token_response,
-                )))
-            }
-            _ => Err(tls_codec::Error::DecodingError(
-                "Invalid token type".to_string(),
-            )),
-        }
-    }
-}
-*/
-/*
-#[cfg(test)]
-#[tokio::test]
-async fn arbitrary_codec() {
-    use rand::{rngs::OsRng, RngCore};
-
-    let key_store = crate::test_utils::private_memory_stores::MemoryKeyStore::default();
-    let server = crate::private_tokens::server::Server::new();
-
-    let public_key = server.create_keypair(&key_store).await.unwrap();
-
-    let client = crate::private_tokens::client::Client::new(public_key);
-
-    let redemption_context = if OsRng.next_u32() % 2 == 0 {
-        let mut bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut bytes);
-        Some(bytes)
-    } else {
-        None
-    };
-
-    let kat_token_challenge = TokenChallenge::new(
-        crate::TokenType::PrivateToken,
-        "Issuer Name",
-        redemption_context,
-        &["a".to_string(), "b".to_string(), "c".to_string()],
-    );
-
-    let (kat_token_request, _token_state) =
-        client.issue_token_request(&kat_token_challenge).unwrap();
-
-    let kat_token_response = server
-        .issue_token_response(&key_store, kat_token_request.clone())
-        .await
-        .unwrap();
-
-    let arbitrary_batch_token_request =
-        ArbitraryBatchTokenRequest::PrivateTokenRequest(Box::new(kat_token_request.clone()));
-    let mut bytes = Vec::new();
-    arbitrary_batch_token_request
-        .tls_serialize(&mut bytes)
-        .unwrap();
-    let deserialized = ArbitraryBatchTokenRequest::tls_deserialize(&mut bytes.as_slice()).unwrap();
-    assert_eq!(arbitrary_batch_token_request, deserialized);
-
-    let arbitrary_batch_token_response =
-        ArbitraryBatchTokenResponse::PrivateTokenResponse(Box::new(kat_token_response.clone()));
-    let mut bytes = Vec::new();
-    arbitrary_batch_token_response
-        .tls_serialize(&mut bytes)
-        .unwrap();
-    let deserialized = ArbitraryBatchTokenResponse::tls_deserialize(&mut bytes.as_slice()).unwrap();
-    assert_eq!(arbitrary_batch_token_response, deserialized);
-
-    let optional_token_response = OptionalTokenResponse {
-        token_response: Some(ArbitraryBatchTokenResponse::PrivateTokenResponse(Box::new(
-            kat_token_response.clone(),
-        ))),
-    };
-    let mut bytes = Vec::new();
-    optional_token_response.tls_serialize(&mut bytes).unwrap();
-    let deserialized = OptionalTokenResponse::tls_deserialize(&mut bytes.as_slice()).unwrap();
-    assert_eq!(optional_token_response, deserialized);
-
-    let batch_token_request = BatchTokenRequest {
-        token_requests: vec![ArbitraryBatchTokenRequest::PrivateTokenRequest(Box::new(
-            kat_token_request.clone(),
-        ))],
-    };
-    let mut bytes = Vec::new();
-    batch_token_request.tls_serialize(&mut bytes).unwrap();
-    let deserialized = BatchTokenRequest::try_from_bytes(&bytes).unwrap();
-    assert_eq!(batch_token_request, deserialized);
-
-    let batch_token_response = BatchTokenResponse {
-        token_responses: vec![OptionalTokenResponse {
-            token_response: Some(ArbitraryBatchTokenResponse::PrivateTokenResponse(Box::new(
-                kat_token_response.clone(),
-            ))),
-        }],
-    };
-    let mut bytes = Vec::new();
-    batch_token_response.tls_serialize(&mut bytes).unwrap();
-
-    let deserialized = BatchTokenResponse::tls_deserialize(&mut bytes.as_slice()).unwrap();
-    assert_eq!(batch_token_response, deserialized);
-}
- */

@@ -1,6 +1,9 @@
 //! Client-side implementation of the Privately Verifiable Token protocol.
 
-use thiserror::Error;
+use p384::NistP384;
+use voprf::Ristretto255;
+
+use crate::common::errors::IssueTokenError;
 
 use super::{
     ArbitraryBatchToken, ArbitraryBatchTokenRequest, ArbitraryBatchTokenResponse,
@@ -10,21 +13,29 @@ use super::{
 /// Client-side state that is kept between the token requests and token responses.
 #[derive(Debug)]
 pub enum ArbitraryBatchTokenState {
-    /// Private token state
-    PrivateTokenState(Box<crate::private_tokens::client::TokenState>),
+    /// Private p384 token state
+    PrivateP384(Box<crate::private_tokens::client::TokenState<NistP384>>),
     /// Public token state
-    PublicTokenState(Box<crate::public_tokens::client::TokenState>),
+    Public(Box<crate::public_tokens::client::TokenState>),
+    /// Private ristretto255 token state
+    PrivateRistretto255(Box<crate::private_tokens::client::TokenState<Ristretto255>>),
 }
 
-impl From<crate::private_tokens::client::TokenState> for ArbitraryBatchTokenState {
-    fn from(state: crate::private_tokens::client::TokenState) -> Self {
-        ArbitraryBatchTokenState::PrivateTokenState(Box::new(state))
+impl From<crate::private_tokens::client::TokenState<NistP384>> for ArbitraryBatchTokenState {
+    fn from(state: crate::private_tokens::client::TokenState<NistP384>) -> Self {
+        ArbitraryBatchTokenState::PrivateP384(Box::new(state))
+    }
+}
+
+impl From<crate::private_tokens::client::TokenState<Ristretto255>> for ArbitraryBatchTokenState {
+    fn from(state: crate::private_tokens::client::TokenState<Ristretto255>) -> Self {
+        ArbitraryBatchTokenState::PrivateRistretto255(Box::new(state))
     }
 }
 
 impl From<crate::public_tokens::client::TokenState> for ArbitraryBatchTokenState {
     fn from(state: crate::public_tokens::client::TokenState) -> Self {
-        ArbitraryBatchTokenState::PublicTokenState(Box::new(state))
+        ArbitraryBatchTokenState::Public(Box::new(state))
     }
 }
 
@@ -34,33 +45,6 @@ pub struct TokenStates {
     token_states: Vec<ArbitraryBatchTokenState>,
 }
 
-/// Errors that can occur when issuing token requests.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum IssueTokenRequestError {
-    #[error("Unsupported token type")]
-    /// Error when the token type is not supported.
-    UnsupportedTokenType,
-    /// Private issue token request error.
-    #[error(transparent)]
-    PrivateIssueTokenRequestError(#[from] crate::private_tokens::client::IssueTokenRequestError),
-    /// Public issue token request error.
-    #[error(transparent)]
-    PublicIssueTokenRequestError(#[from] crate::public_tokens::client::IssueTokenRequestError),
-}
-
-/// Errors that can occur when issuing tokens.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum IssueTokenError {
-    #[error("Invalid TokenResponse")]
-    /// Error when the token response is invalid.
-    InvalidTokenResponse,
-    /// Private issue token error.
-    #[error(transparent)]
-    PrivateIssueTokenError(#[from] crate::private_tokens::client::IssueTokenError),
-    /// Public issue token error.
-    #[error(transparent)]
-    PublicIssueTokenError(#[from] crate::public_tokens::client::IssueTokenError),
-}
 /// Builder for batch token requests.
 #[derive(Debug, Default)]
 pub struct BatchTokenRequestBuilder {
@@ -115,17 +99,30 @@ impl BatchTokenResponse {
             if let Some(response) = token_response {
                 match (response, token_state) {
                     (
-                        ArbitraryBatchTokenResponse::PrivateTokenResponse(response),
-                        ArbitraryBatchTokenState::PrivateTokenState(state),
+                        ArbitraryBatchTokenResponse::PrivateP384(response),
+                        ArbitraryBatchTokenState::PrivateP384(state),
                     ) => {
-                        let token = response.issue_token(state).map(|t| t.into())?;
+                        let token = response
+                            .issue_token(state)
+                            .map(ArbitraryBatchToken::from_private_p384)?;
                         tokens.push(token);
                     }
                     (
-                        ArbitraryBatchTokenResponse::PublicTokenResponse(response),
-                        ArbitraryBatchTokenState::PublicTokenState(state),
+                        ArbitraryBatchTokenResponse::Public(response),
+                        ArbitraryBatchTokenState::Public(state),
                     ) => {
-                        let token = response.issue_token(state).map(|t| t.into())?;
+                        let token = response
+                            .issue_token(state)
+                            .map(ArbitraryBatchToken::from_public)?;
+                        tokens.push(token);
+                    }
+                    (
+                        ArbitraryBatchTokenResponse::PrivateRistretto255(response),
+                        ArbitraryBatchTokenState::PrivateRistretto255(state),
+                    ) => {
+                        let token = response
+                            .issue_token(state)
+                            .map(ArbitraryBatchToken::from_private_ristretto)?;
                         tokens.push(token);
                     }
                     _ => {

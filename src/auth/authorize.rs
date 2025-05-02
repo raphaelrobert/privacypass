@@ -1,14 +1,13 @@
 //! This module contains the authorization logic for redemption phase of the
 //! protocol.
 
-use base64::{engine::general_purpose::URL_SAFE, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use generic_array::{ArrayLength, GenericArray};
-use http::{header::HeaderName, HeaderValue};
-use nom::Parser;
+use http::{HeaderValue, header::HeaderName};
 use nom::{
+    IResult, Parser,
     bytes::complete::{tag, tag_no_case},
     multi::{many1, separated_list1},
-    IResult,
 };
 use std::io::Write;
 use thiserror::Error;
@@ -195,7 +194,7 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
             return Err(nom::Err::Failure(nom::error::make_error(
                 input,
                 nom::error::ErrorKind::Tag,
-            )))
+            )));
         }
     };
     Ok((input, (key, value)))
@@ -259,7 +258,7 @@ fn builder_parser_test() {
     let token_key_id = [3u8; 32];
     let authenticator = [4u8; 32];
     let token = Token::<U32>::new(
-        TokenType::PrivateToken,
+        TokenType::PrivateP384,
         nonce,
         challenge_digest,
         token_key_id,
@@ -270,7 +269,7 @@ fn builder_parser_test() {
     assert_eq!(header_name, http::header::AUTHORIZATION);
 
     let token = parse_authorization_header::<U32>(&header_value).unwrap();
-    assert_eq!(token.token_type(), TokenType::PrivateToken);
+    assert_eq!(token.token_type(), TokenType::PrivateP384);
     assert_eq!(token.nonce(), nonce);
     assert_eq!(token.challenge_digest(), &challenge_digest);
     assert_eq!(token.token_key_id(), &token_key_id);
