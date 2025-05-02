@@ -3,48 +3,15 @@
 use async_trait::async_trait;
 use blind_rsa_signatures::{KeyPair, Options, PublicKey, Signature};
 use generic_array::ArrayLength;
-use rand::{rngs::OsRng, CryptoRng, RngCore};
-use thiserror::Error;
+use rand::{CryptoRng, RngCore, rngs::OsRng};
 
-use crate::{auth::authorize::Token, NonceStore, TokenInput, TokenType, TruncatedTokenKeyId};
+use crate::{
+    NonceStore, TokenInput, TokenType, TruncatedTokenKeyId,
+    auth::authorize::Token,
+    common::errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
+};
 
-use super::{public_key_to_token_key_id, truncate_token_key_id, TokenRequest, TokenResponse, NK};
-
-/// Errors that can occur when creating a keypair.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum CreateKeypairError {
-    #[error("Seed is too long")]
-    /// Error when the seed is too long.
-    SeedError,
-}
-
-/// Errors that can occur when issuing the token response.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum IssueTokenResponseError {
-    #[error("Key ID not found")]
-    /// Error when the key ID is not found.
-    KeyIdNotFound,
-    #[error("Invalid TokenRequest")]
-    /// Error when the token request is invalid.
-    InvalidTokenRequest,
-    #[error("Invalid toke type")]
-    /// Error when the token type is invalid.
-    InvalidTokenType,
-}
-
-/// Errors that can occur when redeeming the token.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum RedeemTokenError {
-    #[error("Key ID not found")]
-    /// Error when the key ID is not found.
-    KeyIdNotFound,
-    #[error("The token has already been redeemed")]
-    /// Error when the token has already been redeemed.
-    DoubleSpending,
-    #[error("The token is invalid")]
-    /// Error when the token is invalid.
-    InvalidToken,
-}
+use super::{NK, TokenRequest, TokenResponse, public_key_to_token_key_id, truncate_token_key_id};
 
 /// Minimal trait for a key store to store key material on the server-side. Note
 /// that the store requires inner mutability.
@@ -117,7 +84,7 @@ impl IssuerServer {
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
         let rng = &mut OsRng;
-        if token_request.token_type != TokenType::PublicToken {
+        if token_request.token_type != TokenType::Public {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
         let key_pair = key_store
@@ -169,7 +136,7 @@ impl OriginServer {
         nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != TokenType::PublicToken {
+        if token.token_type() != TokenType::Public {
             return Err(RedeemTokenError::InvalidToken);
         }
         if token.authenticator().len() != KEYSIZE_IN_BYTES {

@@ -1,18 +1,18 @@
 //! This module contains the authentication logic for the challenge phase of the
 //! protocol.
 
-use base64::{engine::general_purpose::URL_SAFE, Engine as _};
-use http::{header::HeaderName, HeaderValue};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE};
+use http::{HeaderValue, header::HeaderName};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize, TlsByteVecU16, TlsByteVecU8};
+use tls_codec::{Deserialize, Serialize, TlsByteVecU8, TlsByteVecU16};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use nom::{
+    IResult, Parser,
     bytes::complete::{tag, tag_no_case},
     character::complete::digit1,
     multi::{many1, separated_list1},
-    IResult, Parser,
 };
 
 use crate::{ChallengeDigest, TokenType};
@@ -300,7 +300,7 @@ fn parse_private_tokens(input: &str) -> IResult<&str, Vec<Challenge>> {
 fn builder_test() {
     let token_key = b"sample token key".to_vec();
     let token_challenge = TokenChallenge::new(
-        TokenType::PrivateToken,
+        TokenType::PrivateP384,
         "issuer",
         None,
         &["origin".to_string()],
@@ -327,14 +327,14 @@ fn parser_test() {
     let token_key2 = b"sample token key 2".to_vec();
 
     let challenge1 = TokenChallenge::new(
-        TokenType::PrivateToken,
+        TokenType::PrivateP384,
         "issuer1",
         None,
         &["origin1".to_string()],
     );
 
     let challenge2 = TokenChallenge::new(
-        TokenType::PrivateToken,
+        TokenType::PrivateP384,
         "issuer2",
         None,
         &["origin2".to_string()],
@@ -369,15 +369,13 @@ fn parser_test() {
 
 #[test]
 fn builder_parser_test() {
-    use crate::batched_tokens_ristretto255::server::{
-        deserialize_public_key, serialize_public_key,
-    };
+    use crate::common::private::{deserialize_public_key, serialize_public_key};
     use voprf::{Group, Ristretto255};
 
     let public_key = Ristretto255::base_elem();
-    let token_key = serialize_public_key(public_key);
+    let token_key = serialize_public_key::<Ristretto255>(public_key);
     let token_challenge = TokenChallenge::new(
-        TokenType::PrivateToken,
+        TokenType::PrivateP384,
         "issuer",
         None,
         &["origin".to_string()],
@@ -385,8 +383,6 @@ fn builder_parser_test() {
     let max_age = 100u32;
     let (_header_name, header_value) =
         build_www_authenticate_header(&token_challenge, &token_key, Some(max_age)).unwrap();
-
-    println!("header_value: {:?}", header_value);
 
     let challenges = parse_www_authenticate_header(&header_value).unwrap();
 
@@ -401,6 +397,7 @@ fn builder_parser_test() {
 
     assert_eq!(challenges.len(), 1);
     let challenge = &challenges[0];
-    let deserialized_public_key = deserialize_public_key(challenge.token_key()).unwrap();
+    let deserialized_public_key =
+        deserialize_public_key::<Ristretto255>(challenge.token_key()).unwrap();
     assert_eq!(deserialized_public_key, public_key);
 }

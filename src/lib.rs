@@ -20,30 +20,53 @@
 
 pub mod arbitrary_batched_tokens;
 pub mod auth;
-pub mod batched_tokens_p384;
-pub mod batched_tokens_ristretto255;
+pub mod batched_tokens;
+pub mod common;
 pub mod private_tokens;
 pub mod public_tokens;
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
 
 use async_trait::async_trait;
+use std::fmt::Debug;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use voprf::CipherSuite;
 
 pub use tls_codec::{Deserialize, Serialize};
+pub use voprf::{Group, VoprfServer};
+
+/// Trait for a cipher suite that can be used with the Privacy Pass protocol.
+pub trait PPCipherSuite:
+    CipherSuite<Group: Group<Elem: Send + Sync, Scalar: Send + Sync>> + PartialEq + Debug + Clone
+{
+    /// Returns the token type for the cipher suite.
+    fn token_type() -> TokenType {
+        match Self::ID {
+            "P384-SHA384" => TokenType::PrivateP384,
+            "ristretto255-SHA512" => TokenType::PrivateRistretto255,
+            _ => panic!("Unsupported token type"),
+        }
+    }
+}
+
+impl<C> PPCipherSuite for C where
+    C: CipherSuite<Group: Group<Elem: Send + Sync, Scalar: Send + Sync>>
+        + PartialEq
+        + Debug
+        + Clone
+{
+}
 
 /// Token type
 #[derive(TlsSize, TlsSerialize, TlsDeserialize, Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u16)]
 pub enum TokenType {
-    /// Privately verifiable token
-    PrivateToken = 1,
-    /// Publicly verifiable token
-    PublicToken = 2,
-    /// Batched token
-    BatchedTokenRistretto255 = 0xF91A,
-    /// Batched token 2
-    BatchedTokenP384 = 0xF901,
+    /// Private p384 token
+    PrivateP384 = 1,
+    /// Public token
+    Public = 2,
+    /// Private ristretto255 token
+    PrivateRistretto255 = 5,
 }
 
 /// Token key ID
@@ -54,6 +77,10 @@ pub type TokenKeyId = [u8; 32];
 pub type Nonce = [u8; 32];
 /// Challenge digest
 pub type ChallengeDigest = [u8; 32];
+
+pub(crate) fn truncate_token_key_id(token_key_id: &TokenKeyId) -> TruncatedTokenKeyId {
+    *token_key_id.iter().last().unwrap_or(&0)
+}
 
 /// Minimal trait for a nonce store that can be used to track redeemed tokens
 /// and prevent double spending. Note that the store requires inner mutability.

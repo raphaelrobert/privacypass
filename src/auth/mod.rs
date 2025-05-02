@@ -1,11 +1,10 @@
 //! Privacy Pass HTTP Authentication Scheme
 
-use nom::Parser;
 use nom::{
+    IResult, Parser,
     bytes::complete::{is_a, take_while1},
     combinator::verify,
     multi::many0,
-    IResult,
 };
 use std::str::FromStr;
 

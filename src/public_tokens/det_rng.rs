@@ -1,6 +1,6 @@
 //! Helper RNG that returns the same set of values for each call to (try_)fill_bytes.
 
-use rand::{rngs::OsRng, CryptoRng, Error, RngCore};
+use rand::{CryptoRng, Error, RngCore, rngs::OsRng};
 
 /// This RNG step is used to generate deterministic values for the nonce, salt,
 /// and blind.

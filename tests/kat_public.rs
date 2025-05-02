@@ -4,18 +4,19 @@ use serde::{Deserialize, Serialize};
 
 use blind_rsa_signatures::{KeyPair, Options, PublicKey, SecretKey};
 
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use tls_codec::Serialize as TlsSerializeTrait;
 
 use privacypass::{
+    Nonce,
     auth::authenticate::TokenChallenge,
     public_tokens::{
-        det_rng::DeterministicRng, public_key_to_truncated_token_key_id, server::*, TokenRequest,
+        TokenRequest, det_rng::DeterministicRng, public_key_to_truncated_token_key_id, server::*,
     },
-    test_utils::public_memory_stores::{
-        IssuerMemoryKeyStore, MemoryNonceStore, OriginMemoryKeyStore,
+    test_utils::{
+        nonce_store::MemoryNonceStore,
+        public_memory_store::{IssuerMemoryKeyStore, OriginMemoryKeyStore},
     },
-    Nonce,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -42,10 +43,15 @@ pub(crate) struct PublicTokenTestVector {
 
 #[tokio::test]
 async fn read_kat_public_token() {
-    let list: Vec<PublicTokenTestVector> =
-        serde_json::from_str(include_str!("kat_vectors/public_vectors.json").trim()).unwrap();
+    // === Check own KAT vectors ===
 
+    let list: Vec<PublicTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/public_rs.json").trim()).unwrap();
     evaluate_kat(list).await;
+
+    // === Check KAT vectors from Go ===
+
+    // TODO: Add Go KAT vectors
 }
 
 async fn evaluate_kat(list: Vec<PublicTokenTestVector>) {
@@ -103,10 +109,7 @@ pub(crate) async fn evaluate_vector(vector: PublicTokenTestVector) {
     let challenge_digest: [u8; 32] = token_challenge.digest().unwrap();
 
     // KAT: Check token challenge type
-    assert_eq!(
-        token_challenge.token_type(),
-        privacypass::TokenType::PublicToken
-    );
+    assert_eq!(token_challenge.token_type(), privacypass::TokenType::Public);
 
     let (token_request, token_state) =
         TokenRequest::new(det_rng, pub_key, &token_challenge).unwrap();
@@ -136,10 +139,12 @@ pub(crate) async fn evaluate_vector(vector: PublicTokenTestVector) {
     assert_eq!(token.challenge_digest(), &challenge_digest);
 
     // Origin server: Redeem the token
-    assert!(origin_server
-        .redeem_token(&origin_key_store, &nonce_store, token.clone())
-        .await
-        .is_ok());
+    assert!(
+        origin_server
+            .redeem_token(&origin_key_store, &nonce_store, token.clone())
+            .await
+            .is_ok()
+    );
 
     // KAT: Check token
     assert_eq!(token.tls_serialize_detached().unwrap(), vector.token);
@@ -160,7 +165,7 @@ async fn write_kat_public_token() {
 
     evaluate_kat(elements).await;
 
-    let mut file = File::create("tests/kat_vectors/public_vectors_privacypass-new.json").unwrap();
+    let mut file = File::create("tests/kat_vectors/public_rs-new.json").unwrap();
     file.write_all(data.as_bytes()).unwrap();
 }
 
@@ -218,7 +223,7 @@ pub(crate) async fn generate_kat_public_token() -> PublicTokenTestVector {
     };
 
     let kat_token_challenge = TokenChallenge::new(
-        privacypass::TokenType::PublicToken,
+        privacypass::TokenType::Public,
         "Issuer Name",
         redemption_context,
         &["a".to_string(), "b".to_string(), "c".to_string()],
@@ -260,10 +265,12 @@ pub(crate) async fn generate_kat_public_token() -> PublicTokenTestVector {
     assert_eq!(kat_token.challenge_digest(), &challenge_digest);
 
     // Origin server: Redeem the token
-    assert!(origin_server
-        .redeem_token(&origin_key_store, &nonce_store, kat_token.clone())
-        .await
-        .is_ok());
+    assert!(
+        origin_server
+            .redeem_token(&origin_key_store, &nonce_store, kat_token.clone())
+            .await
+            .is_ok()
+    );
 
     PublicTokenTestVector {
         sk_s,

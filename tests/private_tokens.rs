@@ -1,14 +1,22 @@
+use p384::NistP384;
 use privacypass::{
+    PPCipherSuite,
     auth::authenticate::TokenChallenge,
-    private_tokens::{server::*, TokenRequest},
-    test_utils::private_memory_stores::{MemoryKeyStore, MemoryNonceStore},
-    TokenType,
+    common::errors::RedeemTokenError,
+    private_tokens::{TokenRequest, server::*},
+    test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
+use voprf::Ristretto255;
 
 #[tokio::test]
 async fn private_tokens_cycle() {
+    private_tokens_cycle_type::<NistP384>().await;
+    private_tokens_cycle_type::<Ristretto255>().await;
+}
+
+async fn private_tokens_cycle_type<CS: PPCipherSuite>() {
     // Server: Instantiate in-memory keystore and nonce store.
-    let key_store = MemoryKeyStore::default();
+    let key_store = MemoryKeyStoreVoprf::<CS>::default();
     let nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
@@ -19,7 +27,7 @@ async fn private_tokens_cycle() {
 
     // Generate a challenge
     let challenge = TokenChallenge::new(
-        TokenType::PrivateToken,
+        CS::token_type(),
         "example.com",
         None,
         &["example.com".to_string()],
@@ -41,10 +49,12 @@ async fn private_tokens_cycle() {
     assert_eq!(token.challenge_digest(), &challenge.digest().unwrap());
 
     // Server: Redeem the token
-    assert!(server
-        .redeem_token(&key_store, &nonce_store, token.clone())
-        .await
-        .is_ok());
+    assert!(
+        server
+            .redeem_token(&key_store, &nonce_store, token.clone())
+            .await
+            .is_ok()
+    );
 
     // Server: Test double spend protection
     assert_eq!(
