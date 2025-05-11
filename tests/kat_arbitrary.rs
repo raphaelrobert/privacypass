@@ -1,18 +1,20 @@
 use futures::stream::{self, StreamExt};
 use kat_private::generate_kat_private_token;
 use kat_public::generate_kat_public_token;
+use p384::NistP384;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{fs::File, io::Write};
 use tls_codec::{Deserialize as _, Serialize as TlsSerializeTrait};
+use voprf::Ristretto255;
 
 use privacypass::{
+    PPCipherSuite, TokenType,
     arbitrary_batched_tokens::{
         ArbitraryBatchTokenRequest, ArbitraryBatchTokenResponse, BatchTokenRequest,
         BatchTokenResponse, OptionalTokenResponse,
     },
     private_tokens,
     public_tokens::{self},
-    TokenType,
 };
 
 mod kat_private;
@@ -61,7 +63,7 @@ fn u16_to_hex_str<S>(x: &u16, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let s = format!("{:04x}", x);
+    let s = format!("{x:04x}");
     serializer.serialize_str(&s)
 }
 
@@ -100,22 +102,19 @@ struct ArbitraryTokenTestVector {
 
 #[tokio::test]
 async fn read_kat_arbitrary_token() {
-    let list: Vec<ArbitraryTokenTestVector> = serde_json::from_str(
-        include_str!("kat_vectors/arbitrary_batched_tokens_privacypass.json").trim(),
-    )
-    .unwrap();
+    let list: Vec<ArbitraryTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/arbitrary_rs.json").trim()).unwrap();
 
     evaluate_kat(list).await;
 
     let list: Vec<ArbitraryTokenTestVector> =
-        serde_json::from_str(include_str!("kat_vectors/arbitrary_batched_tokens_go.json").trim())
-            .unwrap();
+        serde_json::from_str(include_str!("kat_vectors/arbitrary_go.json").trim()).unwrap();
 
     evaluate_kat(list).await;
 
     // Waiting for TS implementation to catch up
     /* let list: Vec<ArbitraryTokenTestVector> =
-        serde_json::from_str(include_str!("kat_vectors/arbitrary_batched_tokens_ts.json").trim())
+        serde_json::from_str(include_str!("kat_vectors/arbitrary_ts.json").trim())
             .unwrap();
 
     evaluate_kat(list).await; */
@@ -141,10 +140,10 @@ async fn evaluate_kat(list: Vec<ArbitraryTokenTestVector>) {
                 OptionalTokenResponse,
             )| {
                 match arbitrary_token_request {
-                    ArbitraryBatchTokenRequest::PrivateTokenRequest(token_request) => {
+                    ArbitraryBatchTokenRequest::PrivateP384(token_request) => {
                         let arbitrary_token_response =
                             arbitrary_token_response.token_response.unwrap();
-                        let ArbitraryBatchTokenResponse::PrivateTokenResponse(token_response) =
+                        let ArbitraryBatchTokenResponse::PrivateP384(token_response) =
                             arbitrary_token_response
                         else {
                             unreachable!("Expected a PrivateTokenResponse");
@@ -160,12 +159,12 @@ async fn evaluate_kat(list: Vec<ArbitraryTokenTestVector>) {
                             token: issuance.token.clone(),
                         };
 
-                        kat_private::evaluate_vector(private_token_test_vector).await;
+                        kat_private::evaluate_vector::<NistP384>(private_token_test_vector).await;
                     }
-                    ArbitraryBatchTokenRequest::PublicTokenRequest(token_request) => {
+                    ArbitraryBatchTokenRequest::Public(token_request) => {
                         let arbitrary_token_response =
                             arbitrary_token_response.token_response.unwrap();
-                        let ArbitraryBatchTokenResponse::PublicTokenResponse(token_response) =
+                        let ArbitraryBatchTokenResponse::Public(token_response) =
                             arbitrary_token_response
                         else {
                             unreachable!("Expected a PublicTokenResponse");
@@ -183,6 +182,28 @@ async fn evaluate_kat(list: Vec<ArbitraryTokenTestVector>) {
                         };
 
                         kat_public::evaluate_vector(public_token_test_vector).await;
+                    }
+                    ArbitraryBatchTokenRequest::PrivateRistretto255(token_request) => {
+                        let arbitrary_token_response =
+                            arbitrary_token_response.token_response.unwrap();
+                        let ArbitraryBatchTokenResponse::PrivateRistretto255(token_response) =
+                            arbitrary_token_response
+                        else {
+                            unreachable!("Expected a PrivateTokenResponse");
+                        };
+                        let private_token_test_vector = kat_private::PrivateTokenTestVector {
+                            sk_s: issuance.sk_s.clone(),
+                            pk_s: issuance.pk_s.clone(),
+                            token_challenge: issuance.token_challenge.clone(),
+                            nonce: issuance.nonce.clone(),
+                            blind: issuance.blind.clone(),
+                            token_request: token_request.tls_serialize_detached().unwrap(),
+                            token_response: token_response.tls_serialize_detached().unwrap(),
+                            token: issuance.token.clone(),
+                        };
+
+                        kat_private::evaluate_vector::<Ristretto255>(private_token_test_vector)
+                            .await;
                     }
                 };
             },
@@ -213,13 +234,12 @@ async fn write_kat_arbitrary_token() {
 
     evaluate_kat(elements).await;
 
-    let mut file =
-        File::create("tests/kat_vectors/arbitrary_batched_tokens_privacypass-new.json").unwrap();
+    let mut file = File::create("tests/kat_vectors/arbitrary_rs-new.json").unwrap();
     file.write_all(data.as_bytes()).unwrap();
 }
 
 async fn generate_kat_arbitrary_token_1() -> ArbitraryTokenTestVector {
-    let (issuance1, request1, response1) = generate_private_token().await;
+    let (issuance1, request1, response1) = generate_private_token::<NistP384>().await;
     let (issuance2, request2, response2) = generate_public_token().await;
 
     batch_generated_tokens(vec![
@@ -230,7 +250,7 @@ async fn generate_kat_arbitrary_token_1() -> ArbitraryTokenTestVector {
 
 async fn generate_kat_arbitrary_token_2() -> ArbitraryTokenTestVector {
     let (issuance1, request1, response1) = generate_public_token().await;
-    let (issuance2, request2, response2) = generate_private_token().await;
+    let (issuance2, request2, response2) = generate_private_token::<NistP384>().await;
 
     batch_generated_tokens(vec![
         (issuance1, request1, response1),
@@ -239,9 +259,9 @@ async fn generate_kat_arbitrary_token_2() -> ArbitraryTokenTestVector {
 }
 
 async fn generate_kat_arbitrary_token_3() -> ArbitraryTokenTestVector {
-    let (issuance1, request1, response1) = generate_private_token().await;
+    let (issuance1, request1, response1) = generate_private_token::<NistP384>().await;
     let (issuance2, request2, response2) = generate_public_token().await;
-    let (issuance3, request3, response3) = generate_private_token().await;
+    let (issuance3, request3, response3) = generate_private_token::<Ristretto255>().await;
     let (issuance4, request4, response4) = generate_public_token().await;
 
     batch_generated_tokens(vec![
@@ -282,20 +302,15 @@ fn batch_generated_tokens(
     }
 }
 
-async fn generate_private_token() -> (
+async fn generate_private_token<CS: PPCipherSuite>() -> (
     Issuance,
     ArbitraryBatchTokenRequest,
     ArbitraryBatchTokenResponse,
 ) {
-    let pv = generate_kat_private_token().await;
-
-    let token_request =
-        private_tokens::TokenRequest::tls_deserialize(&mut pv.token_request.as_slice()).unwrap();
-    let token_response =
-        private_tokens::TokenResponse::tls_deserialize(&mut pv.token_response.as_slice()).unwrap();
+    let pv = generate_kat_private_token::<CS>().await;
 
     let issuance = Issuance {
-        token_type: TokenType::PrivateToken as u16,
+        token_type: CS::token_type() as u16,
         sk_s: pv.sk_s,
         pk_s: pv.pk_s,
         token_challenge: pv.token_challenge,
@@ -305,11 +320,41 @@ async fn generate_private_token() -> (
         token: pv.token,
     };
 
-    (
-        issuance,
-        ArbitraryBatchTokenRequest::PrivateTokenRequest(Box::new(token_request)),
-        ArbitraryBatchTokenResponse::PrivateTokenResponse(Box::new(token_response)),
-    )
+    match CS::token_type() {
+        TokenType::PrivateP384 => {
+            let token_request = private_tokens::TokenRequest::<NistP384>::tls_deserialize(
+                &mut pv.token_request.as_slice(),
+            )
+            .unwrap();
+            let token_response = private_tokens::TokenResponse::<NistP384>::tls_deserialize(
+                &mut pv.token_response.as_slice(),
+            )
+            .unwrap();
+
+            (
+                issuance,
+                ArbitraryBatchTokenRequest::PrivateP384(Box::new(token_request)),
+                ArbitraryBatchTokenResponse::PrivateP384(Box::new(token_response)),
+            )
+        }
+        TokenType::PrivateRistretto255 => {
+            let token_request = private_tokens::TokenRequest::<Ristretto255>::tls_deserialize(
+                &mut pv.token_request.as_slice(),
+            )
+            .unwrap();
+            let token_response = private_tokens::TokenResponse::<Ristretto255>::tls_deserialize(
+                &mut pv.token_response.as_slice(),
+            )
+            .unwrap();
+
+            (
+                issuance,
+                ArbitraryBatchTokenRequest::PrivateRistretto255(Box::new(token_request)),
+                ArbitraryBatchTokenResponse::PrivateRistretto255(Box::new(token_response)),
+            )
+        }
+        _ => unreachable!(),
+    }
 }
 
 async fn generate_public_token() -> (
@@ -325,7 +370,7 @@ async fn generate_public_token() -> (
         public_tokens::TokenResponse::tls_deserialize(&mut pv.token_response.as_slice()).unwrap();
 
     let issuance = Issuance {
-        token_type: TokenType::PublicToken as u16,
+        token_type: TokenType::Public as u16,
         sk_s: pv.sk_s,
         pk_s: pv.pk_s,
         token_challenge: pv.token_challenge,
@@ -337,7 +382,7 @@ async fn generate_public_token() -> (
 
     (
         issuance,
-        ArbitraryBatchTokenRequest::PublicTokenRequest(Box::new(token_request)),
-        ArbitraryBatchTokenResponse::PublicTokenResponse(Box::new(token_response)),
+        ArbitraryBatchTokenRequest::Public(Box::new(token_request)),
+        ArbitraryBatchTokenResponse::Public(Box::new(token_response)),
     )
 }

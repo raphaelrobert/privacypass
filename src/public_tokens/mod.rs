@@ -1,16 +1,19 @@
 //! # Publicly Verifiable Tokens
 
 use sha2::{Digest, Sha256};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use typenum::U256;
 
-use crate::{auth::authorize::Token, Nonce, TokenKeyId, TokenType, TruncatedTokenKeyId};
+use crate::{TokenKeyId, TruncatedTokenKeyId, auth::authorize::Token, truncate_token_key_id};
 
-pub mod client;
+pub mod request;
+pub mod response;
 pub mod server;
 
 #[cfg(feature = "kat")]
 pub mod det_rng;
+
+pub use request::*;
+pub use response::*;
 
 /// Publicly Verifiable Token alias
 pub type PublicToken = Token<U256>;
@@ -30,36 +33,4 @@ fn public_key_to_token_key_id(public_key: &PublicKey) -> TokenKeyId {
     let public_key = serialize_public_key(public_key);
 
     Sha256::digest(public_key).into()
-}
-
-fn truncate_token_key_id(token_key_id: &TokenKeyId) -> TruncatedTokenKeyId {
-    *token_key_id.iter().last().unwrap_or(&0)
-}
-
-/// Token request as specified in the spec:
-///
-/// ```c
-/// struct {
-///     uint16_t token_type = 0x0002;
-///     uint8_t truncated_token_key_id;
-///     uint8_t blinded_msg[Nk];
-///  } TokenRequest;
-/// ```
-#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct TokenRequest {
-    token_type: TokenType,
-    truncated_token_key_id: u8,
-    blinded_msg: [u8; NK],
-}
-
-/// Token response as specified in the spec:
-///
-/// ```c
-/// struct {
-///     uint8_t blind_sig[Nk];
-///  } TokenResponse;
-/// ```
-#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct TokenResponse {
-    blind_sig: [u8; NK],
 }

@@ -1,20 +1,25 @@
-mod batched_memory_stores;
-
-use batched_memory_stores::*;
-
+use p384::NistP384;
 use privacypass::{
+    PPCipherSuite,
     auth::authenticate::TokenChallenge,
-    batched_tokens_ristretto255::{server::*, TokenRequest},
-    TokenType,
+    batched_tokens::{TokenRequest, server::*},
+    common::errors::RedeemTokenError,
+    test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
+use voprf::Ristretto255;
 
 #[tokio::test]
-async fn batched_tokens_ristretto255_cycle() {
+async fn batched_tokens() {
+    batched_tokens_cycle_type::<NistP384>().await;
+    batched_tokens_cycle_type::<Ristretto255>().await;
+}
+
+async fn batched_tokens_cycle_type<CS: PPCipherSuite>() {
     // Number of tokens to issue
-    let nr = 100;
+    let nr = 10;
 
     // Server: Instantiate in-memory keystore and nonce store.
-    let key_store = MemoryKeyStoreRistretto255::default();
+    let key_store = MemoryKeyStoreVoprf::<CS>::default();
     let nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
@@ -25,7 +30,7 @@ async fn batched_tokens_ristretto255_cycle() {
 
     // Generate a challenge
     let challenge = TokenChallenge::new(
-        TokenType::BatchedTokenRistretto255,
+        CS::token_type(),
         "example.com",
         None,
         &["example.com".to_string()],
@@ -50,10 +55,12 @@ async fn batched_tokens_ristretto255_cycle() {
 
     // Server: Redeem the token
     for token in &tokens {
-        assert!(server
-            .redeem_token(&key_store, &nonce_store, token.clone())
-            .await
-            .is_ok());
+        assert!(
+            server
+                .redeem_token(&key_store, &nonce_store, token.clone())
+                .await
+                .is_ok()
+        );
     }
 
     // Server: Test double spend protection

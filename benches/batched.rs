@@ -1,37 +1,38 @@
-#[allow(clippy::duplicate_mod)]
-#[path = "../tests/batched_memory_stores.rs"]
-mod batched_memory_stores;
-
-use criterion::{async_executor::FuturesExecutor, Criterion};
+use criterion::{Criterion, async_executor::FuturesExecutor};
+use p384::NistP384;
 use tokio::runtime::Runtime;
 
 use privacypass::{
-    auth::authenticate::TokenChallenge, batched_tokens_ristretto255::TokenRequest, TokenType,
+    PPCipherSuite,
+    auth::authenticate::TokenChallenge,
+    batched_tokens::{BatchedToken, TokenRequest, TokenResponse, server::Server},
+    test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
+use voprf::Ristretto255;
 
-async fn create_batched_keypair(
-    key_store: batched_memory_stores::MemoryKeyStoreRistretto255,
-    server: privacypass::batched_tokens_ristretto255::server::Server,
+async fn create_batched_keypair<CS: PPCipherSuite>(
+    key_store: MemoryKeyStoreVoprf<CS>,
+    server: Server<CS>,
 ) {
     let _public_key = server.create_keypair(&key_store).await.unwrap();
 }
 
-async fn issue_batched_token_response(
-    key_store: batched_memory_stores::MemoryKeyStoreRistretto255,
-    server: privacypass::batched_tokens_ristretto255::server::Server,
-    token_request: privacypass::batched_tokens_ristretto255::TokenRequest,
-) -> privacypass::batched_tokens_ristretto255::TokenResponse {
+async fn issue_batched_token_response<CS: PPCipherSuite>(
+    key_store: MemoryKeyStoreVoprf<CS>,
+    server: Server<CS>,
+    token_request: TokenRequest<CS>,
+) -> TokenResponse<CS> {
     server
         .issue_token_response(&key_store, token_request)
         .await
         .unwrap()
 }
 
-async fn redeem_batched_token(
-    key_store: batched_memory_stores::MemoryKeyStoreRistretto255,
-    nonce_store: batched_memory_stores::MemoryNonceStore,
-    token: privacypass::batched_tokens_ristretto255::BatchedToken,
-    server: privacypass::batched_tokens_ristretto255::server::Server,
+async fn redeem_batched_token<CS: PPCipherSuite>(
+    key_store: MemoryKeyStoreVoprf<CS>,
+    nonce_store: MemoryNonceStore,
+    token: BatchedToken<CS>,
+    server: Server<CS>,
 ) {
     server
         .redeem_token(&key_store, &nonce_store, token)
@@ -39,14 +40,22 @@ async fn redeem_batched_token(
         .unwrap();
 }
 
+pub fn criterion_batched_p384_benchmark(c: &mut Criterion) {
+    flow::<NistP384>(c);
+}
+
 pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
+    flow::<Ristretto255>(c);
+}
+
+pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
     const NR: u16 = 100;
     // Key pair generation
-    c.bench_function("BATCHED RISTRETTO255 SERVER: Generate key pair", move |b| {
+    c.bench_function("BATCHED P384 SERVER: Generate key pair", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
-                let key_store = batched_memory_stores::MemoryKeyStoreRistretto255::default();
-                let server = privacypass::batched_tokens_ristretto255::server::Server::new();
+                let key_store = MemoryKeyStoreVoprf::<CS>::default();
+                let server = Server::new();
                 (key_store, server)
             },
             |(key_store, server)| create_batched_keypair(key_store, server),
@@ -55,17 +64,17 @@ pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
 
     // Issue token request
     c.bench_function(
-        &format!("BATCHED RISTRETTO255 CLIENT: Issue token request for {NR} tokens"),
+        &format!("BATCHED P384 CLIENT: Issue token request for {NR} tokens"),
         move |b| {
             b.iter_with_setup(
                 || {
-                    let key_store = batched_memory_stores::MemoryKeyStoreRistretto255::default();
-                    let server = privacypass::batched_tokens_ristretto255::server::Server::new();
+                    let key_store = MemoryKeyStoreVoprf::<CS>::default();
+                    let server = Server::new();
                     let rt = Runtime::new().unwrap();
                     let public_key =
                         rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                     let challenge = TokenChallenge::new(
-                        TokenType::BatchedTokenRistretto255,
+                        CS::token_type(),
                         "example.com",
                         None,
                         &["example.com".to_string()],
@@ -73,7 +82,7 @@ pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
                     (public_key, challenge)
                 },
                 |(public_key, challenge)| {
-                    TokenRequest::new(public_key, &challenge, NR).unwrap();
+                    TokenRequest::<CS>::new(public_key, &challenge, NR).unwrap();
                 },
             );
         },
@@ -81,17 +90,17 @@ pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
 
     // Issue token response
     c.bench_function(
-        &format!("BATCHED RISTRETTO255 SERVER: Issue token response for {NR} tokens"),
+        &format!("BATCHED P384 SERVER: Issue token response for {NR} tokens"),
         move |b| {
             b.to_async(FuturesExecutor).iter_with_setup(
                 || {
-                    let key_store = batched_memory_stores::MemoryKeyStoreRistretto255::default();
-                    let server = privacypass::batched_tokens_ristretto255::server::Server::new();
+                    let key_store = MemoryKeyStoreVoprf::<CS>::default();
+                    let server = Server::new();
                     let rt = Runtime::new().unwrap();
                     let public_key =
                         rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                     let challenge = TokenChallenge::new(
-                        TokenType::BatchedTokenRistretto255,
+                        CS::token_type(),
                         "example.com",
                         None,
                         &["example.com".to_string()],
@@ -109,17 +118,17 @@ pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
 
     // Issue token
     c.bench_function(
-        &format!("BATCHED RISTRETTO255 CLIENT: Issue {NR} tokens"),
+        &format!("BATCHED P384 CLIENT: Issue {NR} tokens"),
         move |b| {
             b.iter_with_setup(
                 || {
-                    let key_store = batched_memory_stores::MemoryKeyStoreRistretto255::default();
-                    let server = privacypass::batched_tokens_ristretto255::server::Server::new();
+                    let key_store = MemoryKeyStoreVoprf::<CS>::default();
+                    let server = Server::new();
                     let rt = Runtime::new().unwrap();
                     let public_key =
                         rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                     let challenge = TokenChallenge::new(
-                        TokenType::BatchedTokenRistretto255,
+                        CS::token_type(),
                         "example.com",
                         None,
                         &["example.com".to_string()],
@@ -142,17 +151,17 @@ pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
     );
 
     // Redeem token
-    c.bench_function("BATCHED RISTRETTO255 SERVER: Redeem token", move |b| {
+    c.bench_function("BATCHED P384 SERVER: Redeem token", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
-                let key_store = batched_memory_stores::MemoryKeyStoreRistretto255::default();
-                let nonce_store = batched_memory_stores::MemoryNonceStore::default();
-                let server = privacypass::batched_tokens_ristretto255::server::Server::new();
+                let key_store = MemoryKeyStoreVoprf::<CS>::default();
+                let nonce_store = MemoryNonceStore::default();
+                let server = Server::new();
                 let rt = Runtime::new().unwrap();
                 let public_key =
                     rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
                 let challenge = TokenChallenge::new(
-                    TokenType::BatchedTokenRistretto255,
+                    CS::token_type(),
                     "example.com",
                     None,
                     &["example.com".to_string()],

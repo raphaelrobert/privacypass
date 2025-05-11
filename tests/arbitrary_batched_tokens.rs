@@ -1,4 +1,6 @@
+use p384::NistP384;
 use privacypass::{
+    TokenType,
     arbitrary_batched_tokens::{self, ArbitraryBatchToken, BatchTokenRequest},
     auth::authenticate::TokenChallenge,
     private_tokens::{self, server::Server as PrivateServer},
@@ -7,27 +9,37 @@ use privacypass::{
         server::{IssuerServer, OriginKeyStore, OriginServer},
     },
     test_utils::{
-        private_memory_stores,
-        public_memory_stores::{self, IssuerMemoryKeyStore, OriginMemoryKeyStore},
+        nonce_store::MemoryNonceStore,
+        private_memory_store,
+        public_memory_store::{IssuerMemoryKeyStore, OriginMemoryKeyStore},
     },
-    TokenType,
 };
 use rand::thread_rng;
+use voprf::Ristretto255;
 
 #[tokio::test]
 async fn arbitrary_batched_tokens_cycle() {
     // === Set up the private token server ===
 
     // Server: Instantiate in-memory keystore and nonce store.
-    let private_key_store = private_memory_stores::MemoryKeyStore::default();
-    let private_nonce_store = private_memory_stores::MemoryNonceStore::default();
+    let private_p384_key_store = private_memory_store::MemoryKeyStoreVoprf::<NistP384>::default();
+    let private_ristretto255_key_store =
+        private_memory_store::MemoryKeyStoreVoprf::<Ristretto255>::default();
+    let private_nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
-    let private_server = PrivateServer::new();
+    let private_p384_server = PrivateServer::new();
+    let private_ristretto255_server = PrivateServer::new();
 
-    // Server: Create a new keypair
-    let private_token_public_key = private_server
-        .create_keypair(&private_key_store)
+    // Server: Create a new p384 keypair
+    let private_p384_public_key = private_p384_server
+        .create_keypair(&private_p384_key_store)
+        .await
+        .unwrap();
+
+    // Server: Create a new ristretto keypair
+    let private_ristretto255_public_key = private_ristretto255_server
+        .create_keypair(&private_ristretto255_key_store)
         .await
         .unwrap();
 
@@ -38,7 +50,7 @@ async fn arbitrary_batched_tokens_cycle() {
     // Server: Instantiate in-memory keystore and nonce store.
     let issuer_key_store = IssuerMemoryKeyStore::default();
     let origin_key_store = OriginMemoryKeyStore::default();
-    let public_nonce_store = public_memory_stores::MemoryNonceStore::default();
+    let public_nonce_store = MemoryNonceStore::default();
 
     // Server: Create servers for issuer and origin
     let issuer_server = IssuerServer::new();
@@ -64,15 +76,22 @@ async fn arbitrary_batched_tokens_cycle() {
     let server = arbitrary_batched_tokens::server::Server::new();
 
     // Client: Generate private & public challenges
-    let private_challenge = TokenChallenge::new(
-        TokenType::PrivateToken,
+    let private_p384_challenge = TokenChallenge::new(
+        TokenType::PrivateP384,
+        "example.com",
+        None,
+        &["example.com".to_string()],
+    );
+
+    let private_ristretto255_challenge = TokenChallenge::new(
+        TokenType::PrivateRistretto255,
         "example.com",
         None,
         &["example.com".to_string()],
     );
 
     let public_challenge = TokenChallenge::new(
-        TokenType::PublicToken,
+        TokenType::Public,
         "example.com",
         None,
         &["example.com".to_string()],
@@ -82,10 +101,12 @@ async fn arbitrary_batched_tokens_cycle() {
     let mut builder = BatchTokenRequest::builder();
 
     for _ in 0..10 {
-        // Private token
-        let (token_request, token_state) =
-            private_tokens::TokenRequest::new(private_token_public_key, &private_challenge)
-                .unwrap();
+        // Private p384 token
+        let (token_request, token_state) = private_tokens::TokenRequest::<NistP384>::new(
+            private_p384_public_key,
+            &private_p384_challenge,
+        )
+        .unwrap();
         builder = builder.add_token_request(token_request.into(), token_state.into());
 
         // Public token
@@ -96,13 +117,26 @@ async fn arbitrary_batched_tokens_cycle() {
         )
         .unwrap();
         builder = builder.add_token_request(token_request.into(), token_state.into());
+
+        // Private ristretto255 token
+        let (token_request, token_state) = private_tokens::TokenRequest::<Ristretto255>::new(
+            private_ristretto255_public_key,
+            &private_ristretto255_challenge,
+        )
+        .unwrap();
+        builder = builder.add_token_request(token_request.into(), token_state.into());
     }
 
     let (token_request, token_states) = builder.build();
 
     // Server: Issue a TokenResponse
     let token_response = server
-        .issue_token_responses(&private_key_store, &issuer_key_store, token_request)
+        .issue_token_responses(
+            &private_p384_key_store,
+            &private_ristretto255_key_store,
+            &issuer_key_store,
+            token_request,
+        )
         .await
         .unwrap();
 
@@ -111,17 +145,26 @@ async fn arbitrary_batched_tokens_cycle() {
 
     // Server: Compare the challenge digest
     for (i, token) in tokens.iter().enumerate() {
-        if i % 2 == 0 {
-            assert_eq!(private_challenge.token_type(), TokenType::PrivateToken);
+        if i % 3 == 0 {
+            assert_eq!(private_p384_challenge.token_type(), TokenType::PrivateP384);
             assert_eq!(
                 token.challenge_digest(),
-                &private_challenge.digest().unwrap()
+                &private_p384_challenge.digest().unwrap()
             );
-        } else {
-            assert_eq!(public_challenge.token_type(), TokenType::PublicToken);
+        } else if i % 3 == 1 {
+            assert_eq!(public_challenge.token_type(), TokenType::Public);
             assert_eq!(
                 token.challenge_digest(),
                 &public_challenge.digest().unwrap()
+            );
+        } else {
+            assert_eq!(
+                private_ristretto255_challenge.token_type(),
+                TokenType::PrivateRistretto255
+            );
+            assert_eq!(
+                token.challenge_digest(),
+                &private_ristretto255_challenge.digest().unwrap()
             );
         }
     }
@@ -129,17 +172,37 @@ async fn arbitrary_batched_tokens_cycle() {
     // Server: Redeem the tokens
     for token in tokens {
         match token {
-            ArbitraryBatchToken::PrivateToken(token) => {
-                assert!(private_server
-                    .redeem_token(&private_key_store, &private_nonce_store, *token.clone())
-                    .await
-                    .is_ok());
+            ArbitraryBatchToken::PrivateP384(token) => {
+                assert!(
+                    private_p384_server
+                        .redeem_token(
+                            &private_p384_key_store,
+                            &private_nonce_store,
+                            *token.clone()
+                        )
+                        .await
+                        .is_ok()
+                );
             }
-            ArbitraryBatchToken::PublicToken(token) => {
-                assert!(origin_server
-                    .redeem_token(&origin_key_store, &public_nonce_store, *token.clone())
-                    .await
-                    .is_ok());
+            ArbitraryBatchToken::Public(token) => {
+                assert!(
+                    origin_server
+                        .redeem_token(&origin_key_store, &public_nonce_store, *token.clone())
+                        .await
+                        .is_ok()
+                );
+            }
+            ArbitraryBatchToken::PrivateRistretto255(token) => {
+                assert!(
+                    private_ristretto255_server
+                        .redeem_token(
+                            &private_ristretto255_key_store,
+                            &private_nonce_store,
+                            *token.clone()
+                        )
+                        .await
+                        .is_ok()
+                );
             }
         }
     }

@@ -1,11 +1,13 @@
+use privacypass::common::errors::RedeemTokenError;
 use privacypass::public_tokens::TokenRequest;
-use privacypass::test_utils::public_memory_stores::*;
+use privacypass::test_utils::nonce_store::MemoryNonceStore;
+use privacypass::test_utils::public_memory_store::*;
 
 use privacypass::{
+    TokenType,
     auth::authenticate::TokenChallenge,
     public_tokens::{public_key_to_truncated_token_key_id, server::*},
-    test_utils::public_memory_stores::IssuerMemoryKeyStore,
-    TokenType,
+    test_utils::public_memory_store::IssuerMemoryKeyStore,
 };
 use rand::thread_rng;
 
@@ -37,7 +39,7 @@ async fn public_tokens_cycle() {
 
     // Generate a challenge
     let token_challenge = TokenChallenge::new(
-        TokenType::PublicToken,
+        TokenType::Public,
         "example.com",
         None,
         &["example.com".to_string()],
@@ -61,10 +63,12 @@ async fn public_tokens_cycle() {
     assert_eq!(token.challenge_digest(), &challenge_digest);
 
     // Origin server: Redeem the token
-    assert!(origin_server
-        .redeem_token(&origin_key_store, &nonce_store, token.clone())
-        .await
-        .is_ok());
+    assert!(
+        origin_server
+            .redeem_token(&origin_key_store, &nonce_store, token.clone())
+            .await
+            .is_ok()
+    );
 
     // Origin server: Test double spend protection
     assert_eq!(
