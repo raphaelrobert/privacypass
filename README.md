@@ -10,4 +10,4 @@ for the following token types:
  - Privately Verifiable Tokens
  - Publicly Verifiable Tokens
  - Amortized Tokens
- - Arbitrary Tokens
+ - Generic Tokens

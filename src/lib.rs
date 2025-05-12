@@ -10,7 +10,7 @@
 //!  - Privately Verfifiable Tokens
 //!  - Publicly Verfifiable Tokens
 //!  - Amortized Tokens
-//!  - Arbitrary Tokens
+//!  - Generic Tokens
 //!
 
 #![warn(missing_docs)]
@@ -19,9 +19,9 @@
 #![deny(unsafe_code)]
 
 pub mod amortized_tokens;
-pub mod arbitrary_batched_tokens;
 pub mod auth;
 pub mod common;
+pub mod generic_tokens;
 pub mod private_tokens;
 pub mod public_tokens;
 #[cfg(feature = "test-utils")]

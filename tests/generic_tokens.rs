@@ -1,8 +1,8 @@
 use p384::NistP384;
 use privacypass::{
     TokenType,
-    arbitrary_batched_tokens::{self, ArbitraryBatchToken, BatchTokenRequest},
     auth::authenticate::TokenChallenge,
+    generic_tokens::{self, BatchTokenRequest, GenericToken},
     private_tokens::{self, server::Server as PrivateServer},
     public_tokens::{
         self,
@@ -18,7 +18,7 @@ use rand::thread_rng;
 use voprf::Ristretto255;
 
 #[tokio::test]
-async fn arbitrary_batched_tokens_cycle() {
+async fn generic_tokens_cycle() {
     // === Set up the private token server ===
 
     // Server: Instantiate in-memory keystore and nonce store.
@@ -71,9 +71,9 @@ async fn arbitrary_batched_tokens_cycle() {
         )
         .await;
 
-    // === Set up the arbitrary batched token server ===
+    // === Set up the generic token server ===
 
-    let server = arbitrary_batched_tokens::server::Server::new();
+    let server = generic_tokens::server::Server::new();
 
     // Client: Generate private & public challenges
     let private_p384_challenge = TokenChallenge::new(
@@ -172,7 +172,7 @@ async fn arbitrary_batched_tokens_cycle() {
     // Server: Redeem the tokens
     for token in tokens {
         match token {
-            ArbitraryBatchToken::PrivateP384(token) => {
+            GenericToken::PrivateP384(token) => {
                 assert!(
                     private_p384_server
                         .redeem_token(
@@ -184,7 +184,7 @@ async fn arbitrary_batched_tokens_cycle() {
                         .is_ok()
                 );
             }
-            ArbitraryBatchToken::Public(token) => {
+            GenericToken::Public(token) => {
                 assert!(
                     origin_server
                         .redeem_token(&origin_key_store, &public_nonce_store, *token.clone())
@@ -192,7 +192,7 @@ async fn arbitrary_batched_tokens_cycle() {
                         .is_ok()
                 );
             }
-            ArbitraryBatchToken::PrivateRistretto255(token) => {
+            GenericToken::PrivateRistretto255(token) => {
                 assert!(
                     private_ristretto255_server
                         .redeem_token(

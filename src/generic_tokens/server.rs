@@ -12,7 +12,7 @@ use crate::{
 use super::BatchTokenRequest;
 use super::BatchTokenResponse;
 
-/// Server side implementation of Arbitrary Batched Tokens.
+/// Server side implementation of Generic Tokens.
 #[derive(Default, Debug)]
 pub struct Server {}
 
@@ -41,38 +41,36 @@ impl Server {
         let mut token_responses = Vec::new();
         for request in token_request.token_requests {
             match request {
-                super::ArbitraryBatchTokenRequest::PrivateP384(token_request) => {
+                super::GenericTokenRequest::PrivateP384(token_request) => {
                     let token_response = PrivateServer::new()
                         .issue_token_response(private_p384_key_store, *token_request)
                         .await?;
                     let optional_token_response = super::OptionalTokenResponse {
-                        token_response: Some(super::ArbitraryBatchTokenResponse::PrivateP384(
-                            Box::new(token_response),
-                        )),
-                    };
-                    token_responses.push(optional_token_response);
-                }
-                super::ArbitraryBatchTokenRequest::Public(token_request) => {
-                    let token_response = IssuerServer::new()
-                        .issue_token_response(issuer_key_store, *token_request)
-                        .await?;
-                    let optional_token_response = super::OptionalTokenResponse {
-                        token_response: Some(super::ArbitraryBatchTokenResponse::Public(Box::new(
+                        token_response: Some(super::GenericTokenResponse::PrivateP384(Box::new(
                             token_response,
                         ))),
                     };
                     token_responses.push(optional_token_response);
                 }
-                super::ArbitraryBatchTokenRequest::PrivateRistretto255(token_request) => {
+                super::GenericTokenRequest::Public(token_request) => {
+                    let token_response = IssuerServer::new()
+                        .issue_token_response(issuer_key_store, *token_request)
+                        .await?;
+                    let optional_token_response = super::OptionalTokenResponse {
+                        token_response: Some(super::GenericTokenResponse::Public(Box::new(
+                            token_response,
+                        ))),
+                    };
+                    token_responses.push(optional_token_response);
+                }
+                super::GenericTokenRequest::PrivateRistretto255(token_request) => {
                     let token_response = PrivateServer::new()
                         .issue_token_response(private_ristretto255_key_store, *token_request)
                         .await?;
                     let optional_token_response = super::OptionalTokenResponse {
-                        token_response: Some(
-                            super::ArbitraryBatchTokenResponse::PrivateRistretto255(Box::new(
-                                token_response,
-                            )),
-                        ),
+                        token_response: Some(super::GenericTokenResponse::PrivateRistretto255(
+                            Box::new(token_response),
+                        )),
                     };
                     token_responses.push(optional_token_response);
                 }

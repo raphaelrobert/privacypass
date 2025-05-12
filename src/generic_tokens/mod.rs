@@ -1,4 +1,4 @@
-//! # Arbitrary Batched Tokens
+//! # Generic Tokens
 
 use p384::NistP384;
 use voprf::Ristretto255;
@@ -12,9 +12,9 @@ pub mod server;
 pub use request::*;
 pub use response::*;
 
-/// Arbitrary token
+/// Generic token
 #[derive(Debug)]
-pub enum ArbitraryBatchToken {
+pub enum GenericToken {
     /// Private p384 token
     PrivateP384(Box<crate::private_tokens::PrivateToken<NistP384>>),
     /// Public token
@@ -23,36 +23,36 @@ pub enum ArbitraryBatchToken {
     PrivateRistretto255(Box<crate::private_tokens::PrivateToken<Ristretto255>>),
 }
 
-impl ArbitraryBatchToken {
+impl GenericToken {
     /// Get the token type
     pub fn token_type(&self) -> TokenType {
         match self {
-            ArbitraryBatchToken::PrivateP384(_) => TokenType::PrivateP384,
-            ArbitraryBatchToken::Public(_) => TokenType::Public,
-            ArbitraryBatchToken::PrivateRistretto255(_) => TokenType::PrivateRistretto255,
+            GenericToken::PrivateP384(_) => TokenType::PrivateP384,
+            GenericToken::Public(_) => TokenType::Public,
+            GenericToken::PrivateRistretto255(_) => TokenType::PrivateRistretto255,
         }
     }
 
     /// Get the challenge
     pub fn challenge_digest(&self) -> &ChallengeDigest {
         match self {
-            ArbitraryBatchToken::PrivateP384(token) => token.challenge_digest(),
-            ArbitraryBatchToken::Public(token) => token.challenge_digest(),
-            ArbitraryBatchToken::PrivateRistretto255(token) => token.challenge_digest(),
+            GenericToken::PrivateP384(token) => token.challenge_digest(),
+            GenericToken::Public(token) => token.challenge_digest(),
+            GenericToken::PrivateRistretto255(token) => token.challenge_digest(),
         }
     }
 }
 
-impl ArbitraryBatchToken {
+impl GenericToken {
     pub(crate) fn from_private_p384(tok: crate::private_tokens::PrivateToken<NistP384>) -> Self {
-        ArbitraryBatchToken::PrivateP384(Box::new(tok))
+        GenericToken::PrivateP384(Box::new(tok))
     }
     pub(crate) fn from_public(tok: crate::public_tokens::PublicToken) -> Self {
-        ArbitraryBatchToken::Public(Box::new(tok))
+        GenericToken::Public(Box::new(tok))
     }
     pub(crate) fn from_private_ristretto(
         tok: crate::private_tokens::PrivateToken<Ristretto255>,
     ) -> Self {
-        ArbitraryBatchToken::PrivateRistretto255(Box::new(tok))
+        GenericToken::PrivateRistretto255(Box::new(tok))
     }
 }

@@ -1,4 +1,4 @@
-//! Request implementation of the  Arbitrary Batched Token protocol.
+//! Request implementation of the  Generic Token protocol.
 
 use p384::NistP384;
 use std::io::Read;
@@ -10,7 +10,7 @@ use crate::{TokenType, common::errors::SerializationError};
 
 /// State that is kept between the token requests and token responses.
 #[derive(Debug)]
-pub enum ArbitraryBatchTokenState {
+pub enum GenericTokenState {
     /// Private p384 token state
     PrivateP384(Box<crate::private_tokens::TokenState<NistP384>>),
     /// Public token state
@@ -19,35 +19,35 @@ pub enum ArbitraryBatchTokenState {
     PrivateRistretto255(Box<crate::private_tokens::request::TokenState<Ristretto255>>),
 }
 
-impl From<crate::private_tokens::TokenState<NistP384>> for ArbitraryBatchTokenState {
+impl From<crate::private_tokens::TokenState<NistP384>> for GenericTokenState {
     fn from(state: crate::private_tokens::TokenState<NistP384>) -> Self {
-        ArbitraryBatchTokenState::PrivateP384(Box::new(state))
+        GenericTokenState::PrivateP384(Box::new(state))
     }
 }
 
-impl From<crate::private_tokens::TokenState<Ristretto255>> for ArbitraryBatchTokenState {
+impl From<crate::private_tokens::TokenState<Ristretto255>> for GenericTokenState {
     fn from(state: crate::private_tokens::TokenState<Ristretto255>) -> Self {
-        ArbitraryBatchTokenState::PrivateRistretto255(Box::new(state))
+        GenericTokenState::PrivateRistretto255(Box::new(state))
     }
 }
 
-impl From<crate::public_tokens::TokenState> for ArbitraryBatchTokenState {
+impl From<crate::public_tokens::TokenState> for GenericTokenState {
     fn from(state: crate::public_tokens::TokenState) -> Self {
-        ArbitraryBatchTokenState::Public(Box::new(state))
+        GenericTokenState::Public(Box::new(state))
     }
 }
 
 /// Token states that are kept between the token requests and token responses.
 #[derive(Debug)]
 pub struct TokenStates {
-    pub(crate) token_states: Vec<ArbitraryBatchTokenState>,
+    pub(crate) token_states: Vec<GenericTokenState>,
 }
 
 /// Builder for batch token requests.
 #[derive(Debug, Default)]
 pub struct BatchTokenRequestBuilder {
-    token_requests: Vec<ArbitraryBatchTokenRequest>,
-    token_states: Vec<ArbitraryBatchTokenState>,
+    token_requests: Vec<GenericTokenRequest>,
+    token_states: Vec<GenericTokenState>,
 }
 
 impl BatchTokenRequestBuilder {
@@ -55,8 +55,8 @@ impl BatchTokenRequestBuilder {
     #[must_use]
     pub fn add_token_request(
         mut self,
-        token_request: ArbitraryBatchTokenRequest,
-        token_state: ArbitraryBatchTokenState,
+        token_request: GenericTokenRequest,
+        token_state: GenericTokenState,
     ) -> Self {
         self.token_requests.push(token_request);
         self.token_states.push(token_state);
@@ -77,7 +77,7 @@ impl BatchTokenRequestBuilder {
     }
 }
 
-/// Arbitrary Batch TokenRequest as specified in the spec:
+/// Generic TokenRequest as specified in the spec:
 ///
 /// ```c
 /// struct {
@@ -93,7 +93,7 @@ impl BatchTokenRequestBuilder {
 ///  } TokenRequest;
 /// ```
 #[derive(Debug, Clone, PartialEq)]
-pub enum ArbitraryBatchTokenRequest {
+pub enum GenericTokenRequest {
     /// Type VOPRF(P-384, SHA-384), RFC 9578
     PrivateP384(Box<crate::private_tokens::TokenRequest<NistP384>>),
     /// Type Blind RSA (2048-bit), RFC 9578
@@ -102,21 +102,21 @@ pub enum ArbitraryBatchTokenRequest {
     PrivateRistretto255(Box<crate::private_tokens::TokenRequest<Ristretto255>>),
 }
 
-impl From<crate::private_tokens::TokenRequest<NistP384>> for ArbitraryBatchTokenRequest {
+impl From<crate::private_tokens::TokenRequest<NistP384>> for GenericTokenRequest {
     fn from(token_request: crate::private_tokens::TokenRequest<NistP384>) -> Self {
-        ArbitraryBatchTokenRequest::PrivateP384(Box::new(token_request))
+        GenericTokenRequest::PrivateP384(Box::new(token_request))
     }
 }
 
-impl From<crate::public_tokens::TokenRequest> for ArbitraryBatchTokenRequest {
+impl From<crate::public_tokens::TokenRequest> for GenericTokenRequest {
     fn from(token_request: crate::public_tokens::TokenRequest) -> Self {
-        ArbitraryBatchTokenRequest::Public(Box::new(token_request))
+        GenericTokenRequest::Public(Box::new(token_request))
     }
 }
 
-impl From<crate::private_tokens::TokenRequest<Ristretto255>> for ArbitraryBatchTokenRequest {
+impl From<crate::private_tokens::TokenRequest<Ristretto255>> for GenericTokenRequest {
     fn from(token_request: crate::private_tokens::TokenRequest<Ristretto255>) -> Self {
-        ArbitraryBatchTokenRequest::PrivateRistretto255(Box::new(token_request))
+        GenericTokenRequest::PrivateRistretto255(Box::new(token_request))
     }
 }
 
@@ -130,7 +130,7 @@ impl From<crate::private_tokens::TokenRequest<Ristretto255>> for ArbitraryBatchT
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct BatchTokenRequest {
     /// Token requests
-    pub token_requests: Vec<ArbitraryBatchTokenRequest>,
+    pub token_requests: Vec<GenericTokenRequest>,
 }
 
 impl BatchTokenRequest {
@@ -148,37 +148,31 @@ impl BatchTokenRequest {
     }
 }
 
-impl Size for ArbitraryBatchTokenRequest {
+impl Size for GenericTokenRequest {
     fn tls_serialized_len(&self) -> usize {
         match self {
-            ArbitraryBatchTokenRequest::PrivateP384(token_request) => {
-                token_request.tls_serialized_len()
-            }
-            ArbitraryBatchTokenRequest::Public(token_request) => token_request.tls_serialized_len(),
-            ArbitraryBatchTokenRequest::PrivateRistretto255(token_request) => {
+            GenericTokenRequest::PrivateP384(token_request) => token_request.tls_serialized_len(),
+            GenericTokenRequest::Public(token_request) => token_request.tls_serialized_len(),
+            GenericTokenRequest::PrivateRistretto255(token_request) => {
                 token_request.tls_serialized_len()
             }
         }
     }
 }
 
-impl Serialize for ArbitraryBatchTokenRequest {
+impl Serialize for GenericTokenRequest {
     fn tls_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         match self {
-            ArbitraryBatchTokenRequest::PrivateP384(token_request) => {
-                token_request.tls_serialize(writer)
-            }
-            ArbitraryBatchTokenRequest::Public(token_request) => {
-                token_request.tls_serialize(writer)
-            }
-            ArbitraryBatchTokenRequest::PrivateRistretto255(token_request) => {
+            GenericTokenRequest::PrivateP384(token_request) => token_request.tls_serialize(writer),
+            GenericTokenRequest::Public(token_request) => token_request.tls_serialize(writer),
+            GenericTokenRequest::PrivateRistretto255(token_request) => {
                 token_request.tls_serialize(writer)
             }
         }
     }
 }
 
-impl Deserialize for ArbitraryBatchTokenRequest {
+impl Deserialize for GenericTokenRequest {
     fn tls_deserialize<R: std::io::Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
         // Peek into the first two octets to determine the type
         let mut peeked = [0u8; 2];
@@ -191,19 +185,17 @@ impl Deserialize for ArbitraryBatchTokenRequest {
             TokenType::PrivateP384 => {
                 let token_request =
                     crate::private_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
-                Ok(ArbitraryBatchTokenRequest::PrivateP384(Box::new(
-                    token_request,
-                )))
+                Ok(GenericTokenRequest::PrivateP384(Box::new(token_request)))
             }
             TokenType::Public => {
                 let token_request =
                     crate::public_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
-                Ok(ArbitraryBatchTokenRequest::Public(Box::new(token_request)))
+                Ok(GenericTokenRequest::Public(Box::new(token_request)))
             }
             TokenType::PrivateRistretto255 => {
                 let token_request =
                     crate::private_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
-                Ok(ArbitraryBatchTokenRequest::PrivateRistretto255(Box::new(
+                Ok(GenericTokenRequest::PrivateRistretto255(Box::new(
                     token_request,
                 )))
             }
