@@ -47,7 +47,8 @@ async fn read_kat_private_token() {
 
     // Ristretto255
     let list: Vec<PrivateTokenTestVector> =
-        serde_json::from_str(include_str!("kat_vectors/private_ristretto_rs.json").trim()).unwrap();
+        serde_json::from_str(include_str!("kat_vectors/private_ristretto255_rs.json").trim())
+            .unwrap();
     evaluate_kat::<Ristretto255>(list).await;
 
     // === Check KAT vectors from Go ===
