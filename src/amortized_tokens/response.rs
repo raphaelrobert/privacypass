@@ -1,4 +1,4 @@
-//! Response implementation of the Batched Tokens protocol.
+//! Response implementation of the Amortized Tokens protocol.
 
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
@@ -10,7 +10,7 @@ use crate::{
     common::errors::{IssueTokenError, SerializationError},
 };
 
-use super::{BatchedToken, TokenState};
+use super::{AmortizedToken, TokenState};
 
 /// Evaluated element as specified in the spec:
 ///
@@ -59,7 +59,7 @@ impl<CS: PPCipherSuite> TokenResponse<CS> {
     pub fn issue_tokens(
         self,
         token_state: &TokenState<CS>,
-    ) -> Result<Vec<BatchedToken<CS>>, IssueTokenError> {
+    ) -> Result<Vec<AmortizedToken<CS>>, IssueTokenError> {
         let mut evaluated_elements = Vec::new();
         for element in self.evaluated_elements.iter() {
             let evaluated_element =

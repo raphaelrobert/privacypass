@@ -1,20 +1,20 @@
 use p384::NistP384;
 use privacypass::{
     PPCipherSuite,
+    amortized_tokens::{TokenRequest, server::*},
     auth::authenticate::TokenChallenge,
-    batched_tokens::{TokenRequest, server::*},
     common::errors::RedeemTokenError,
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 use voprf::Ristretto255;
 
 #[tokio::test]
-async fn batched_tokens() {
-    batched_tokens_cycle_type::<NistP384>().await;
-    batched_tokens_cycle_type::<Ristretto255>().await;
+async fn amortized_tokens() {
+    amortized_tokens_cycle_type::<NistP384>().await;
+    amortized_tokens_cycle_type::<Ristretto255>().await;
 }
 
-async fn batched_tokens_cycle_type<CS: PPCipherSuite>() {
+async fn amortized_tokens_cycle_type<CS: PPCipherSuite>() {
     // Number of tokens to issue
     let nr = 10;
 

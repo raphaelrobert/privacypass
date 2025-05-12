@@ -1,4 +1,4 @@
-//! Request implementation of the Batched Tokens protocol.
+//! Request implementation of the Amortized Tokens protocol.
 
 use rand::{Rng, rngs::OsRng};
 use tls_codec::{Deserialize, Serialize, Size};

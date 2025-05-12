@@ -1,4 +1,4 @@
-//! Server-side implementation of the Batched Tokens protocol.
+//! Server-side implementation of the Amortized Tokens protocol.
 
 use generic_array::GenericArray;
 use rand::{RngCore, rngs::OsRng};
@@ -16,7 +16,7 @@ use crate::{
     truncate_token_key_id,
 };
 
-use super::{BatchedToken, TokenRequest, TokenResponse};
+use super::{AmortizedToken, TokenRequest, TokenResponse};
 
 /// Server-side component of the batched token issuance protocol.
 #[derive(Default, Debug)]
@@ -142,7 +142,7 @@ impl<CS: PPCipherSuite> Server<CS> {
         &self,
         key_store: &BKS,
         nonce_store: &NS,
-        token: BatchedToken<CS>,
+        token: AmortizedToken<CS>,
     ) -> Result<(), RedeemTokenError> {
         if token.token_type() != CS::token_type() {
             return Err(RedeemTokenError::InvalidToken);

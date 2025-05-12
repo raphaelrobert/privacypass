@@ -4,20 +4,20 @@ use tokio::runtime::Runtime;
 
 use privacypass::{
     PPCipherSuite,
+    amortized_tokens::{AmortizedToken, TokenRequest, TokenResponse, server::Server},
     auth::authenticate::TokenChallenge,
-    batched_tokens::{BatchedToken, TokenRequest, TokenResponse, server::Server},
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 use voprf::Ristretto255;
 
-async fn create_batched_keypair<CS: PPCipherSuite>(
+async fn create_amortized_keypair<CS: PPCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     server: Server<CS>,
 ) {
     let _public_key = server.create_keypair(&key_store).await.unwrap();
 }
 
-async fn issue_batched_token_response<CS: PPCipherSuite>(
+async fn issue_amortized_token_response<CS: PPCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     server: Server<CS>,
     token_request: TokenRequest<CS>,
@@ -28,10 +28,10 @@ async fn issue_batched_token_response<CS: PPCipherSuite>(
         .unwrap()
 }
 
-async fn redeem_batched_token<CS: PPCipherSuite>(
+async fn redeem_amortized_token<CS: PPCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     nonce_store: MemoryNonceStore,
-    token: BatchedToken<CS>,
+    token: AmortizedToken<CS>,
     server: Server<CS>,
 ) {
     server
@@ -40,11 +40,11 @@ async fn redeem_batched_token<CS: PPCipherSuite>(
         .unwrap();
 }
 
-pub fn criterion_batched_p384_benchmark(c: &mut Criterion) {
+pub fn criterion_amortized_p384_benchmark(c: &mut Criterion) {
     flow::<NistP384>(c);
 }
 
-pub fn criterion_batched_ristretto255_benchmark(c: &mut Criterion) {
+pub fn criterion_amortized_ristretto255_benchmark(c: &mut Criterion) {
     flow::<Ristretto255>(c);
 }
 
@@ -58,7 +58,7 @@ pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
                 let server = Server::new();
                 (key_store, server)
             },
-            |(key_store, server)| create_batched_keypair(key_store, server),
+            |(key_store, server)| create_amortized_keypair(key_store, server),
         );
     });
 
@@ -110,7 +110,7 @@ pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
                     (key_store, server, token_request)
                 },
                 |(key_store, server, token_request)| {
-                    issue_batched_token_response(key_store, server, token_request)
+                    issue_amortized_token_response(key_store, server, token_request)
                 },
             );
         },
@@ -178,7 +178,7 @@ pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
                 (key_store, nonce_store, tokens, server)
             },
             |(key_store, nonce_store, tokens, server)| {
-                redeem_batched_token(key_store, nonce_store, tokens[0].clone(), server)
+                redeem_amortized_token(key_store, nonce_store, tokens[0].clone(), server)
             },
         );
     });

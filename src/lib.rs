@@ -9,8 +9,8 @@
 //!
 //!  - Privately Verfifiable Tokens
 //!  - Publicly Verfifiable Tokens
-//!  - Batched Tokens
-//!  - Arbitrary Batched Tokens
+//!  - Amortized Tokens
+//!  - Arbitrary Tokens
 //!
 
 #![warn(missing_docs)]
@@ -18,9 +18,9 @@
 #![deny(missing_debug_implementations)]
 #![deny(unsafe_code)]
 
+pub mod amortized_tokens;
 pub mod arbitrary_batched_tokens;
 pub mod auth;
-pub mod batched_tokens;
 pub mod common;
 pub mod private_tokens;
 pub mod public_tokens;
