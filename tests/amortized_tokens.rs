@@ -1,7 +1,7 @@
 use p384::NistP384;
 use privacypass::{
     PPCipherSuite,
-    amortized_tokens::{TokenRequest, server::*},
+    amortized_tokens::{AmortizedBatchTokenRequest, server::*},
     auth::authenticate::TokenChallenge,
     common::errors::RedeemTokenError,
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
@@ -37,7 +37,8 @@ async fn amortized_tokens_cycle_type<CS: PPCipherSuite>() {
     );
 
     // Client: Prepare a TokenRequest after having received a challenge
-    let (token_request, token_state) = TokenRequest::new(public_key, &challenge, nr).unwrap();
+    let (token_request, token_state) =
+        AmortizedBatchTokenRequest::new(public_key, &challenge, nr).unwrap();
 
     // Server: Issue a TokenResponse
     let token_response = server

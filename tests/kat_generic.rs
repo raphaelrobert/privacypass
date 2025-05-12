@@ -10,8 +10,8 @@ use voprf::Ristretto255;
 use privacypass::{
     PPCipherSuite, TokenType,
     generic_tokens::{
-        BatchTokenRequest, BatchTokenResponse, GenericTokenRequest, GenericTokenResponse,
-        OptionalTokenResponse,
+        GenericBatchTokenRequest, GenericBatchTokenResponse, GenericTokenRequest,
+        GenericTokenResponse, OptionalTokenResponse,
     },
     private_tokens,
     public_tokens::{self},
@@ -123,9 +123,11 @@ async fn read_kat_generic_token() {
 async fn evaluate_kat(list: Vec<GenericTokenTestVector>) {
     for vector in list {
         let batch_token_request =
-            BatchTokenRequest::tls_deserialize(&mut vector.token_request.as_slice()).unwrap();
+            GenericBatchTokenRequest::tls_deserialize(&mut vector.token_request.as_slice())
+                .unwrap();
         let batch_token_response =
-            BatchTokenResponse::tls_deserialize(&mut vector.token_response.as_slice()).unwrap();
+            GenericBatchTokenResponse::tls_deserialize(&mut vector.token_response.as_slice())
+                .unwrap();
 
         stream::iter(
             vector
@@ -280,10 +282,10 @@ fn batch_generated_tokens(
         })
         .collect();
 
-    let batch_token_request = BatchTokenRequest {
+    let batch_token_request = GenericBatchTokenRequest {
         token_requests: requests,
     };
-    let batch_token_response = BatchTokenResponse {
+    let batch_token_response = GenericBatchTokenResponse {
         token_responses: responses,
     };
 

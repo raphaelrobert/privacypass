@@ -16,7 +16,7 @@ use crate::{
     truncate_token_key_id,
 };
 
-use super::{AmortizedToken, TokenRequest, TokenResponse};
+use super::{AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, AmortizedToken};
 
 /// Server-side component of the batched token issuance protocol.
 #[derive(Default, Debug)]
@@ -95,8 +95,8 @@ impl<CS: PPCipherSuite> Server<CS> {
     pub async fn issue_token_response<BKS: PrivateKeyStore<CS = CS>>(
         &self,
         key_store: &BKS,
-        token_request: TokenRequest<CS>,
-    ) -> Result<TokenResponse<CS>, IssueTokenResponseError> {
+        token_request: AmortizedBatchTokenRequest<CS>,
+    ) -> Result<AmortizedBatchTokenResponse<CS>, IssueTokenResponseError> {
         if token_request.token_type != CS::token_type() {
             return Err(IssueTokenResponseError::InvalidTokenType);
         }
@@ -127,7 +127,7 @@ impl<CS: PPCipherSuite> Server<CS> {
             .collect();
         let evaluated_proof = proof.serialize().to_vec();
 
-        Ok(TokenResponse {
+        Ok(AmortizedBatchTokenResponse {
             _marker: std::marker::PhantomData,
             evaluated_elements,
             evaluated_proof,

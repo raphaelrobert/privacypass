@@ -52,19 +52,19 @@ pub struct BlindedElement<CS: PPCipherSuite> {
 ///
 /// ```c
 /// struct {
-///     uint16_t token_type = 0xF901;
+///     uint16_t token_type;
 ///     uint8_t truncated_token_key_id;
-///     BlindedElement blinded_element[Nr];
-/// } TokenRequest;
+///     BlindedElement blinded_element<V>;
+/// } AmortizedBatchTokenRequest;
 /// ```
 #[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct TokenRequest<CS: PPCipherSuite> {
+pub struct AmortizedBatchTokenRequest<CS: PPCipherSuite> {
     pub(crate) token_type: TokenType,
     pub(crate) truncated_token_key_id: TruncatedTokenKeyId,
     pub(crate) blinded_elements: Vec<BlindedElement<CS>>,
 }
 
-impl<CS: PPCipherSuite> TokenRequest<CS> {
+impl<CS: PPCipherSuite> AmortizedBatchTokenRequest<CS> {
     /// Returns the number of blinded elements
     #[must_use]
     pub fn nr(&self) -> usize {
@@ -72,7 +72,7 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> TokenRequest<CS> {
+impl<CS: PPCipherSuite> AmortizedBatchTokenRequest<CS> {
     /// Issue a new token request.
     ///
     /// # Errors
@@ -81,7 +81,7 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
         public_key: PublicKey<CS>,
         challenge: &TokenChallenge,
         nr: u16,
-    ) -> Result<(TokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
+    ) -> Result<(AmortizedBatchTokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
         let mut nonces = Vec::with_capacity(nr as usize);
 
         for _ in 0..nr {
@@ -98,7 +98,7 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
         _blinds: Option<Vec<<CS::Group as Group>::Scalar>>,
-    ) -> Result<(TokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
+    ) -> Result<(AmortizedBatchTokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
         let challenge_digest = challenge
             .digest()
             .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
@@ -115,7 +115,7 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
         for nonce in nonces {
             // nonce = random(32)
             // challenge_digest = SHA256(challenge)
-            // token_input = concat(0xF901, nonce, challenge_digest, token_key_id)
+            // token_input = concat(0xXXXX, nonce, challenge_digest, token_key_id)
             // blind, blinded_element = client_context.Blind(token_input)
 
             let token_input = TokenInput::new(
@@ -150,7 +150,7 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
             blinded_elements.push(blinded_element);
         }
 
-        let token_request = TokenRequest {
+        let token_request = AmortizedBatchTokenRequest {
             token_type: challenge.token_type(),
             truncated_token_key_id: truncate_token_key_id(&token_key_id),
             blinded_elements,
@@ -173,7 +173,7 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
         blind: Vec<<CS::Group as Group>::Scalar>,
-    ) -> Result<(TokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
+    ) -> Result<(AmortizedBatchTokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
         Self::issue_token_request_internal(public_key, challenge, nonces, Some(blind))
     }
 }

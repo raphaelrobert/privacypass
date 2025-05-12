@@ -4,7 +4,7 @@ use tokio::runtime::Runtime;
 
 use privacypass::{
     PPCipherSuite,
-    amortized_tokens::{AmortizedToken, TokenRequest, TokenResponse, server::Server},
+    amortized_tokens::{AmortizedToken, AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, server::Server},
     auth::authenticate::TokenChallenge,
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
@@ -20,8 +20,8 @@ async fn create_amortized_keypair<CS: PPCipherSuite>(
 async fn issue_amortized_token_response<CS: PPCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     server: Server<CS>,
-    token_request: TokenRequest<CS>,
-) -> TokenResponse<CS> {
+    token_request: AmortizedBatchTokenRequest<CS>,
+) -> AmortizedBatchTokenResponse<CS> {
     server
         .issue_token_response(&key_store, token_request)
         .await
@@ -82,7 +82,7 @@ pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
                     (public_key, challenge)
                 },
                 |(public_key, challenge)| {
-                    TokenRequest::<CS>::new(public_key, &challenge, NR).unwrap();
+                    AmortizedBatchTokenRequest::<CS>::new(public_key, &challenge, NR).unwrap();
                 },
             );
         },
@@ -106,7 +106,7 @@ pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
                         &["example.com".to_string()],
                     );
                     let (token_request, _token_state) =
-                        TokenRequest::new(public_key, &challenge, NR).unwrap();
+                        AmortizedBatchTokenRequest::new(public_key, &challenge, NR).unwrap();
                     (key_store, server, token_request)
                 },
                 |(key_store, server, token_request)| {
@@ -134,7 +134,7 @@ pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
                         &["example.com".to_string()],
                     );
                     let (token_request, token_state) =
-                        TokenRequest::new(public_key, &challenge, NR).unwrap();
+                        AmortizedBatchTokenRequest::new(public_key, &challenge, NR).unwrap();
                     let token_response = rt.block_on(async {
                         server
                             .issue_token_response(&key_store, token_request)
@@ -167,7 +167,7 @@ pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
                     &["example.com".to_string()],
                 );
                 let (token_request, token_state) =
-                    TokenRequest::new(public_key, &challenge, NR).unwrap();
+                    AmortizedBatchTokenRequest::new(public_key, &challenge, NR).unwrap();
                 let token_response = rt.block_on(async {
                     server
                         .issue_token_response(&key_store, token_request)

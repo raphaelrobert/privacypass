@@ -2,7 +2,7 @@ use p384::NistP384;
 use privacypass::{
     TokenType,
     auth::authenticate::TokenChallenge,
-    generic_tokens::{self, BatchTokenRequest, GenericToken},
+    generic_tokens::{self, GenericBatchTokenRequest, GenericToken},
     private_tokens::{self, server::Server as PrivateServer},
     public_tokens::{
         self,
@@ -98,7 +98,7 @@ async fn generic_tokens_cycle() {
     );
 
     // Client: Batch the token requests
-    let mut builder = BatchTokenRequest::builder();
+    let mut builder = GenericBatchTokenRequest::builder();
 
     for _ in 0..10 {
         // Private p384 token

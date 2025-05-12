@@ -10,7 +10,7 @@ use voprf::{Group, Mode, Ristretto255, derive_key};
 
 use privacypass::{
     PPCipherSuite,
-    amortized_tokens::{TokenRequest, TokenResponse, server::*},
+    amortized_tokens::{AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, server::*},
     auth::authenticate::TokenChallenge,
     common::private::serialize_public_key,
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
@@ -108,13 +108,14 @@ async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<AmortizedTokenTestVector>) {
         assert_eq!(token_challenge.token_type(), CS::token_type());
 
         // Client: Prepare a TokenRequest after having received a challenge
-        let (token_request, token_state) = TokenRequest::issue_token_request_with_params(
-            public_key,
-            &token_challenge,
-            nonces,
-            blinds,
-        )
-        .unwrap();
+        let (token_request, token_state) =
+            AmortizedBatchTokenRequest::issue_token_request_with_params(
+                public_key,
+                &token_challenge,
+                nonces,
+                blinds,
+            )
+            .unwrap();
 
         // KAT: Check token request
         assert_eq!(
@@ -130,7 +131,8 @@ async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<AmortizedTokenTestVector>) {
 
         // KAT: Check token response
         let kat_token_response =
-            TokenResponse::tls_deserialize(&mut vector.token_response.as_slice()).unwrap();
+            AmortizedBatchTokenResponse::tls_deserialize(&mut vector.token_response.as_slice())
+                .unwrap();
 
         assert_eq!(
             token_response.evaluated_elements(),
@@ -255,13 +257,14 @@ async fn generate_kat_amortized_token<CS: PPCipherSuite>() -> AmortizedTokenTest
         .collect::<Vec<_>>();
 
     // Client: Prepare a TokenRequest after having received a challenge
-    let (kat_token_request, token_states) = TokenRequest::issue_token_request_with_params(
-        public_key,
-        &kat_token_challenge,
-        kat_nonces,
-        kat_blinds,
-    )
-    .unwrap();
+    let (kat_token_request, token_states) =
+        AmortizedBatchTokenRequest::issue_token_request_with_params(
+            public_key,
+            &kat_token_challenge,
+            kat_nonces,
+            kat_blinds,
+        )
+        .unwrap();
 
     let token_request = kat_token_request.tls_serialize_detached().unwrap();
 

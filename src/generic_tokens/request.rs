@@ -65,9 +65,9 @@ impl BatchTokenRequestBuilder {
 
     /// Build the batch token request.
     #[must_use]
-    pub fn build(self) -> (BatchTokenRequest, TokenStates) {
+    pub fn build(self) -> (GenericBatchTokenRequest, TokenStates) {
         (
-            BatchTokenRequest {
+            GenericBatchTokenRequest {
                 token_requests: self.token_requests,
             },
             TokenStates {
@@ -123,17 +123,17 @@ impl From<crate::private_tokens::TokenRequest<Ristretto255>> for GenericTokenReq
 /// Token response as specified in the spec:
 ///
 /// ```c
-///  struct {
-///    TokenRequest token_requests<V>;
-///  } BatchTokenRequest
+/// struct {
+///      GenericTokenRequest generic_token_requests<V>;
+/// } GenericBatchTokenRequest
 /// ```
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct BatchTokenRequest {
+pub struct GenericBatchTokenRequest {
     /// Token requests
     pub token_requests: Vec<GenericTokenRequest>,
 }
 
-impl BatchTokenRequest {
+impl GenericBatchTokenRequest {
     /// Create a new `BatchTokenRequest` from a byte slice.
     ///
     /// # Errors

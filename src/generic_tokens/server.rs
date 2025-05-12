@@ -9,8 +9,8 @@ use crate::{
     public_tokens::server::{IssuerKeyStore, IssuerServer},
 };
 
-use super::BatchTokenRequest;
-use super::BatchTokenResponse;
+use super::GenericBatchTokenRequest;
+use super::GenericBatchTokenResponse;
 
 /// Server side implementation of Generic Tokens.
 #[derive(Default, Debug)]
@@ -36,8 +36,8 @@ impl Server {
         private_p384_key_store: &P384KS,
         private_ristretto255_key_store: &R255KS,
         issuer_key_store: &IKS,
-        token_request: BatchTokenRequest,
-    ) -> Result<BatchTokenResponse, IssueTokenResponseError> {
+        token_request: GenericBatchTokenRequest,
+    ) -> Result<GenericBatchTokenResponse, IssueTokenResponseError> {
         let mut token_responses = Vec::new();
         for request in token_request.token_requests {
             match request {
@@ -76,6 +76,6 @@ impl Server {
                 }
             }
         }
-        Ok(BatchTokenResponse { token_responses })
+        Ok(GenericBatchTokenResponse { token_responses })
     }
 }

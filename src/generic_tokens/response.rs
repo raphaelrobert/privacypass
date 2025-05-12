@@ -17,7 +17,7 @@ use super::{GenericToken, GenericTokenState, TokenStates};
 /// ```c
 /// struct {
 ///     optional TokenResponse token_responses<V>;
-///   } BatchTokenRequest
+/// } BatchTokenRequest
 /// ```
 #[repr(u16)]
 #[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -38,7 +38,7 @@ pub enum GenericTokenResponse {
 /// ```c
 /// struct {
 ///     TokenResponse token_response<V>; /* Defined by token_type */
-///   } OptionalTokenResponse;
+/// } OptionalTokenResponse;
 ///```
 #[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct OptionalTokenResponse {
@@ -49,17 +49,17 @@ pub struct OptionalTokenResponse {
 /// Token response as specified in the spec:
 ///
 /// ```c
-///   struct {
-///     OptionalTokenResponse token_responses<0..2^16-1>;
-///   } BatchTokenResponse
+/// struct {
+///     OptionalTokenResponse token_responses<V>;
+/// } GenericBatchTokenResponse
 /// ```
 #[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct BatchTokenResponse {
+pub struct GenericBatchTokenResponse {
     /// Token responses
     pub token_responses: Vec<OptionalTokenResponse>,
 }
 
-impl BatchTokenResponse {
+impl GenericBatchTokenResponse {
     /// Create a new `BatchTokenResponse` from a byte slice.
     ///
     /// # Errors
@@ -69,7 +69,7 @@ impl BatchTokenResponse {
     }
 }
 
-impl BatchTokenResponse {
+impl GenericBatchTokenResponse {
     /// Issues tokens.
     ///
     /// # Errors
