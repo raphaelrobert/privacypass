@@ -43,14 +43,14 @@ pub struct TokenStates {
     pub(crate) token_states: Vec<GenericTokenState>,
 }
 
-/// Builder for batch token requests.
+/// Builder for generic batch token requests.
 #[derive(Debug, Default)]
-pub struct BatchTokenRequestBuilder {
+pub struct GenericBatchTokenRequestBuilder {
     token_requests: Vec<GenericTokenRequest>,
     token_states: Vec<GenericTokenState>,
 }
 
-impl BatchTokenRequestBuilder {
+impl GenericBatchTokenRequestBuilder {
     /// Add a token request to the batch.
     #[must_use]
     pub fn add_token_request(
@@ -63,7 +63,7 @@ impl BatchTokenRequestBuilder {
         self
     }
 
-    /// Build the batch token request.
+    /// Build the generic batch token request.
     #[must_use]
     pub fn build(self) -> (GenericBatchTokenRequest, TokenStates) {
         (
@@ -143,8 +143,8 @@ impl GenericBatchTokenRequest {
     }
 
     /// Create a builder for `BatchTokenRequest`.
-    pub fn builder() -> BatchTokenRequestBuilder {
-        BatchTokenRequestBuilder::default()
+    pub fn builder() -> GenericBatchTokenRequestBuilder {
+        GenericBatchTokenRequestBuilder::default()
     }
 }
 

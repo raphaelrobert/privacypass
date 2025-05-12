@@ -4,7 +4,9 @@ use tokio::runtime::Runtime;
 
 use privacypass::{
     PPCipherSuite,
-    amortized_tokens::{AmortizedToken, AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, server::Server},
+    amortized_tokens::{
+        AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, AmortizedToken, server::Server,
+    },
     auth::authenticate::TokenChallenge,
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
@@ -51,20 +53,26 @@ pub fn criterion_amortized_ristretto255_benchmark(c: &mut Criterion) {
 pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
     const NR: u16 = 100;
     // Key pair generation
-    c.bench_function("BATCHED P384 SERVER: Generate key pair", move |b| {
-        b.to_async(FuturesExecutor).iter_with_setup(
-            || {
-                let key_store = MemoryKeyStoreVoprf::<CS>::default();
-                let server = Server::new();
-                (key_store, server)
-            },
-            |(key_store, server)| create_amortized_keypair(key_store, server),
-        );
-    });
+    c.bench_function(
+        &format!("AMORTIZED SERVER ({}): Generate key pair", CS::ID),
+        move |b| {
+            b.to_async(FuturesExecutor).iter_with_setup(
+                || {
+                    let key_store = MemoryKeyStoreVoprf::<CS>::default();
+                    let server = Server::new();
+                    (key_store, server)
+                },
+                |(key_store, server)| create_amortized_keypair(key_store, server),
+            );
+        },
+    );
 
     // Issue token request
     c.bench_function(
-        &format!("BATCHED P384 CLIENT: Issue token request for {NR} tokens"),
+        &format!(
+            "AMORTIZED CLIENT ({}): Issue token request for {NR} tokens",
+            CS::ID
+        ),
         move |b| {
             b.iter_with_setup(
                 || {
@@ -90,7 +98,10 @@ pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
 
     // Issue token response
     c.bench_function(
-        &format!("BATCHED P384 SERVER: Issue token response for {NR} tokens"),
+        &format!(
+            "AMORTIZED SERVER ({}): Issue token response for {NR} tokens",
+            CS::ID
+        ),
         move |b| {
             b.to_async(FuturesExecutor).iter_with_setup(
                 || {
@@ -118,7 +129,7 @@ pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
 
     // Issue token
     c.bench_function(
-        &format!("BATCHED P384 CLIENT: Issue {NR} tokens"),
+        &format!("AMORTIZED CLIENT ({}): Issue {NR} tokens", CS::ID),
         move |b| {
             b.iter_with_setup(
                 || {
@@ -151,35 +162,38 @@ pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
     );
 
     // Redeem token
-    c.bench_function("BATCHED P384 SERVER: Redeem token", move |b| {
-        b.to_async(FuturesExecutor).iter_with_setup(
-            || {
-                let key_store = MemoryKeyStoreVoprf::<CS>::default();
-                let nonce_store = MemoryNonceStore::default();
-                let server = Server::new();
-                let rt = Runtime::new().unwrap();
-                let public_key =
-                    rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
-                let challenge = TokenChallenge::new(
-                    CS::token_type(),
-                    "example.com",
-                    None,
-                    &["example.com".to_string()],
-                );
-                let (token_request, token_state) =
-                    AmortizedBatchTokenRequest::new(public_key, &challenge, NR).unwrap();
-                let token_response = rt.block_on(async {
-                    server
-                        .issue_token_response(&key_store, token_request)
-                        .await
-                        .unwrap()
-                });
-                let tokens = token_response.issue_tokens(&token_state).unwrap();
-                (key_store, nonce_store, tokens, server)
-            },
-            |(key_store, nonce_store, tokens, server)| {
-                redeem_amortized_token(key_store, nonce_store, tokens[0].clone(), server)
-            },
-        );
-    });
+    c.bench_function(
+        &format!("AMORTIZED SERVER ({}): Redeem token", CS::ID),
+        move |b| {
+            b.to_async(FuturesExecutor).iter_with_setup(
+                || {
+                    let key_store = MemoryKeyStoreVoprf::<CS>::default();
+                    let nonce_store = MemoryNonceStore::default();
+                    let server = Server::new();
+                    let rt = Runtime::new().unwrap();
+                    let public_key =
+                        rt.block_on(async { server.create_keypair(&key_store).await.unwrap() });
+                    let challenge = TokenChallenge::new(
+                        CS::token_type(),
+                        "example.com",
+                        None,
+                        &["example.com".to_string()],
+                    );
+                    let (token_request, token_state) =
+                        AmortizedBatchTokenRequest::new(public_key, &challenge, NR).unwrap();
+                    let token_response = rt.block_on(async {
+                        server
+                            .issue_token_response(&key_store, token_request)
+                            .await
+                            .unwrap()
+                    });
+                    let tokens = token_response.issue_tokens(&token_state).unwrap();
+                    (key_store, nonce_store, tokens, server)
+                },
+                |(key_store, nonce_store, tokens, server)| {
+                    redeem_amortized_token(key_store, nonce_store, tokens[0].clone(), server)
+                },
+            );
+        },
+    );
 }

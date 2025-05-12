@@ -11,7 +11,6 @@
 //!  - Publicly Verfifiable Tokens
 //!  - Amortized Tokens
 //!  - Generic Tokens
-//!
 
 #![warn(missing_docs)]
 #![deny(unreachable_pub)]

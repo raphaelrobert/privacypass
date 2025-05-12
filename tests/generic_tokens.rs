@@ -97,7 +97,7 @@ async fn generic_tokens_cycle() {
         &["example.com".to_string()],
     );
 
-    // Client: Batch the token requests
+    // Client: Generic batch the token requests
     let mut builder = GenericBatchTokenRequest::builder();
 
     for _ in 0..10 {
