@@ -1,4 +1,4 @@
-//! # Batched tokens
+//! # Amortized tokens
 
 use sha2::digest::OutputSizeUser;
 use voprf::CipherSuite;
@@ -12,5 +12,5 @@ pub mod server;
 pub use request::*;
 pub use response::*;
 
-/// Batched token alias
-pub type BatchedToken<CS> = Token<<<CS as CipherSuite>::Hash as OutputSizeUser>::OutputSize>;
+/// Amortized token alias
+pub type AmortizedToken<CS> = Token<<<CS as CipherSuite>::Hash as OutputSizeUser>::OutputSize>;

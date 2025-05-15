@@ -10,14 +10,14 @@ use voprf::{Group, Mode, Ristretto255, derive_key};
 
 use privacypass::{
     PPCipherSuite,
+    amortized_tokens::{AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, server::*},
     auth::authenticate::TokenChallenge,
-    batched_tokens::{TokenRequest, TokenResponse, server::*},
     common::private::serialize_public_key,
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 
 #[derive(Serialize, Deserialize)]
-struct BatchedTokenTestVector {
+struct AmortizedTokenTestVector {
     #[serde(with = "hex", alias = "skS")]
     sk_s: Vec<u8>,
     #[serde(with = "hex", alias = "pkS")]
@@ -43,17 +43,17 @@ struct HexBlind(#[serde(with = "hex")] Vec<u8>);
 struct HexToken(#[serde(with = "hex")] Vec<u8>);
 
 #[tokio::test]
-async fn read_kat_batched_token() {
+async fn read_kat_amortized_token() {
     // === Check own KAT vectors ===
 
     // P384
-    let list: Vec<BatchedTokenTestVector> =
-        serde_json::from_str(include_str!("kat_vectors/batched_p384_rs.json").trim()).unwrap();
+    let list: Vec<AmortizedTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/amortized_p384_rs.json").trim()).unwrap();
     evaluate_kat::<NistP384>(list).await;
 
     // Ristretto255
-    let list: Vec<BatchedTokenTestVector> =
-        serde_json::from_str(include_str!("kat_vectors/batched_ristretto255_rs.json").trim())
+    let list: Vec<AmortizedTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/amortized_ristretto255_rs.json").trim())
             .unwrap();
     evaluate_kat::<Ristretto255>(list).await;
 
@@ -62,14 +62,14 @@ async fn read_kat_batched_token() {
     // Ristretto255
 
     // TODO: Uncomment when Go implementation is fixed
-    /* let list: Vec<BatchedTokenTestVector> = serde_json::from_str(
-        include_str!("kat_vectors/batched_ristretto255_go.json").trim(),
+    /* let list: Vec<AmortizedTokenTestVector> = serde_json::from_str(
+        include_str!("kat_vectors/amortized_ristretto255_go.json").trim(),
     )
     .unwrap();
     evaluate_kat::<Ristretto255>(list).await; */
 }
 
-async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<BatchedTokenTestVector>) {
+async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<AmortizedTokenTestVector>) {
     for vector in list {
         // Make sure we have the same amount of nonces and blinds
         assert_eq!(vector.blinds.len(), vector.nonces.len());
@@ -108,13 +108,14 @@ async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<BatchedTokenTestVector>) {
         assert_eq!(token_challenge.token_type(), CS::token_type());
 
         // Client: Prepare a TokenRequest after having received a challenge
-        let (token_request, token_state) = TokenRequest::issue_token_request_with_params(
-            public_key,
-            &token_challenge,
-            nonces,
-            blinds,
-        )
-        .unwrap();
+        let (token_request, token_state) =
+            AmortizedBatchTokenRequest::issue_token_request_with_params(
+                public_key,
+                &token_challenge,
+                nonces,
+                blinds,
+            )
+            .unwrap();
 
         // KAT: Check token request
         assert_eq!(
@@ -130,7 +131,8 @@ async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<BatchedTokenTestVector>) {
 
         // KAT: Check token response
         let kat_token_response =
-            TokenResponse::tls_deserialize(&mut vector.token_response.as_slice()).unwrap();
+            AmortizedBatchTokenResponse::tls_deserialize(&mut vector.token_response.as_slice())
+                .unwrap();
 
         assert_eq!(
             token_response.evaluated_elements(),
@@ -159,20 +161,21 @@ async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<BatchedTokenTestVector>) {
 }
 
 #[tokio::test]
-async fn write_kat_batched_token() {
-    write_kat_batched_token_type::<NistP384>("tests/kat_vectors/batched_p384_rs-new.json").await;
-    write_kat_batched_token_type::<Ristretto255>(
-        "tests/kat_vectors/batched_ristretto255_rs-new.json",
+async fn write_kat_amortized_token() {
+    write_kat_amortized_token_type::<NistP384>("tests/kat_vectors/amortized_p384_rs-new.json")
+        .await;
+    write_kat_amortized_token_type::<Ristretto255>(
+        "tests/kat_vectors/amortized_ristretto255_rs-new.json",
     )
     .await;
 }
 
-async fn write_kat_batched_token_type<CS: PPCipherSuite>(file: &str) {
+async fn write_kat_amortized_token_type<CS: PPCipherSuite>(file: &str) {
     let mut elements = Vec::new();
 
     for _ in 0..5 {
         // Generate a new test vector
-        let vector = generate_kat_batched_token::<CS>().await;
+        let vector = generate_kat_amortized_token::<CS>().await;
 
         elements.push(vector);
     }
@@ -185,7 +188,7 @@ async fn write_kat_batched_token_type<CS: PPCipherSuite>(file: &str) {
     file.write_all(data.as_bytes()).unwrap();
 }
 
-async fn generate_kat_batched_token<CS: PPCipherSuite>() -> BatchedTokenTestVector {
+async fn generate_kat_amortized_token<CS: PPCipherSuite>() -> AmortizedTokenTestVector {
     let nr = 5u16;
     // Server: Instantiate in-memory keystore and nonce store.
     let key_store = MemoryKeyStoreVoprf::<CS>::default();
@@ -254,13 +257,14 @@ async fn generate_kat_batched_token<CS: PPCipherSuite>() -> BatchedTokenTestVect
         .collect::<Vec<_>>();
 
     // Client: Prepare a TokenRequest after having received a challenge
-    let (kat_token_request, token_states) = TokenRequest::issue_token_request_with_params(
-        public_key,
-        &kat_token_challenge,
-        kat_nonces,
-        kat_blinds,
-    )
-    .unwrap();
+    let (kat_token_request, token_states) =
+        AmortizedBatchTokenRequest::issue_token_request_with_params(
+            public_key,
+            &kat_token_challenge,
+            kat_nonces,
+            kat_blinds,
+        )
+        .unwrap();
 
     let token_request = kat_token_request.tls_serialize_detached().unwrap();
 
@@ -292,7 +296,7 @@ async fn generate_kat_batched_token<CS: PPCipherSuite>() -> BatchedTokenTestVect
         .map(|token| HexToken(token.tls_serialize_detached().unwrap()))
         .collect::<Vec<_>>();
 
-    BatchedTokenTestVector {
+    AmortizedTokenTestVector {
         sk_s,
         pk_s,
         token_challenge,

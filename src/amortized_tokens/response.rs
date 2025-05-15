@@ -1,4 +1,4 @@
-//! Response implementation of the Batched Tokens protocol.
+//! Response implementation of the Amortized Tokens protocol.
 
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
@@ -10,7 +10,7 @@ use crate::{
     common::errors::{IssueTokenError, SerializationError},
 };
 
-use super::{BatchedToken, TokenState};
+use super::{AmortizedToken, TokenState};
 
 /// Evaluated element as specified in the spec:
 ///
@@ -30,18 +30,18 @@ pub struct EvaluatedElement<CS: PPCipherSuite> {
 ///
 /// ```c
 /// struct {
-///     EvaluatedElement evaluated_elements[Nr];
+///     EvaluatedElement evaluated_elements<V>;
 ///     uint8_t evaluated_proof[Ns + Ns];
-///  } TokenResponse;
+/// } AmortizedBatchTokenResponse;
 /// ```
 #[derive(Debug)]
-pub struct TokenResponse<CS: PPCipherSuite> {
+pub struct AmortizedBatchTokenResponse<CS: PPCipherSuite> {
     pub(crate) _marker: std::marker::PhantomData<CS>,
     pub(crate) evaluated_elements: Vec<EvaluatedElement<CS>>,
     pub(crate) evaluated_proof: Vec<u8>,
 }
 
-impl<CS: PPCipherSuite> TokenResponse<CS> {
+impl<CS: PPCipherSuite> AmortizedBatchTokenResponse<CS> {
     /// Create a new `TokenResponse` from a byte slice.
     ///
     /// # Errors
@@ -59,7 +59,7 @@ impl<CS: PPCipherSuite> TokenResponse<CS> {
     pub fn issue_tokens(
         self,
         token_state: &TokenState<CS>,
-    ) -> Result<Vec<BatchedToken<CS>>, IssueTokenError> {
+    ) -> Result<Vec<AmortizedToken<CS>>, IssueTokenError> {
         let mut evaluated_elements = Vec::new();
         for element in self.evaluated_elements.iter() {
             let evaluated_element =
@@ -145,14 +145,14 @@ impl<CS: PPCipherSuite> Deserialize for EvaluatedElement<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Size for TokenResponse<CS> {
+impl<CS: PPCipherSuite> Size for AmortizedBatchTokenResponse<CS> {
     fn tls_serialized_len(&self) -> usize {
         let len = 2 * <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE;
         self.evaluated_elements.tls_serialized_len() + len
     }
 }
 
-impl<CS: PPCipherSuite> Deserialize for TokenResponse<CS> {
+impl<CS: PPCipherSuite> Deserialize for AmortizedBatchTokenResponse<CS> {
     fn tls_deserialize<R: std::io::Read>(
         bytes: &mut R,
     ) -> std::result::Result<Self, tls_codec::Error>
@@ -164,7 +164,7 @@ impl<CS: PPCipherSuite> Deserialize for TokenResponse<CS> {
         // read len bytes
         let mut evaluated_proof = vec![0u8; len];
         bytes.read_exact(&mut evaluated_proof)?;
-        Ok(TokenResponse {
+        Ok(AmortizedBatchTokenResponse {
             _marker: std::marker::PhantomData,
             evaluated_elements,
             evaluated_proof,
@@ -172,7 +172,7 @@ impl<CS: PPCipherSuite> Deserialize for TokenResponse<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Serialize for TokenResponse<CS> {
+impl<CS: PPCipherSuite> Serialize for AmortizedBatchTokenResponse<CS> {
     fn tls_serialize<W: std::io::Write>(
         &self,
         writer: &mut W,

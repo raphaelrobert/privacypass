@@ -9,4 +9,5 @@ for the following token types:
 
  - Privately Verifiable Tokens
  - Publicly Verifiable Tokens
- - Batched Tokens
+ - Amortized Tokens
+ - Generic Tokens

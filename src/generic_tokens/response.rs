@@ -1,4 +1,4 @@
-//! Response implementation of the Arbitrary Batched Token protocol.
+//! Response implementation of the Generic Token protocol.
 
 use p384::NistP384;
 use tls_codec::Deserialize;
@@ -10,18 +10,18 @@ use crate::{
     common::errors::{IssueTokenError, SerializationError},
 };
 
-use super::{ArbitraryBatchToken, ArbitraryBatchTokenState, TokenStates};
+use super::{GenericToken, GenericTokenState, TokenStates};
 
-/// Arbitrary Batch TokenResponse as specified in the spec:
+/// Generic TokenResponse as specified in the spec:
 ///
 /// ```c
 /// struct {
 ///     optional TokenResponse token_responses<V>;
-///   } BatchTokenRequest
+/// } BatchTokenRequest
 /// ```
 #[repr(u16)]
 #[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub enum ArbitraryBatchTokenResponse {
+pub enum GenericTokenResponse {
     /// Type VOPRF(P-384, SHA-384), RFC 9578
     #[tls_codec(discriminant = "TokenType::PrivateP384")]
     PrivateP384(Box<crate::private_tokens::TokenResponse<NistP384>>),
@@ -38,28 +38,28 @@ pub enum ArbitraryBatchTokenResponse {
 /// ```c
 /// struct {
 ///     TokenResponse token_response<V>; /* Defined by token_type */
-///   } OptionalTokenResponse;
+/// } OptionalTokenResponse;
 ///```
 #[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct OptionalTokenResponse {
     /// Optional token response
-    pub token_response: Option<ArbitraryBatchTokenResponse>,
+    pub token_response: Option<GenericTokenResponse>,
 }
 
 /// Token response as specified in the spec:
 ///
 /// ```c
-///   struct {
-///     OptionalTokenResponse token_responses<0..2^16-1>;
-///   } BatchTokenResponse
+/// struct {
+///     OptionalTokenResponse token_responses<V>;
+/// } GenericBatchTokenResponse
 /// ```
 #[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct BatchTokenResponse {
+pub struct GenericBatchTokenResponse {
     /// Token responses
     pub token_responses: Vec<OptionalTokenResponse>,
 }
 
-impl BatchTokenResponse {
+impl GenericBatchTokenResponse {
     /// Create a new `BatchTokenResponse` from a byte slice.
     ///
     /// # Errors
@@ -69,7 +69,7 @@ impl BatchTokenResponse {
     }
 }
 
-impl BatchTokenResponse {
+impl GenericBatchTokenResponse {
     /// Issues tokens.
     ///
     /// # Errors
@@ -77,7 +77,7 @@ impl BatchTokenResponse {
     pub fn issue_tokens(
         self,
         token_states: &TokenStates,
-    ) -> Result<Vec<ArbitraryBatchToken>, IssueTokenError> {
+    ) -> Result<Vec<GenericToken>, IssueTokenError> {
         let mut tokens = Vec::new();
 
         for (token_response, token_state) in self
@@ -89,30 +89,25 @@ impl BatchTokenResponse {
             if let Some(response) = token_response {
                 match (response, token_state) {
                     (
-                        ArbitraryBatchTokenResponse::PrivateP384(response),
-                        ArbitraryBatchTokenState::PrivateP384(state),
+                        GenericTokenResponse::PrivateP384(response),
+                        GenericTokenState::PrivateP384(state),
                     ) => {
                         let token = response
                             .issue_token(state)
-                            .map(ArbitraryBatchToken::from_private_p384)?;
+                            .map(GenericToken::from_private_p384)?;
+                        tokens.push(token);
+                    }
+                    (GenericTokenResponse::Public(response), GenericTokenState::Public(state)) => {
+                        let token = response.issue_token(state).map(GenericToken::from_public)?;
                         tokens.push(token);
                     }
                     (
-                        ArbitraryBatchTokenResponse::Public(response),
-                        ArbitraryBatchTokenState::Public(state),
+                        GenericTokenResponse::PrivateRistretto255(response),
+                        GenericTokenState::PrivateRistretto255(state),
                     ) => {
                         let token = response
                             .issue_token(state)
-                            .map(ArbitraryBatchToken::from_public)?;
-                        tokens.push(token);
-                    }
-                    (
-                        ArbitraryBatchTokenResponse::PrivateRistretto255(response),
-                        ArbitraryBatchTokenState::PrivateRistretto255(state),
-                    ) => {
-                        let token = response
-                            .issue_token(state)
-                            .map(ArbitraryBatchToken::from_private_ristretto)?;
+                            .map(GenericToken::from_private_ristretto)?;
                         tokens.push(token);
                     }
                     _ => {

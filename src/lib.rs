@@ -9,19 +9,18 @@
 //!
 //!  - Privately Verfifiable Tokens
 //!  - Publicly Verfifiable Tokens
-//!  - Batched Tokens
-//!  - Arbitrary Batched Tokens
-//!
+//!  - Amortized Tokens
+//!  - Generic Tokens
 
 #![warn(missing_docs)]
 #![deny(unreachable_pub)]
 #![deny(missing_debug_implementations)]
 #![deny(unsafe_code)]
 
-pub mod arbitrary_batched_tokens;
+pub mod amortized_tokens;
 pub mod auth;
-pub mod batched_tokens;
 pub mod common;
+pub mod generic_tokens;
 pub mod private_tokens;
 pub mod public_tokens;
 #[cfg(feature = "test-utils")]

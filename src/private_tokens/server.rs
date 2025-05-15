@@ -1,7 +1,6 @@
 //! Server-side implementation of Privately Verifiable Token protocol.
 
 use generic_array::ArrayLength;
-use generic_array::GenericArray;
 use rand::{RngCore, rngs::OsRng};
 use sha2::digest::OutputSizeUser;
 use typenum::Unsigned;
@@ -43,7 +42,7 @@ impl<CS: PPCipherSuite> Server<CS> {
         &self,
         key_store: &PKS,
     ) -> Result<PublicKey<CS>, CreateKeypairError> {
-        let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
+        let mut seed = vec![0u8; <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE];
         OsRng.fill_bytes(&mut seed);
         self.create_keypair_internal(key_store, &seed, b"PrivacyPass")
             .await
