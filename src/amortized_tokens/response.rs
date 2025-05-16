@@ -5,9 +5,11 @@ use typenum::Unsigned;
 use voprf::{EvaluationElement, Group, Proof, Result, VoprfClient};
 
 use crate::{
-    PPCipherSuite,
     auth::authorize::Token,
-    common::errors::{IssueTokenError, SerializationError},
+    common::{
+        errors::{IssueTokenError, SerializationError},
+        private::PPCipherSuite,
+    },
 };
 
 use super::{AmortizedToken, TokenState};

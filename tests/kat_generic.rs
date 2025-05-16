@@ -8,7 +8,8 @@ use tls_codec::{Deserialize as _, Serialize as TlsSerializeTrait};
 use voprf::Ristretto255;
 
 use privacypass::{
-    PPCipherSuite, TokenType,
+    TokenType,
+    common::private::PPCipherSuite,
     generic_tokens::{
         GenericBatchTokenRequest, GenericBatchTokenResponse, GenericTokenRequest,
         GenericTokenResponse, OptionalTokenResponse,

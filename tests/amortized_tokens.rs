@@ -1,9 +1,8 @@
 use p384::NistP384;
 use privacypass::{
-    PPCipherSuite,
     amortized_tokens::{AmortizedBatchTokenRequest, server::*},
     auth::authenticate::TokenChallenge,
-    common::errors::RedeemTokenError,
+    common::{errors::RedeemTokenError, private::PPCipherSuite},
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 use voprf::Ristretto255;

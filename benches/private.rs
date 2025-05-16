@@ -4,8 +4,8 @@ use p384::NistP384;
 use tokio::runtime::Runtime;
 
 use privacypass::{
-    PPCipherSuite,
     auth::{authenticate::TokenChallenge, authorize::Token},
+    common::private::PPCipherSuite,
     private_tokens::{TokenRequest, TokenResponse, server::Server},
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };

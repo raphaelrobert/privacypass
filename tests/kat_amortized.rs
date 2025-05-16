@@ -9,10 +9,9 @@ use tls_codec::{Deserialize as _, Serialize as TlsSerializeTrait};
 use voprf::{Group, Mode, Ristretto255, derive_key};
 
 use privacypass::{
-    PPCipherSuite,
     amortized_tokens::{AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, server::*},
     auth::authenticate::TokenChallenge,
-    common::private::serialize_public_key,
+    common::private::{PPCipherSuite, serialize_public_key},
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 

@@ -7,10 +7,10 @@ use typenum::Unsigned;
 use voprf::{BlindedElement, Group, Result, VoprfServer, VoprfServerBatchEvaluateFinishResult};
 
 use crate::{
-    NonceStore, PPCipherSuite, TokenInput,
+    NonceStore, TokenInput,
     common::{
         errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
-        private::{PublicKey, public_key_to_token_key_id},
+        private::{PPCipherSuite, PublicKey, public_key_to_token_key_id},
         store::PrivateKeyStore,
     },
     truncate_token_key_id,
@@ -199,7 +199,7 @@ impl<CS: PPCipherSuite> Server<CS> {
 
 #[cfg(test)]
 mod tests {
-    use crate::PPCipherSuite;
+    use crate::common::private::PPCipherSuite;
     use p384::NistP384;
     use voprf::{Group, Ristretto255};
 

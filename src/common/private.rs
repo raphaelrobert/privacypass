@@ -1,9 +1,39 @@
 //! Types that used by private tokens
 
 use sha2::{Digest, Sha256};
+use std::fmt::Debug;
 use voprf::{CipherSuite, Error, Group};
 
-use crate::{PPCipherSuite, TokenKeyId, TruncatedTokenKeyId, truncate_token_key_id};
+use crate::{TokenKeyId, TokenType, TruncatedTokenKeyId, truncate_token_key_id};
+
+/// Trait for a cipher suite that can be used with the Privacy Pass protocol.
+pub trait PPCipherSuite:
+    CipherSuite<Group: Group<Elem: Send + Sync, Scalar: Send + Sync>>
+    + PartialEq
+    + Debug
+    + Clone
+    + Send
+    + Sync
+{
+    /// Returns the token type for the cipher suite.
+    fn token_type() -> TokenType {
+        match Self::ID {
+            "P384-SHA384" => TokenType::PrivateP384,
+            "ristretto255-SHA512" => TokenType::PrivateRistretto255,
+            _ => panic!("Unsupported token type"),
+        }
+    }
+}
+
+impl<C> PPCipherSuite for C where
+    C: CipherSuite<Group: Group<Elem: Send + Sync, Scalar: Send + Sync>>
+        + PartialEq
+        + Debug
+        + Clone
+        + Send
+        + Sync
+{
+}
 
 /// Public key alias
 pub type PublicKey<CS> = <<CS as CipherSuite>::Group as Group>::Elem;

@@ -3,11 +3,11 @@ use p384::NistP384;
 use tokio::runtime::Runtime;
 
 use privacypass::{
-    PPCipherSuite,
     amortized_tokens::{
         AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, AmortizedToken, server::Server,
     },
     auth::authenticate::TokenChallenge,
+    common::private::PPCipherSuite,
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 use voprf::Ristretto255;

@@ -4,7 +4,10 @@ use std::{collections::HashMap, fmt::Debug};
 use tokio::sync::Mutex;
 use voprf::*;
 
-use crate::{PPCipherSuite, TruncatedTokenKeyId, common::store::PrivateKeyStore};
+use crate::{
+    TruncatedTokenKeyId,
+    common::{private::PPCipherSuite, store::PrivateKeyStore},
+};
 
 /// Private key store that stores keys in memory.
 pub struct MemoryKeyStoreVoprf<CS: PPCipherSuite> {

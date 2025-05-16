@@ -7,11 +7,11 @@ use typenum::Unsigned;
 use voprf::{BlindedElement, Group, Result, VoprfServer};
 
 use crate::{
-    NonceStore, PPCipherSuite, TokenInput,
+    NonceStore, TokenInput,
     auth::authorize::Token,
     common::{
         errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
-        private::{PublicKey, public_key_to_token_key_id},
+        private::{PPCipherSuite, PublicKey, public_key_to_token_key_id},
         store::PrivateKeyStore,
     },
     truncate_token_key_id,

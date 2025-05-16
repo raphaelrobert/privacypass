@@ -6,11 +6,11 @@ use typenum::Unsigned;
 use voprf::{Group, Result, VoprfClient};
 
 use crate::{
-    ChallengeDigest, Nonce, PPCipherSuite, TokenInput, TokenType, TruncatedTokenKeyId,
+    ChallengeDigest, Nonce, TokenInput, TokenType, TruncatedTokenKeyId,
     auth::authenticate::TokenChallenge,
     common::{
         errors::IssueTokenRequestError,
-        private::{PublicKey, public_key_to_token_key_id},
+        private::{PPCipherSuite, PublicKey, public_key_to_token_key_id},
     },
     truncate_token_key_id,
 };

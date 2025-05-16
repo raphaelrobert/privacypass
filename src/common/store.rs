@@ -2,7 +2,9 @@
 use async_trait::async_trait;
 use voprf::VoprfServer;
 
-use crate::{PPCipherSuite, TruncatedTokenKeyId};
+use crate::TruncatedTokenKeyId;
+
+use super::private::PPCipherSuite;
 
 /// Minimal trait for a key store to store key material on the server-side. Note
 /// that the store requires inner mutability.
