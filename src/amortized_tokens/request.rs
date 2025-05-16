@@ -103,7 +103,7 @@ impl<CS: PPCipherSuite> AmortizedBatchTokenRequest<CS> {
             .digest()
             .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
 
-        let token_key_id = public_key_to_token_key_id::<CS::Group>(&public_key);
+        let token_key_id = public_key_to_token_key_id::<CS>(&public_key);
 
         let mut clients = Vec::with_capacity(nonces.len());
         let mut token_inputs = Vec::with_capacity(nonces.len());

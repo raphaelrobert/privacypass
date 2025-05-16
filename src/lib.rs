@@ -36,7 +36,12 @@ pub use voprf::{Group, VoprfServer};
 
 /// Trait for a cipher suite that can be used with the Privacy Pass protocol.
 pub trait PPCipherSuite:
-    CipherSuite<Group: Group<Elem: Send + Sync, Scalar: Send + Sync>> + PartialEq + Debug + Clone
+    CipherSuite<Group: Group<Elem: Send + Sync, Scalar: Send + Sync>>
+    + PartialEq
+    + Debug
+    + Clone
+    + Send
+    + Sync
 {
     /// Returns the token type for the cipher suite.
     fn token_type() -> TokenType {
@@ -53,6 +58,8 @@ impl<C> PPCipherSuite for C where
         + PartialEq
         + Debug
         + Clone
+        + Send
+        + Sync
 {
 }
 

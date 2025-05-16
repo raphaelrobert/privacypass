@@ -76,7 +76,7 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
             .digest()
             .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
 
-        let token_key_id = public_key_to_token_key_id::<CS::Group>(&public_key);
+        let token_key_id = public_key_to_token_key_id::<CS>(&public_key);
 
         // nonce = random(32)
         // challenge_digest = SHA256(challenge)

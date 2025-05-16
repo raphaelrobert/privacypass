@@ -87,7 +87,7 @@ async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<AmortizedTokenTestVector>) {
         let public_key = server.set_key(&key_store, &vector.sk_s).await.unwrap();
 
         // KAT: Check public key
-        assert_eq!(serialize_public_key::<CS::Group>(public_key), vector.pk_s);
+        assert_eq!(serialize_public_key::<CS>(public_key), vector.pk_s);
 
         // Convert parameters
         let token_challenge =
@@ -212,7 +212,7 @@ async fn generate_kat_amortized_token<CS: PPCipherSuite>() -> AmortizedTokenTest
 
     let sk_s = <CS::Group as Group>::serialize_scalar(scalar).to_vec();
 
-    let pk_s = serialize_public_key::<CS::Group>(public_key);
+    let pk_s = serialize_public_key::<CS>(public_key);
 
     let redemption_context = if OsRng.next_u32() % 2 == 0 {
         let mut bytes = [0u8; 32];
