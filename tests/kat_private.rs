@@ -10,7 +10,7 @@ use voprf::{Group, Mode, Ristretto255, derive_key};
 
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    common::private::{PPCipherSuite, serialize_public_key},
+    common::private::{PrivateCipherSuite, serialize_public_key},
     private_tokens::{TokenRequest, TokenResponse, server::*},
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
@@ -54,13 +54,13 @@ async fn read_kat_private_token() {
     // TODO: Add Go KAT vectors
 }
 
-async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<PrivateTokenTestVector>) {
+async fn evaluate_kat<CS: PrivateCipherSuite>(list: Vec<PrivateTokenTestVector>) {
     for vector in list {
         evaluate_vector::<CS>(vector).await;
     }
 }
 
-pub(crate) async fn evaluate_vector<CS: PPCipherSuite>(vector: PrivateTokenTestVector) {
+pub(crate) async fn evaluate_vector<CS: PrivateCipherSuite>(vector: PrivateTokenTestVector) {
     // Server: Instantiate in-memory keystore and nonce store.
     let key_store = MemoryKeyStoreVoprf::<CS>::default();
     let nonce_store = MemoryNonceStore::default();
@@ -134,7 +134,7 @@ async fn write_kat_private_token() {
         .await;
 }
 
-async fn write_kat_private_token_type<CS: PPCipherSuite>(file: &str) {
+async fn write_kat_private_token_type<CS: PrivateCipherSuite>(file: &str) {
     let mut elements = Vec::new();
 
     for _ in 0..5 {
@@ -152,7 +152,7 @@ async fn write_kat_private_token_type<CS: PPCipherSuite>(file: &str) {
     file.write_all(data.as_bytes()).unwrap();
 }
 
-pub(crate) async fn generate_kat_private_token<CS: PPCipherSuite>() -> PrivateTokenTestVector {
+pub(crate) async fn generate_kat_private_token<CS: PrivateCipherSuite>() -> PrivateTokenTestVector {
     // Server: Instantiate in-memory keystore and nonce store.
     let key_store = MemoryKeyStoreVoprf::<CS>::default();
     let nonce_store = MemoryNonceStore::default();

@@ -11,7 +11,7 @@ use crate::{
     auth::authorize::Token,
     common::{
         errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
-        private::{PPCipherSuite, PublicKey, public_key_to_token_key_id},
+        private::{PrivateCipherSuite, PublicKey, public_key_to_token_key_id},
         store::PrivateKeyStore,
     },
     truncate_token_key_id,
@@ -21,11 +21,11 @@ use super::{TokenRequest, TokenResponse};
 
 /// Server side implementation of Privately Verifiable Token protocol.
 #[derive(Default, Debug)]
-pub struct Server<CS: PPCipherSuite> {
+pub struct Server<CS: PrivateCipherSuite> {
     _marker: std::marker::PhantomData<CS>,
 }
 
-impl<CS: PPCipherSuite> Server<CS> {
+impl<CS: PrivateCipherSuite> Server<CS> {
     /// Creates a new server.
     #[must_use]
     pub const fn new() -> Self {

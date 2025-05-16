@@ -10,7 +10,7 @@ use crate::{
     NonceStore, TokenInput,
     common::{
         errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
-        private::{PPCipherSuite, PublicKey, public_key_to_token_key_id},
+        private::{PrivateCipherSuite, PublicKey, public_key_to_token_key_id},
         store::PrivateKeyStore,
     },
     truncate_token_key_id,
@@ -20,11 +20,11 @@ use super::{AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, AmortizedTo
 
 /// Server-side component of the batched token issuance protocol.
 #[derive(Default, Debug)]
-pub struct Server<CS: PPCipherSuite> {
+pub struct Server<CS: PrivateCipherSuite> {
     _marker: std::marker::PhantomData<CS>,
 }
 
-impl<CS: PPCipherSuite> Server<CS> {
+impl<CS: PrivateCipherSuite> Server<CS> {
     /// Create a new server. The new server does not contain any key material.
     #[must_use]
     pub const fn new() -> Self {
@@ -199,7 +199,7 @@ impl<CS: PPCipherSuite> Server<CS> {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::private::PPCipherSuite;
+    use crate::common::private::PrivateCipherSuite;
     use p384::NistP384;
     use voprf::{Group, Ristretto255};
 
@@ -215,7 +215,7 @@ mod tests {
     }
 
     #[cfg(test)]
-    fn key_serialization_cs<CS: PPCipherSuite>(pk: <CS::Group as Group>::Elem)
+    fn key_serialization_cs<CS: PrivateCipherSuite>(pk: <CS::Group as Group>::Elem)
     where
         <<CS as voprf::CipherSuite>::Group as voprf::Group>::Elem: std::cmp::PartialEq,
         <<CS as voprf::CipherSuite>::Group as voprf::Group>::Elem: std::fmt::Debug,

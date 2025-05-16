@@ -8,7 +8,7 @@ use crate::{
     auth::authorize::Token,
     common::{
         errors::{IssueTokenError, SerializationError},
-        private::PPCipherSuite,
+        private::PrivateCipherSuite,
     },
 };
 
@@ -23,7 +23,7 @@ use super::{AmortizedToken, TokenState};
 /// ```
 
 #[derive(Debug, PartialEq)]
-pub struct EvaluatedElement<CS: PPCipherSuite> {
+pub struct EvaluatedElement<CS: PrivateCipherSuite> {
     pub(crate) _marker: std::marker::PhantomData<CS>,
     pub(crate) evaluated_element: Vec<u8>,
 }
@@ -37,13 +37,13 @@ pub struct EvaluatedElement<CS: PPCipherSuite> {
 /// } AmortizedBatchTokenResponse;
 /// ```
 #[derive(Debug)]
-pub struct AmortizedBatchTokenResponse<CS: PPCipherSuite> {
+pub struct AmortizedBatchTokenResponse<CS: PrivateCipherSuite> {
     pub(crate) _marker: std::marker::PhantomData<CS>,
     pub(crate) evaluated_elements: Vec<EvaluatedElement<CS>>,
     pub(crate) evaluated_proof: Vec<u8>,
 }
 
-impl<CS: PPCipherSuite> AmortizedBatchTokenResponse<CS> {
+impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
     /// Create a new `TokenResponse` from a byte slice.
     ///
     /// # Errors
@@ -115,13 +115,13 @@ impl<CS: PPCipherSuite> AmortizedBatchTokenResponse<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Size for EvaluatedElement<CS> {
+impl<CS: PrivateCipherSuite> Size for EvaluatedElement<CS> {
     fn tls_serialized_len(&self) -> usize {
         <<CS::Group as Group>::ElemLen as Unsigned>::USIZE
     }
 }
 
-impl<CS: PPCipherSuite> Serialize for EvaluatedElement<CS> {
+impl<CS: PrivateCipherSuite> Serialize for EvaluatedElement<CS> {
     fn tls_serialize<W: std::io::Write>(
         &self,
         writer: &mut W,
@@ -131,7 +131,7 @@ impl<CS: PPCipherSuite> Serialize for EvaluatedElement<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Deserialize for EvaluatedElement<CS> {
+impl<CS: PrivateCipherSuite> Deserialize for EvaluatedElement<CS> {
     fn tls_deserialize<R: std::io::Read>(
         bytes: &mut R,
     ) -> std::result::Result<Self, tls_codec::Error>
@@ -147,14 +147,14 @@ impl<CS: PPCipherSuite> Deserialize for EvaluatedElement<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Size for AmortizedBatchTokenResponse<CS> {
+impl<CS: PrivateCipherSuite> Size for AmortizedBatchTokenResponse<CS> {
     fn tls_serialized_len(&self) -> usize {
         let len = 2 * <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE;
         self.evaluated_elements.tls_serialized_len() + len
     }
 }
 
-impl<CS: PPCipherSuite> Deserialize for AmortizedBatchTokenResponse<CS> {
+impl<CS: PrivateCipherSuite> Deserialize for AmortizedBatchTokenResponse<CS> {
     fn tls_deserialize<R: std::io::Read>(
         bytes: &mut R,
     ) -> std::result::Result<Self, tls_codec::Error>
@@ -174,7 +174,7 @@ impl<CS: PPCipherSuite> Deserialize for AmortizedBatchTokenResponse<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Serialize for AmortizedBatchTokenResponse<CS> {
+impl<CS: PrivateCipherSuite> Serialize for AmortizedBatchTokenResponse<CS> {
     fn tls_serialize<W: std::io::Write>(
         &self,
         writer: &mut W,

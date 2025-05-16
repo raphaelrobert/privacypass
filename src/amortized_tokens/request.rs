@@ -11,20 +11,20 @@ use crate::{
     auth::authenticate::TokenChallenge,
     common::{
         errors::IssueTokenRequestError,
-        private::{PPCipherSuite, PublicKey, public_key_to_token_key_id},
+        private::{PrivateCipherSuite, PublicKey, public_key_to_token_key_id},
     },
     truncate_token_key_id,
 };
 
 /// State that is kept between the token requests and token responses.
-pub struct TokenState<CS: PPCipherSuite> {
+pub struct TokenState<CS: PrivateCipherSuite> {
     pub(crate) clients: Vec<VoprfClient<CS>>,
     pub(crate) token_inputs: Vec<TokenInput>,
     pub(crate) challenge_digest: ChallengeDigest,
     pub(crate) public_key: PublicKey<CS>,
 }
 
-impl<CS: PPCipherSuite> std::fmt::Debug for TokenState<CS> {
+impl<CS: PrivateCipherSuite> std::fmt::Debug for TokenState<CS> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TokenState")
             .field("clients", &self.clients.len())
@@ -43,7 +43,7 @@ impl<CS: PPCipherSuite> std::fmt::Debug for TokenState<CS> {
 /// } BlindedElement;
 /// ```
 #[derive(Debug)]
-pub struct BlindedElement<CS: PPCipherSuite> {
+pub struct BlindedElement<CS: PrivateCipherSuite> {
     pub(crate) _marker: std::marker::PhantomData<CS>,
     pub(crate) blinded_element: Vec<u8>,
 }
@@ -58,13 +58,13 @@ pub struct BlindedElement<CS: PPCipherSuite> {
 /// } AmortizedBatchTokenRequest;
 /// ```
 #[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct AmortizedBatchTokenRequest<CS: PPCipherSuite> {
+pub struct AmortizedBatchTokenRequest<CS: PrivateCipherSuite> {
     pub(crate) token_type: TokenType,
     pub(crate) truncated_token_key_id: TruncatedTokenKeyId,
     pub(crate) blinded_elements: Vec<BlindedElement<CS>>,
 }
 
-impl<CS: PPCipherSuite> AmortizedBatchTokenRequest<CS> {
+impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
     /// Returns the number of blinded elements
     #[must_use]
     pub fn nr(&self) -> usize {
@@ -72,7 +72,7 @@ impl<CS: PPCipherSuite> AmortizedBatchTokenRequest<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> AmortizedBatchTokenRequest<CS> {
+impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
     /// Issue a new token request.
     ///
     /// # Errors
@@ -178,13 +178,13 @@ impl<CS: PPCipherSuite> AmortizedBatchTokenRequest<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Size for BlindedElement<CS> {
+impl<CS: PrivateCipherSuite> Size for BlindedElement<CS> {
     fn tls_serialized_len(&self) -> usize {
         <<CS::Group as Group>::ElemLen as Unsigned>::USIZE
     }
 }
 
-impl<CS: PPCipherSuite> Serialize for BlindedElement<CS> {
+impl<CS: PrivateCipherSuite> Serialize for BlindedElement<CS> {
     fn tls_serialize<W: std::io::Write>(
         &self,
         writer: &mut W,
@@ -194,7 +194,7 @@ impl<CS: PPCipherSuite> Serialize for BlindedElement<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Deserialize for BlindedElement<CS> {
+impl<CS: PrivateCipherSuite> Deserialize for BlindedElement<CS> {
     fn tls_deserialize<R: std::io::Read>(
         bytes: &mut R,
     ) -> std::result::Result<Self, tls_codec::Error>

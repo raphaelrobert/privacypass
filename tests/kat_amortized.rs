@@ -11,7 +11,7 @@ use voprf::{Group, Mode, Ristretto255, derive_key};
 use privacypass::{
     amortized_tokens::{AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, server::*},
     auth::authenticate::TokenChallenge,
-    common::private::{PPCipherSuite, serialize_public_key},
+    common::private::{PrivateCipherSuite, serialize_public_key},
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 
@@ -68,7 +68,7 @@ async fn read_kat_amortized_token() {
     evaluate_kat::<Ristretto255>(list).await; */
 }
 
-async fn evaluate_kat<CS: PPCipherSuite>(list: Vec<AmortizedTokenTestVector>) {
+async fn evaluate_kat<CS: PrivateCipherSuite>(list: Vec<AmortizedTokenTestVector>) {
     for vector in list {
         // Make sure we have the same amount of nonces and blinds
         assert_eq!(vector.blinds.len(), vector.nonces.len());
@@ -169,7 +169,7 @@ async fn write_kat_amortized_token() {
     .await;
 }
 
-async fn write_kat_amortized_token_type<CS: PPCipherSuite>(file: &str) {
+async fn write_kat_amortized_token_type<CS: PrivateCipherSuite>(file: &str) {
     let mut elements = Vec::new();
 
     for _ in 0..5 {
@@ -187,7 +187,7 @@ async fn write_kat_amortized_token_type<CS: PPCipherSuite>(file: &str) {
     file.write_all(data.as_bytes()).unwrap();
 }
 
-async fn generate_kat_amortized_token<CS: PPCipherSuite>() -> AmortizedTokenTestVector {
+async fn generate_kat_amortized_token<CS: PrivateCipherSuite>() -> AmortizedTokenTestVector {
     let nr = 5u16;
     // Server: Instantiate in-memory keystore and nonce store.
     let key_store = MemoryKeyStoreVoprf::<CS>::default();

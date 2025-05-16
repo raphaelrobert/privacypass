@@ -5,20 +5,20 @@ use tokio::runtime::Runtime;
 
 use privacypass::{
     auth::{authenticate::TokenChallenge, authorize::Token},
-    common::private::PPCipherSuite,
+    common::private::PrivateCipherSuite,
     private_tokens::{TokenRequest, TokenResponse, server::Server},
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 use voprf::Ristretto255;
 
-async fn create_private_keypair<CS: PPCipherSuite>(
+async fn create_private_keypair<CS: PrivateCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     server: Server<CS>,
 ) {
     let _public_key = server.create_keypair(&key_store).await.unwrap();
 }
 
-async fn issue_private_token_response<CS: PPCipherSuite>(
+async fn issue_private_token_response<CS: PrivateCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     server: Server<CS>,
     token_request: TokenRequest<CS>,
@@ -29,7 +29,7 @@ async fn issue_private_token_response<CS: PPCipherSuite>(
         .unwrap()
 }
 
-async fn redeem_private_token<Nk: ArrayLength<u8>, CS: PPCipherSuite>(
+async fn redeem_private_token<Nk: ArrayLength<u8>, CS: PrivateCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     nonce_store: MemoryNonceStore,
     token: Token<Nk>,
@@ -49,7 +49,7 @@ pub fn criterion_private_ristretto255_benchmark(c: &mut Criterion) {
     flow::<Ristretto255>(c);
 }
 
-pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
+pub fn flow<CS: PrivateCipherSuite>(c: &mut Criterion) {
     // Key pair generation
     c.bench_function(
         &format!("PRIVATE SERVER ({}): Generate key pair", CS::ID),

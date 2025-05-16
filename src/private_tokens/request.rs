@@ -10,7 +10,7 @@ use crate::{
     auth::authenticate::TokenChallenge,
     common::{
         errors::IssueTokenRequestError,
-        private::{PPCipherSuite, PublicKey, public_key_to_token_key_id},
+        private::{PrivateCipherSuite, PublicKey, public_key_to_token_key_id},
     },
     truncate_token_key_id,
 };
@@ -25,7 +25,7 @@ use crate::{
 ///  } TokenRequest;
 /// ```
 #[derive(Debug, Clone, PartialEq)]
-pub struct TokenRequest<CS: PPCipherSuite> {
+pub struct TokenRequest<CS: PrivateCipherSuite> {
     pub(crate) _marker: std::marker::PhantomData<CS>,
     pub(crate) token_type: TokenType,
     pub(crate) truncated_token_key_id: u8,
@@ -33,14 +33,14 @@ pub struct TokenRequest<CS: PPCipherSuite> {
 }
 
 /// State that is kept between the token requests and token responses.
-pub struct TokenState<CS: PPCipherSuite> {
+pub struct TokenState<CS: PrivateCipherSuite> {
     pub(crate) token_input: TokenInput,
     pub(crate) challenge_digest: ChallengeDigest,
     pub(crate) client: VoprfClient<CS>,
     pub(crate) public_key: PublicKey<CS>,
 }
 
-impl<CS: PPCipherSuite> std::fmt::Debug for TokenState<CS> {
+impl<CS: PrivateCipherSuite> std::fmt::Debug for TokenState<CS> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TokenState")
             .field("client", &"client".to_string())
@@ -51,7 +51,7 @@ impl<CS: PPCipherSuite> std::fmt::Debug for TokenState<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> TokenRequest<CS> {
+impl<CS: PrivateCipherSuite> TokenRequest<CS> {
     /// Issue a new token request.
     ///
     /// # Errors
@@ -123,7 +123,7 @@ impl<CS: PPCipherSuite> TokenRequest<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Size for TokenRequest<CS> {
+impl<CS: PrivateCipherSuite> Size for TokenRequest<CS> {
     fn tls_serialized_len(&self) -> usize {
         let len = <<CS::Group as Group>::ElemLen as Unsigned>::USIZE;
         self.token_type.tls_serialized_len()
@@ -132,7 +132,7 @@ impl<CS: PPCipherSuite> Size for TokenRequest<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Serialize for TokenRequest<CS> {
+impl<CS: PrivateCipherSuite> Serialize for TokenRequest<CS> {
     fn tls_serialize<W: std::io::Write>(
         &self,
         writer: &mut W,
@@ -146,7 +146,7 @@ impl<CS: PPCipherSuite> Serialize for TokenRequest<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Deserialize for TokenRequest<CS> {
+impl<CS: PrivateCipherSuite> Deserialize for TokenRequest<CS> {
     fn tls_deserialize<R: std::io::Read>(
         bytes: &mut R,
     ) -> std::result::Result<Self, tls_codec::Error>

@@ -8,7 +8,7 @@ use crate::{
     auth::authorize::Token,
     common::{
         errors::{IssueTokenError, SerializationError},
-        private::PPCipherSuite,
+        private::PrivateCipherSuite,
     },
 };
 
@@ -23,13 +23,13 @@ use super::{PrivateToken, request::TokenState};
 ///  } TokenResponse;
 /// ```
 #[derive(Debug, Clone, PartialEq)]
-pub struct TokenResponse<CS: PPCipherSuite> {
+pub struct TokenResponse<CS: PrivateCipherSuite> {
     pub(crate) _marker: std::marker::PhantomData<CS>,
     pub(crate) evaluate_msg: Vec<u8>,
     pub(crate) evaluate_proof: Vec<u8>,
 }
 
-impl<CS: PPCipherSuite> TokenResponse<CS> {
+impl<CS: PrivateCipherSuite> TokenResponse<CS> {
     /// Create a new `TokenResponse` from a byte slice.
     ///
     /// # Errors
@@ -46,7 +46,7 @@ impl<CS: PPCipherSuite> TokenResponse<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Size for TokenResponse<CS> {
+impl<CS: PrivateCipherSuite> Size for TokenResponse<CS> {
     fn tls_serialized_len(&self) -> usize {
         let len = <<CS::Group as Group>::ElemLen as Unsigned>::USIZE;
         let proof_len = <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE;
@@ -54,7 +54,7 @@ impl<CS: PPCipherSuite> Size for TokenResponse<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Serialize for TokenResponse<CS> {
+impl<CS: PrivateCipherSuite> Serialize for TokenResponse<CS> {
     fn tls_serialize<W: std::io::Write>(
         &self,
         writer: &mut W,
@@ -65,7 +65,7 @@ impl<CS: PPCipherSuite> Serialize for TokenResponse<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Deserialize for TokenResponse<CS> {
+impl<CS: PrivateCipherSuite> Deserialize for TokenResponse<CS> {
     fn tls_deserialize<R: std::io::Read>(
         bytes: &mut R,
     ) -> std::result::Result<Self, tls_codec::Error>
@@ -85,7 +85,7 @@ impl<CS: PPCipherSuite> Deserialize for TokenResponse<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> TokenResponse<CS> {
+impl<CS: PrivateCipherSuite> TokenResponse<CS> {
     /// Issue a token.
     ///
     /// # Errors

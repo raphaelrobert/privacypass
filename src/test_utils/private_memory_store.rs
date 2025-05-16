@@ -6,16 +6,16 @@ use voprf::*;
 
 use crate::{
     TruncatedTokenKeyId,
-    common::{private::PPCipherSuite, store::PrivateKeyStore},
+    common::{private::PrivateCipherSuite, store::PrivateKeyStore},
 };
 
 /// Private key store that stores keys in memory.
-pub struct MemoryKeyStoreVoprf<CS: PPCipherSuite> {
+pub struct MemoryKeyStoreVoprf<CS: PrivateCipherSuite> {
     keys: Mutex<HashMap<TruncatedTokenKeyId, VoprfServer<CS>>>,
 }
 
 #[async_trait]
-impl<C: PPCipherSuite> PrivateKeyStore for MemoryKeyStoreVoprf<C> {
+impl<C: PrivateCipherSuite> PrivateKeyStore for MemoryKeyStoreVoprf<C> {
     type CS = C;
 
     async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: VoprfServer<C>) {
@@ -28,7 +28,7 @@ impl<C: PPCipherSuite> PrivateKeyStore for MemoryKeyStoreVoprf<C> {
     }
 }
 
-impl<CS: PPCipherSuite> Debug for MemoryKeyStoreVoprf<CS> {
+impl<CS: PrivateCipherSuite> Debug for MemoryKeyStoreVoprf<CS> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MemoryKeyStoreVoprf")
             .field("keys", &"keys".to_string())
@@ -36,7 +36,7 @@ impl<CS: PPCipherSuite> Debug for MemoryKeyStoreVoprf<CS> {
     }
 }
 
-impl<CS: PPCipherSuite> Default for MemoryKeyStoreVoprf<CS> {
+impl<CS: PrivateCipherSuite> Default for MemoryKeyStoreVoprf<CS> {
     fn default() -> Self {
         Self {
             keys: Mutex::new(HashMap::new()),
