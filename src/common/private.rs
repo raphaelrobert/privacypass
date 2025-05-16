@@ -9,20 +9,24 @@ use crate::{PPCipherSuite, TokenKeyId, TruncatedTokenKeyId, truncate_token_key_i
 pub type PublicKey<CS> = <<CS as CipherSuite>::Group as Group>::Elem;
 
 /// Convert a public key to a token key ID.
-pub fn public_key_to_truncated_token_key_id<G: Group>(public_key: &G::Elem) -> TruncatedTokenKeyId {
-    truncate_token_key_id(&public_key_to_token_key_id::<G>(public_key))
+pub fn public_key_to_truncated_token_key_id<CS: PPCipherSuite>(
+    public_key: &<CS::Group as Group>::Elem,
+) -> TruncatedTokenKeyId {
+    truncate_token_key_id(&public_key_to_token_key_id::<CS>(public_key))
 }
 
-pub(crate) fn public_key_to_token_key_id<G: Group>(public_key: &G::Elem) -> TokenKeyId {
-    let public_key = serialize_public_key::<G>(*public_key);
+pub(crate) fn public_key_to_token_key_id<CS: PPCipherSuite>(
+    public_key: &<CS::Group as Group>::Elem,
+) -> TokenKeyId {
+    let public_key = serialize_public_key::<CS>(*public_key);
 
     Sha256::digest(public_key).into()
 }
 
 /// Serializes a public key.
 #[must_use]
-pub fn serialize_public_key<G: Group>(public_key: G::Elem) -> Vec<u8> {
-    G::serialize_elem(public_key).to_vec()
+pub fn serialize_public_key<CS: PPCipherSuite>(public_key: <CS::Group as Group>::Elem) -> Vec<u8> {
+    <CS::Group as Group>::serialize_elem(public_key).to_vec()
 }
 
 /// Deserializes a public key from a slice of bytes.

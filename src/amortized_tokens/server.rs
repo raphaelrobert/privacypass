@@ -65,9 +65,8 @@ impl<CS: PPCipherSuite> Server<CS> {
         let server = VoprfServer::<CS>::new_from_seed(seed, info)
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
-        let truncated_token_key_id = truncate_token_key_id(
-            &public_key_to_token_key_id::<CS::Group>(&server.get_public_key()),
-        );
+        let truncated_token_key_id =
+            truncate_token_key_id(&public_key_to_token_key_id::<CS>(&server.get_public_key()));
         key_store.insert(truncated_token_key_id, server).await;
         Ok(public_key)
     }
@@ -190,7 +189,7 @@ impl<CS: PPCipherSuite> Server<CS> {
         let server = VoprfServer::<CS>::new_with_key(private_key)
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
-        let token_key_id = public_key_to_token_key_id::<CS::Group>(&server.get_public_key());
+        let token_key_id = public_key_to_token_key_id::<CS>(&server.get_public_key());
         key_store
             .insert(truncate_token_key_id(&token_key_id), server)
             .await;
@@ -223,7 +222,7 @@ mod tests {
     {
         use crate::common::private::{deserialize_public_key, serialize_public_key};
 
-        let bytes = serialize_public_key::<CS::Group>(pk);
+        let bytes = serialize_public_key::<CS>(pk);
         let pk2 = deserialize_public_key::<CS>(&bytes).unwrap();
         assert_eq!(pk, pk2);
     }
