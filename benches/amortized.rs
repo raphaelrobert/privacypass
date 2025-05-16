@@ -3,23 +3,23 @@ use p384::NistP384;
 use tokio::runtime::Runtime;
 
 use privacypass::{
-    PPCipherSuite,
     amortized_tokens::{
         AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, AmortizedToken, server::Server,
     },
     auth::authenticate::TokenChallenge,
+    common::private::PrivateCipherSuite,
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 use voprf::Ristretto255;
 
-async fn create_amortized_keypair<CS: PPCipherSuite>(
+async fn create_amortized_keypair<CS: PrivateCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     server: Server<CS>,
 ) {
     let _public_key = server.create_keypair(&key_store).await.unwrap();
 }
 
-async fn issue_amortized_token_response<CS: PPCipherSuite>(
+async fn issue_amortized_token_response<CS: PrivateCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     server: Server<CS>,
     token_request: AmortizedBatchTokenRequest<CS>,
@@ -30,7 +30,7 @@ async fn issue_amortized_token_response<CS: PPCipherSuite>(
         .unwrap()
 }
 
-async fn redeem_amortized_token<CS: PPCipherSuite>(
+async fn redeem_amortized_token<CS: PrivateCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     nonce_store: MemoryNonceStore,
     token: AmortizedToken<CS>,
@@ -50,7 +50,7 @@ pub fn criterion_amortized_ristretto255_benchmark(c: &mut Criterion) {
     flow::<Ristretto255>(c);
 }
 
-pub fn flow<CS: PPCipherSuite>(c: &mut Criterion) {
+pub fn flow<CS: PrivateCipherSuite>(c: &mut Criterion) {
     const NR: u16 = 100;
     // Key pair generation
     c.bench_function(

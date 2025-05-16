@@ -8,7 +8,8 @@ use tls_codec::{Deserialize as _, Serialize as TlsSerializeTrait};
 use voprf::Ristretto255;
 
 use privacypass::{
-    PPCipherSuite, TokenType,
+    TokenType,
+    common::private::PrivateCipherSuite,
     generic_tokens::{
         GenericBatchTokenRequest, GenericBatchTokenResponse, GenericTokenRequest,
         GenericTokenResponse, OptionalTokenResponse,
@@ -296,7 +297,7 @@ fn batch_generated_tokens(
     }
 }
 
-async fn generate_private_token<CS: PPCipherSuite>()
+async fn generate_private_token<CS: PrivateCipherSuite>()
 -> (Issuance, GenericTokenRequest, GenericTokenResponse) {
     let pv = generate_kat_private_token::<CS>().await;
 

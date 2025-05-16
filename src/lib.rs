@@ -29,39 +29,9 @@ pub mod test_utils;
 use async_trait::async_trait;
 use std::fmt::Debug;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-use voprf::CipherSuite;
 
 pub use tls_codec::{Deserialize, Serialize};
 pub use voprf::{Group, VoprfServer};
-
-/// Trait for a cipher suite that can be used with the Privacy Pass protocol.
-pub trait PPCipherSuite:
-    CipherSuite<Group: Group<Elem: Send + Sync, Scalar: Send + Sync>>
-    + PartialEq
-    + Debug
-    + Clone
-    + Send
-    + Sync
-{
-    /// Returns the token type for the cipher suite.
-    fn token_type() -> TokenType {
-        match Self::ID {
-            "P384-SHA384" => TokenType::PrivateP384,
-            "ristretto255-SHA512" => TokenType::PrivateRistretto255,
-            _ => panic!("Unsupported token type"),
-        }
-    }
-}
-
-impl<C> PPCipherSuite for C where
-    C: CipherSuite<Group: Group<Elem: Send + Sync, Scalar: Send + Sync>>
-        + PartialEq
-        + Debug
-        + Clone
-        + Send
-        + Sync
-{
-}
 
 /// Token type
 #[derive(TlsSize, TlsSerialize, TlsDeserialize, Copy, Clone, Debug, PartialEq, Eq)]
