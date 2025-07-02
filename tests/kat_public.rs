@@ -51,7 +51,9 @@ async fn read_kat_public_token() {
 
     // === Check KAT vectors from Go ===
 
-    // TODO: Add Go KAT vectors
+    let list: Vec<PublicTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/public_go.json").trim()).unwrap();
+    evaluate_kat(list).await;
 }
 
 async fn evaluate_kat(list: Vec<PublicTokenTestVector>) {
