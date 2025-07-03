@@ -51,10 +51,17 @@ async fn read_kat_private_token() {
     evaluate_kat::<Ristretto255>(list).await;
 
     // === Check KAT vectors from Go ===
+
     // P384
     let list: Vec<PrivateTokenTestVector> =
         serde_json::from_str(include_str!("kat_vectors/private_p384_go.json").trim()).unwrap();
     evaluate_kat::<NistP384>(list).await;
+
+    // Ristretto255
+    let list: Vec<PrivateTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/private_ristretto255_go.json").trim())
+            .unwrap();
+    evaluate_kat::<Ristretto255>(list).await;
 }
 
 async fn evaluate_kat<CS: PrivateCipherSuite>(list: Vec<PrivateTokenTestVector>) {
@@ -133,8 +140,10 @@ pub(crate) async fn evaluate_vector<CS: PrivateCipherSuite>(vector: PrivateToken
 #[tokio::test]
 async fn write_kat_private_token() {
     write_kat_private_token_type::<NistP384>("tests/kat_vectors/private_p384_rs-new.json").await;
-    write_kat_private_token_type::<Ristretto255>("tests/kat_vectors/private_ristretto_rs-new.json")
-        .await;
+    write_kat_private_token_type::<Ristretto255>(
+        "tests/kat_vectors/private_ristretto255_rs-new.json",
+    )
+    .await;
 }
 
 async fn write_kat_private_token_type<CS: PrivateCipherSuite>(file: &str) {
