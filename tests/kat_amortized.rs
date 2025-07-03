@@ -56,16 +56,18 @@ async fn read_kat_amortized_token() {
             .unwrap();
     evaluate_kat::<Ristretto255>(list).await;
 
-    // Check KAT vectors from the Go implementation
+    // === Check KAT vectors from Go ===
+
+    // P384
+    let list: Vec<AmortizedTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/amortized_p384_go.json").trim()).unwrap();
+    evaluate_kat::<NistP384>(list).await;
 
     // Ristretto255
-
-    // TODO: Uncomment when Go implementation is fixed
-    /* let list: Vec<AmortizedTokenTestVector> = serde_json::from_str(
-        include_str!("kat_vectors/amortized_ristretto255_go.json").trim(),
-    )
-    .unwrap();
-    evaluate_kat::<Ristretto255>(list).await; */
+    let list: Vec<AmortizedTokenTestVector> =
+        serde_json::from_str(include_str!("kat_vectors/amortized_ristretto255_go.json").trim())
+            .unwrap();
+    evaluate_kat::<Ristretto255>(list).await;
 }
 
 async fn evaluate_kat<CS: PrivateCipherSuite>(list: Vec<AmortizedTokenTestVector>) {

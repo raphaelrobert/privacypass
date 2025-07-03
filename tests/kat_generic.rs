@@ -103,22 +103,17 @@ struct GenericTokenTestVector {
 
 #[tokio::test]
 async fn read_kat_generic_token() {
+    // === Check own KAT vectors ===
+
     let list: Vec<GenericTokenTestVector> =
         serde_json::from_str(include_str!("kat_vectors/generic_rs.json").trim()).unwrap();
-
     evaluate_kat(list).await;
+
+    // === Check KAT vectors from Go ===
 
     let list: Vec<GenericTokenTestVector> =
         serde_json::from_str(include_str!("kat_vectors/generic_go.json").trim()).unwrap();
-
     evaluate_kat(list).await;
-
-    // Waiting for TS implementation to catch up
-    /* let list: Vec<GenericTokenTestVector> =
-        serde_json::from_str(include_str!("kat_vectors/generic_ts.json").trim())
-            .unwrap();
-
-    evaluate_kat(list).await; */
 }
 
 async fn evaluate_kat(list: Vec<GenericTokenTestVector>) {
