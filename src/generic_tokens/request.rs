@@ -139,7 +139,8 @@ impl GenericBatchTokenRequest {
     /// # Errors
     /// Returns `SerializationError::InvalidData` if the byte slice is not valid.
     pub fn try_from_bytes(mut bytes: &[u8]) -> Result<Self, SerializationError> {
-        Self::tls_deserialize(&mut bytes).map_err(|_| SerializationError::InvalidData)
+        Self::tls_deserialize(&mut bytes)
+            .map_err(|source| SerializationError::InvalidData { source })
     }
 
     /// Create a builder for `BatchTokenRequest`.

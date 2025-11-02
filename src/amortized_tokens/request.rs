@@ -101,7 +101,7 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
     ) -> Result<(AmortizedBatchTokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
         let challenge_digest = challenge
             .digest()
-            .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
+            .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
 
         let token_key_id = public_key_to_token_key_id::<CS>(&public_key);
 
@@ -125,8 +125,11 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
                 token_key_id,
             );
 
-            let blind = VoprfClient::<CS>::blind(&token_input.serialize(), &mut OsRng)
-                .map_err(|_| IssueTokenRequestError::BlindingError)?;
+            let blind = VoprfClient::<CS>::blind(&token_input.serialize(), &mut OsRng).map_err(
+                |source| IssueTokenRequestError::BlindingError {
+                    source: source.into(),
+                },
+            )?;
 
             #[cfg(feature = "kat")]
             let blind = if _blinds.is_some() {
@@ -134,7 +137,9 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
                     &token_input.serialize(),
                     *blinds_iter.next().unwrap(),
                 )
-                .map_err(|_| IssueTokenRequestError::BlindingError)?
+                .map_err(|source| IssueTokenRequestError::BlindingError {
+                    source: source.into(),
+                })?
             } else {
                 blind
             };

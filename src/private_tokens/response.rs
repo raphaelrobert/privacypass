@@ -35,7 +35,8 @@ impl<CS: PrivateCipherSuite> TokenResponse<CS> {
     /// # Errors
     /// Returns `SerializationError::InvalidData` if the byte slice is not valid.
     pub fn try_from_bytes(mut bytes: &[u8]) -> Result<Self, SerializationError> {
-        Self::tls_deserialize(&mut bytes).map_err(|_| SerializationError::InvalidData)
+        Self::tls_deserialize(&mut bytes)
+            .map_err(|source| SerializationError::InvalidData { source })
     }
 
     #[cfg(feature = "kat")]
@@ -94,10 +95,11 @@ impl<CS: PrivateCipherSuite> TokenResponse<CS> {
         self,
         token_state: &TokenState<CS>,
     ) -> Result<PrivateToken<CS>, IssueTokenError> {
+        let token_type = token_state.token_input.token_type;
         let evaluation_element = EvaluationElement::deserialize(&self.evaluate_msg)
-            .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
+            .map_err(|source| IssueTokenError::InvalidEvaluationElement { token_type, source })?;
         let proof = Proof::deserialize(&self.evaluate_proof)
-            .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
+            .map_err(|source| IssueTokenError::InvalidProof { token_type, source })?;
         let token_input = token_state.token_input.serialize();
         // authenticator = client_context.Finalize(token_input, blind, evaluated_element, blinded_element, proof)
         let authenticator = token_state
@@ -108,7 +110,7 @@ impl<CS: PrivateCipherSuite> TokenResponse<CS> {
                 &proof,
                 token_state.public_key,
             )
-            .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
+            .map_err(|source| IssueTokenError::FinalizationFailed { token_type, source })?;
 
         Ok(Token::new(
             CS::token_type(),
