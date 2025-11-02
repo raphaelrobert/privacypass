@@ -27,17 +27,24 @@ impl IssuerKeyStore for IssuerMemoryKeyStore {
 /// Public key store that stores keys in memory.
 #[derive(Default, Debug)]
 pub struct OriginMemoryKeyStore {
-    keys: Mutex<HashMap<TruncatedTokenKeyId, PublicKey>>,
+    keys: Mutex<HashMap<TruncatedTokenKeyId, Vec<PublicKey>>>,
 }
 
 #[async_trait]
 impl OriginKeyStore for OriginMemoryKeyStore {
     async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, public_key: PublicKey) {
         let mut keys = self.keys.lock().await;
-        keys.insert(truncated_token_key_id, public_key);
+        keys.entry(truncated_token_key_id)
+            .or_default()
+            .push(public_key);
     }
 
-    async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<PublicKey> {
-        self.keys.lock().await.get(truncated_token_key_id).cloned()
+    async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Vec<PublicKey> {
+        self.keys
+            .lock()
+            .await
+            .get(truncated_token_key_id)
+            .cloned()
+            .unwrap_or_default()
     }
 }

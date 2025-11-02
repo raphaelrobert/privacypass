@@ -30,8 +30,8 @@ pub trait IssuerKeyStore: Send + Sync {
 pub trait OriginKeyStore {
     /// Inserts a keypair with a given `truncated_token_key_id` into the key store.
     async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: PublicKey);
-    /// Returns a keypair with a given `truncated_token_key_id` from the key store.
-    async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<PublicKey>;
+    /// Returns all public keys with a given `truncated_token_key_id` from the key store.
+    async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Vec<PublicKey>;
 }
 
 /// Serializes a keypair into a DER-encoded PKCS#8 document.
@@ -152,17 +152,31 @@ impl OriginServer {
             *token.token_key_id(),
         );
 
-        let public_key = key_store
-            .get(&truncate_token_key_id(token.token_key_id()))
-            .await
-            .ok_or(RedeemTokenError::KeyIdNotFound)?;
+        let truncated_token_key_id = truncate_token_key_id(token.token_key_id());
+        let public_keys = key_store.get(&truncated_token_key_id).await;
+        if public_keys.is_empty() {
+            return Err(RedeemTokenError::KeyIdNotFound);
+        }
 
         let options = Options::default();
         let signature = Signature(token.authenticator().to_vec());
+        let token_input_bytes = token_input.serialize();
 
-        signature
-            .verify(&public_key, None, token_input.serialize(), &options)
-            .map_err(|_| RedeemTokenError::InvalidToken)?;
+        let mut verified = false;
+        for public_key in public_keys {
+            if signature
+                .verify(&public_key, None, token_input_bytes.clone(), &options)
+                .is_ok()
+            {
+                verified = true;
+                break;
+            }
+        }
+
+        if !verified {
+            return Err(RedeemTokenError::InvalidToken);
+        }
+
         nonce_store.insert(token.nonce()).await;
         Ok(())
     }
