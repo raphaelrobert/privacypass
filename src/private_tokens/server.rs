@@ -26,6 +26,10 @@ pub struct Server<CS: PrivateCipherSuite> {
 }
 
 impl<CS: PrivateCipherSuite> Server<CS> {
+    fn server_from_seed(seed: &[u8], info: &[u8]) -> Result<VoprfServer<CS>, CreateKeypairError> {
+        VoprfServer::<CS>::new_from_seed(seed, info).map_err(|_| CreateKeypairError::SeedError)
+    }
+
     /// Creates a new server.
     #[must_use]
     pub const fn new() -> Self {
@@ -42,26 +46,23 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         &self,
         key_store: &PKS,
     ) -> Result<PublicKey<CS>, CreateKeypairError> {
-        let mut seed = vec![0u8; <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE];
-        OsRng.fill_bytes(&mut seed);
-        self.create_keypair_internal(key_store, &seed, b"PrivacyPass")
-            .await
-    }
+        let attempts_limit = 100;
+        for _ in 0..attempts_limit {
+            let mut seed = vec![0u8; <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE];
+            OsRng.fill_bytes(&mut seed);
+            let server = Self::server_from_seed(&seed, b"PrivacyPass")?;
+            let public_key = server.get_public_key();
+            let truncated_token_key_id =
+                truncate_token_key_id(&public_key_to_token_key_id::<CS>(&server.get_public_key()));
 
-    /// Creates a new keypair and inserts it into the key store.
-    async fn create_keypair_internal<PKS: PrivateKeyStore<CS = CS>>(
-        &self,
-        key_store: &PKS,
-        seed: &[u8],
-        info: &[u8],
-    ) -> Result<PublicKey<CS>, CreateKeypairError> {
-        let server = VoprfServer::<CS>::new_from_seed(seed, info)
-            .map_err(|_| CreateKeypairError::SeedError)?;
-        let public_key = server.get_public_key();
-        let truncated_token_key_id =
-            truncate_token_key_id(&public_key_to_token_key_id::<CS>(&server.get_public_key()));
-        key_store.insert(truncated_token_key_id, server).await;
-        Ok(public_key)
+            if key_store.get(&truncated_token_key_id).await.is_some() {
+                continue;
+            }
+
+            key_store.insert(truncated_token_key_id, server).await;
+            return Ok(public_key);
+        }
+        Err(CreateKeypairError::SeedError)
     }
 
     /// Creates a new keypair with explicit parameters and inserts it into the
@@ -73,7 +74,12 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         seed: &[u8],
         info: &[u8],
     ) -> Result<PublicKey<CS>, CreateKeypairError> {
-        self.create_keypair_internal(key_store, seed, info).await
+        let server = Self::server_from_seed(seed, info)?;
+        let public_key = server.get_public_key();
+        let truncated_token_key_id =
+            truncate_token_key_id(&public_key_to_token_key_id::<CS>(&server.get_public_key()));
+        key_store.insert(truncated_token_key_id, server).await;
+        Ok(public_key)
     }
 
     /// Issues a token response.

@@ -64,14 +64,23 @@ impl IssuerServer {
         rng: &mut R,
         key_store: &IKS,
     ) -> Result<PublicKey, CreateKeypairError> {
-        let key_pair =
-            KeyPair::generate(rng, KEYSIZE_IN_BITS).map_err(|_| CreateKeypairError::SeedError)?;
-        let truncated_token_key_id =
-            truncate_token_key_id(&public_key_to_token_key_id(&key_pair.pk));
-        key_store
-            .insert(truncated_token_key_id, key_pair.clone())
-            .await;
-        Ok(key_pair.pk)
+        let attempts_limit = 100;
+        for _ in 0..attempts_limit {
+            let key_pair = KeyPair::generate(rng, KEYSIZE_IN_BITS)
+                .map_err(|_| CreateKeypairError::SeedError)?;
+            let truncated_token_key_id =
+                truncate_token_key_id(&public_key_to_token_key_id(&key_pair.pk));
+
+            if key_store.get(&truncated_token_key_id).await.is_some() {
+                continue;
+            }
+
+            key_store
+                .insert(truncated_token_key_id, key_pair.clone())
+                .await;
+            return Ok(key_pair.pk);
+        }
+        Err(CreateKeypairError::SeedError)
     }
 
     /// Issues a new token response.
