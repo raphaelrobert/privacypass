@@ -189,7 +189,7 @@ pub(crate) async fn generate_kat_private_token<CS: PrivateCipherSuite>() -> Priv
 
     let pk_s = serialize_public_key::<CS>(public_key);
 
-    let redemption_context = if OsRng.next_u32() % 2 == 0 {
+    let redemption_context = if OsRng.next_u32().is_multiple_of(2) {
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
         Some(bytes)
