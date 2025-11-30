@@ -30,7 +30,7 @@ use super::{base64_char, key_name, opt_spaces, space};
 /// ```
 
 #[derive(Clone, Debug)]
-pub struct Token<Nk: ArrayLength<u8>> {
+pub struct Token<Nk: ArrayLength> {
     token_type: TokenType,
     nonce: Nonce,
     challenge_digest: ChallengeDigest,
@@ -38,7 +38,7 @@ pub struct Token<Nk: ArrayLength<u8>> {
     authenticator: GenericArray<u8, Nk>,
 }
 
-impl<Nk: ArrayLength<u8>> Size for Token<Nk> {
+impl<Nk: ArrayLength> Size for Token<Nk> {
     fn tls_serialized_len(&self) -> usize {
         self.token_type.tls_serialized_len()
             + self.nonce.tls_serialized_len()
@@ -48,7 +48,7 @@ impl<Nk: ArrayLength<u8>> Size for Token<Nk> {
     }
 }
 
-impl<Nk: ArrayLength<u8>> Serialize for Token<Nk> {
+impl<Nk: ArrayLength> Serialize for Token<Nk> {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, Error> {
         Ok(self.token_type.tls_serialize(writer)?
             + self.nonce.tls_serialize(writer)?
@@ -58,7 +58,7 @@ impl<Nk: ArrayLength<u8>> Serialize for Token<Nk> {
     }
 }
 
-impl<Nk: ArrayLength<u8>> Deserialize for Token<Nk> {
+impl<Nk: ArrayLength> Deserialize for Token<Nk> {
     fn tls_deserialize<R: std::io::Read>(bytes: &mut R) -> Result<Self, Error>
     where
         Self: Sized,
@@ -77,12 +77,12 @@ impl<Nk: ArrayLength<u8>> Deserialize for Token<Nk> {
             nonce,
             challenge_digest,
             token_key_id,
-            authenticator: GenericArray::clone_from_slice(&authenticator),
+            authenticator: GenericArray::from_slice(&authenticator).clone(),
         })
     }
 }
 
-impl<Nk: ArrayLength<u8>> Token<Nk> {
+impl<Nk: ArrayLength> Token<Nk> {
     /// Creates a new Token.
     pub const fn new(
         token_type: TokenType,
@@ -132,7 +132,7 @@ impl<Nk: ArrayLength<u8>> Token<Nk> {
 ///
 /// # Errors
 /// Returns an error if the token is not valid.
-pub fn build_authorization_header<Nk: ArrayLength<u8>>(
+pub fn build_authorization_header<Nk: ArrayLength>(
     token: &Token<Nk>,
 ) -> Result<(HeaderName, HeaderValue), BuildError> {
     let value = format!(
@@ -162,7 +162,7 @@ pub enum BuildError {
 ///
 /// # Errors
 /// Returns an error if the header value is not valid.
-pub fn parse_authorization_header<Nk: ArrayLength<u8>>(
+pub fn parse_authorization_header<Nk: ArrayLength>(
     value: &HeaderValue,
 ) -> Result<Token<Nk>, ParseError> {
     let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
@@ -229,7 +229,7 @@ fn parse_private_tokens(input: &str) -> IResult<&str, Vec<&str>> {
     separated_list1(tag(","), parse_private_token).parse(input)
 }
 
-fn parse_header_value<Nk: ArrayLength<u8>>(input: &str) -> Result<Vec<Token<Nk>>, ParseError> {
+fn parse_header_value<Nk: ArrayLength>(input: &str) -> Result<Vec<Token<Nk>>, ParseError> {
     let (output, tokens) = parse_private_tokens(input).map_err(|_| ParseError::InvalidInput)?;
     if !output.is_empty() {
         return Err(ParseError::InvalidInput);
@@ -262,7 +262,7 @@ fn builder_parser_test() {
         nonce,
         challenge_digest,
         token_key_id,
-        GenericArray::clone_from_slice(&authenticator),
+        *GenericArray::from_slice(&authenticator),
     );
     let (header_name, header_value) = build_authorization_header(&token).unwrap();
 

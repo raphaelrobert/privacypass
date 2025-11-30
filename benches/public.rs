@@ -35,7 +35,7 @@ async fn issue_public_token_response(
         .unwrap()
 }
 
-async fn redeem_public_token<Nk: ArrayLength<u8>>(
+async fn redeem_public_token<Nk: ArrayLength>(
     origin_key_store: public_memory_store::OriginMemoryKeyStore,
     nonce_store: MemoryNonceStore,
     token: privacypass::auth::authorize::Token<Nk>,
