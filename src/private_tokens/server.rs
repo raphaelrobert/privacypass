@@ -1,13 +1,13 @@
 //! Server-side implementation of Privately Verifiable Token protocol.
 
-use generic_array::ArrayLength;
+use generic_array::{ArrayLength, GenericArray};
 use rand::{RngCore, rngs::OsRng};
 use sha2::digest::OutputSizeUser;
 use typenum::Unsigned;
 use voprf::{BlindedElement, Group, Result, VoprfServer};
 
 use crate::{
-    NonceStore, TokenInput,
+    COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput,
     auth::authorize::Token,
     common::{
         errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
@@ -26,6 +26,11 @@ pub struct Server<CS: PrivateCipherSuite> {
 }
 
 impl<CS: PrivateCipherSuite> Server<CS> {
+    fn server_from_seed(seed: &[u8], info: &[u8]) -> Result<VoprfServer<CS>, CreateKeypairError> {
+        VoprfServer::<CS>::new_from_seed(seed, info)
+            .map_err(|source| CreateKeypairError::SeedError { source })
+    }
+
     /// Creates a new server.
     #[must_use]
     pub const fn new() -> Self {
@@ -42,26 +47,23 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         &self,
         key_store: &PKS,
     ) -> Result<PublicKey<CS>, CreateKeypairError> {
-        let mut seed = vec![0u8; <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE];
-        OsRng.fill_bytes(&mut seed);
-        self.create_keypair_internal(key_store, &seed, b"PrivacyPass")
-            .await
-    }
+        for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
+            let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
+            OsRng.fill_bytes(&mut seed);
+            let server = Self::server_from_seed(&seed, b"PrivacyPass")?;
+            let public_key = server.get_public_key();
+            let truncated_token_key_id =
+                truncate_token_key_id(&public_key_to_token_key_id::<CS>(&public_key));
 
-    /// Creates a new keypair and inserts it into the key store.
-    async fn create_keypair_internal<PKS: PrivateKeyStore<CS = CS>>(
-        &self,
-        key_store: &PKS,
-        seed: &[u8],
-        info: &[u8],
-    ) -> Result<PublicKey<CS>, CreateKeypairError> {
-        let server = VoprfServer::<CS>::new_from_seed(seed, info)
-            .map_err(|source| CreateKeypairError::SeedError { source })?;
-        let public_key = server.get_public_key();
-        let truncated_token_key_id =
-            truncate_token_key_id(&public_key_to_token_key_id::<CS>(&server.get_public_key()));
-        key_store.insert(truncated_token_key_id, server).await;
-        Ok(public_key)
+            if key_store.get(&truncated_token_key_id).await.is_some() {
+                continue;
+            }
+
+            if key_store.insert(truncated_token_key_id, server).await {
+                return Ok(public_key);
+            }
+        }
+        Err(CreateKeypairError::CollisionExhausted)
     }
 
     /// Creates a new keypair with explicit parameters and inserts it into the
@@ -73,7 +75,12 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         seed: &[u8],
         info: &[u8],
     ) -> Result<PublicKey<CS>, CreateKeypairError> {
-        self.create_keypair_internal(key_store, seed, info).await
+        let server = Self::server_from_seed(seed, info)?;
+        let public_key = server.get_public_key();
+        let truncated_token_key_id =
+            truncate_token_key_id(&public_key_to_token_key_id::<CS>(&server.get_public_key()));
+        key_store.insert(truncated_token_key_id, server).await;
+        Ok(public_key)
     }
 
     /// Issues a token response.

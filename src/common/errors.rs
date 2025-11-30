@@ -38,6 +38,9 @@ pub enum CreateKeypairError {
         #[source]
         source: BlindRsaError,
     },
+    #[error("Collision exhausted")]
+    /// Error when collision attempts are exhausted
+    CollisionExhausted,
 }
 
 /// Errors that can occur when issuing token requests.
@@ -236,8 +239,5 @@ pub enum RedeemTokenError {
     InvalidSignature {
         /// Token type that was being redeemed.
         token_type: TokenType,
-        /// Underlying RSA error that triggered the failure.
-        #[source]
-        source: BlindRsaError,
     },
 }

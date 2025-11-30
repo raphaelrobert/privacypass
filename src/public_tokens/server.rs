@@ -6,7 +6,7 @@ use generic_array::ArrayLength;
 use rand::{CryptoRng, RngCore, rngs::OsRng};
 
 use crate::{
-    NonceStore, TokenInput, TokenType, TruncatedTokenKeyId,
+    COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput, TokenType, TruncatedTokenKeyId,
     auth::authorize::Token,
     common::errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
 };
@@ -18,8 +18,12 @@ use super::{NK, TokenRequest, TokenResponse, public_key_to_token_key_id, truncat
 #[async_trait]
 
 pub trait IssuerKeyStore: Send + Sync {
-    /// Inserts a keypair with a given `truncated_token_key_id` into the key store.
-    async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: KeyPair);
+    /// Inserts a keypair with a given `truncated_token_key_id` into the key
+    /// store, only if it does not collide with an existing
+    /// `truncated_token_key_id`.
+    ///
+    /// Returns `true` if the key was inserted, `false` if a collision occurred.
+    async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: KeyPair) -> bool;
     /// Returns a keypair with a given `truncated_token_key_id` from the key store.
     async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<KeyPair>;
 }
@@ -30,8 +34,8 @@ pub trait IssuerKeyStore: Send + Sync {
 pub trait OriginKeyStore {
     /// Inserts a keypair with a given `truncated_token_key_id` into the key store.
     async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: PublicKey);
-    /// Returns a keypair with a given `truncated_token_key_id` from the key store.
-    async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<PublicKey>;
+    /// Returns all public keys with a given `truncated_token_key_id` from the key store.
+    async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Vec<PublicKey>;
 }
 
 /// Serializes a keypair into a DER-encoded PKCS#8 document.
@@ -64,14 +68,23 @@ impl IssuerServer {
         rng: &mut R,
         key_store: &IKS,
     ) -> Result<PublicKey, CreateKeypairError> {
-        let key_pair = KeyPair::generate(rng, KEYSIZE_IN_BITS)
-            .map_err(|source| CreateKeypairError::KeyGenerationFailed { source })?;
-        let truncated_token_key_id =
-            truncate_token_key_id(&public_key_to_token_key_id(&key_pair.pk));
-        key_store
-            .insert(truncated_token_key_id, key_pair.clone())
-            .await;
-        Ok(key_pair.pk)
+        for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
+            let key_pair = KeyPair::generate(rng, KEYSIZE_IN_BITS)
+                .map_err(|source| CreateKeypairError::KeyGenerationFailed { source })?;
+            let truncated_token_key_id =
+                truncate_token_key_id(&public_key_to_token_key_id(&key_pair.pk));
+
+            if key_store.get(&truncated_token_key_id).await.is_some() {
+                continue;
+            }
+
+            let public_key = key_pair.pk.clone();
+
+            if key_store.insert(truncated_token_key_id, key_pair).await {
+                return Ok(public_key);
+            }
+        }
+        Err(CreateKeypairError::CollisionExhausted)
     }
 
     /// Issues a new token response.
@@ -163,20 +176,26 @@ impl OriginServer {
             *token.token_key_id(),
         );
 
-        let public_key = key_store
-            .get(&truncate_token_key_id(token.token_key_id()))
-            .await
-            .ok_or(RedeemTokenError::KeyIdNotFound)?;
+        let truncated_token_key_id = truncate_token_key_id(token.token_key_id());
+        let public_keys = key_store.get(&truncated_token_key_id).await;
+        if public_keys.is_empty() {
+            return Err(RedeemTokenError::KeyIdNotFound);
+        }
 
         let options = Options::default();
         let signature = Signature(token.authenticator().to_vec());
+        let token_input_bytes = token_input.serialize();
 
-        signature
-            .verify(&public_key, None, token_input.serialize(), &options)
-            .map_err(|err| RedeemTokenError::InvalidSignature {
-                token_type,
-                source: err,
-            })?;
+        let verified = public_keys.iter().any(|public_key| {
+            signature
+                .verify(public_key, None, &token_input_bytes, &options)
+                .is_ok()
+        });
+
+        if !verified {
+            return Err(RedeemTokenError::InvalidSignature { token_type });
+        }
+
         nonce_store.insert(token.nonce()).await;
         Ok(())
     }
