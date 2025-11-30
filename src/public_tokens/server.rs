@@ -133,7 +133,7 @@ impl OriginServer {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
+    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength>(
         &self,
         key_store: &OKS,
         nonce_store: &NS,

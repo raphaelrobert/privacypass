@@ -44,8 +44,7 @@ impl TokenResponse {
                 token_type,
                 source,
             })?;
-        let authenticator: GenericArray<u8, U256> =
-            GenericArray::clone_from_slice(&signature[0..256]);
+        let authenticator: GenericArray<u8, U256> = *GenericArray::from_slice(&signature[0..256]);
         Ok(Token::new(
             TokenType::Public,
             token_state.token_input.nonce,

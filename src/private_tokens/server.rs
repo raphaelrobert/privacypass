@@ -110,7 +110,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<PKS: PrivateKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
+    pub async fn redeem_token<PKS: PrivateKeyStore, NS: NonceStore, Nk: ArrayLength>(
         &self,
         key_store: &PKS,
         nonce_store: &NS,
