@@ -26,7 +26,7 @@ sha2 = "0.10.9"
 thiserror = "2"
 tls_codec = { version = "0.4.2" }
 tls_codec_derive = "0.4.2"
-voprf = { git = "https://github.com/facebook/voprf", features = ["serde"] }
+voprf = { version = "0.6.0-pre.0", features = ["serde"] }
 p384 = { version = "0.13.0", default-features = false, features = [
   "hash2curve",
   "voprf",
