@@ -29,7 +29,7 @@ async fn issue_private_token_response<CS: PrivateCipherSuite>(
         .unwrap()
 }
 
-async fn redeem_private_token<Nk: ArrayLength<u8>, CS: PrivateCipherSuite>(
+async fn redeem_private_token<Nk: ArrayLength, CS: PrivateCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     nonce_store: MemoryNonceStore,
     token: Token<Nk>,

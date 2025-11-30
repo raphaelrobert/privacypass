@@ -1,5 +1,6 @@
 //! Response implementation of the Amortized Tokens protocol.
 
+use generic_array::GenericArray;
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
 use voprf::{EvaluationElement, Group, Proof, Result, VoprfClient};
@@ -94,12 +95,14 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
             .iter()
             .zip(token_state.token_inputs.iter())
         {
+            let authenticator =
+                GenericArray::from_slice(authenticator.as_ref()).clone();
             let token = Token::new(
                 token_input.token_type,
                 token_input.nonce,
                 token_state.challenge_digest,
                 token_input.token_key_id,
-                authenticator.to_owned(),
+                authenticator,
             );
             tokens.push(token);
         }
