@@ -1,6 +1,9 @@
 //! This module contains in-memory implementations of the `PrivateKeyStore` trait.
 use async_trait::async_trait;
-use std::{collections::HashMap, fmt::Debug};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    fmt::Debug,
+};
 use tokio::sync::Mutex;
 use voprf::*;
 
@@ -18,9 +21,18 @@ pub struct MemoryKeyStoreVoprf<CS: PrivateCipherSuite> {
 impl<C: PrivateCipherSuite> PrivateKeyStore for MemoryKeyStoreVoprf<C> {
     type CS = C;
 
-    async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: VoprfServer<C>) {
+    async fn insert(
+        &self,
+        truncated_token_key_id: TruncatedTokenKeyId,
+        server: VoprfServer<C>,
+    ) -> bool {
         let mut keys = self.keys.lock().await;
-        keys.insert(truncated_token_key_id, server.clone());
+        if let Entry::Vacant(e) = keys.entry(truncated_token_key_id) {
+            e.insert(server);
+            true
+        } else {
+            false
+        }
     }
 
     async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<VoprfServer<C>> {

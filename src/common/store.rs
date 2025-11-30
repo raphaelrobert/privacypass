@@ -12,12 +12,16 @@ use super::private::PrivateCipherSuite;
 pub trait PrivateKeyStore {
     /// The cipher suite used for the key store.
     type CS: PrivateCipherSuite;
-    /// Inserts a keypair with a given `truncated_token_key_id` into the key store.
+    /// Inserts a keypair with a given `truncated_token_key_id` into the key
+    /// store, only if it does not collide with an existing
+    /// `truncated_token_key_id`.
+    ///
+    /// Returns `true` if the key was inserted, `false` if a collision occurred.
     async fn insert(
         &self,
         truncated_token_key_id: TruncatedTokenKeyId,
         server: VoprfServer<Self::CS>,
-    );
+    ) -> bool;
     /// Returns a keypair with a given `truncated_token_key_id` from the key store.
     async fn get(
         &self,

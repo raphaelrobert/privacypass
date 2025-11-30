@@ -13,9 +13,12 @@ pub enum SerializationError {
 /// Errors that can occur when creating a keypair.
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum CreateKeypairError {
-    #[error("Seed is too long")]
-    /// Error when the seed is too long.
+    #[error("Seed does not have the right length")]
+    /// Error when the seed does not have the right length
     SeedError,
+    #[error("Collision exhausted")]
+    /// Error when collision attempts are exhausted
+    CollisionExhausted,
 }
 
 /// Errors that can occur when issuing token requests.
