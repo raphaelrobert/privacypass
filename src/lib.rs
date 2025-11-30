@@ -101,3 +101,5 @@ impl TokenInput {
         token_input
     }
 }
+
+pub(crate) const COLLISION_AVOIDANCE_ATTEMPTS: usize = 100;

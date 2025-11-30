@@ -3,7 +3,7 @@
 use crate::{TruncatedTokenKeyId, public_tokens::server::*};
 use async_trait::async_trait;
 use blind_rsa_signatures::{KeyPair, PublicKey};
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 use tokio::sync::Mutex;
 
 /// Public key store that stores keys in memory.
@@ -14,9 +14,14 @@ pub struct IssuerMemoryKeyStore {
 
 #[async_trait]
 impl IssuerKeyStore for IssuerMemoryKeyStore {
-    async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, key_pair: KeyPair) {
+    async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, key_pair: KeyPair) -> bool {
         let mut keys = self.keys.lock().await;
-        keys.insert(truncated_token_key_id, key_pair);
+        if let Entry::Vacant(e) = keys.entry(truncated_token_key_id) {
+            e.insert(key_pair);
+            true
+        } else {
+            false
+        }
     }
 
     async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<KeyPair> {

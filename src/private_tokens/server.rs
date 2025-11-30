@@ -1,13 +1,13 @@
 //! Server-side implementation of Privately Verifiable Token protocol.
 
-use generic_array::ArrayLength;
+use generic_array::{ArrayLength, GenericArray};
 use rand::{RngCore, rngs::OsRng};
 use sha2::digest::OutputSizeUser;
 use typenum::Unsigned;
 use voprf::{BlindedElement, Group, Result, VoprfServer};
 
 use crate::{
-    NonceStore, TokenInput,
+    COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput,
     auth::authorize::Token,
     common::{
         errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
@@ -46,23 +46,23 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         &self,
         key_store: &PKS,
     ) -> Result<PublicKey<CS>, CreateKeypairError> {
-        let attempts_limit = 100;
-        for _ in 0..attempts_limit {
-            let mut seed = vec![0u8; <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE];
+        for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
+            let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
             OsRng.fill_bytes(&mut seed);
             let server = Self::server_from_seed(&seed, b"PrivacyPass")?;
             let public_key = server.get_public_key();
             let truncated_token_key_id =
-                truncate_token_key_id(&public_key_to_token_key_id::<CS>(&server.get_public_key()));
+                truncate_token_key_id(&public_key_to_token_key_id::<CS>(&public_key));
 
             if key_store.get(&truncated_token_key_id).await.is_some() {
                 continue;
             }
 
-            key_store.insert(truncated_token_key_id, server).await;
-            return Ok(public_key);
+            if key_store.insert(truncated_token_key_id, server).await {
+                return Ok(public_key);
+            }
         }
-        Err(CreateKeypairError::SeedError)
+        Err(CreateKeypairError::CollisionExhausted)
     }
 
     /// Creates a new keypair with explicit parameters and inserts it into the

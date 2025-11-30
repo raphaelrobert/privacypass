@@ -7,7 +7,7 @@ use typenum::Unsigned;
 use voprf::{BlindedElement, Group, Result, VoprfServer, VoprfServerBatchEvaluateFinishResult};
 
 use crate::{
-    NonceStore, TokenInput,
+    COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput,
     common::{
         errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
         private::{PrivateCipherSuite, PublicKey, public_key_to_token_key_id},
@@ -53,21 +53,23 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         <CS::Group as Group>::Scalar: Send + Sync,
         <CS::Group as Group>::Elem: Send + Sync,
     {
-        loop {
+        for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
             let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
             OsRng.fill_bytes(&mut seed);
             let server = Self::server_from_seed(&seed, b"PrivacyPass")?;
             let public_key = server.get_public_key();
             let truncated_token_key_id =
-                truncate_token_key_id(&public_key_to_token_key_id::<CS>(&server.get_public_key()));
+                truncate_token_key_id(&public_key_to_token_key_id::<CS>(&public_key));
 
             if key_store.get(&truncated_token_key_id).await.is_some() {
                 continue;
             }
 
-            key_store.insert(truncated_token_key_id, server).await;
-            return Ok(public_key);
+            if key_store.insert(truncated_token_key_id, server).await {
+                return Ok(public_key);
+            }
         }
+        Err(CreateKeypairError::CollisionExhausted)
     }
 
     /// Creates a new keypair with explicit parameters and inserts it into the

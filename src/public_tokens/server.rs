@@ -6,7 +6,7 @@ use generic_array::ArrayLength;
 use rand::{CryptoRng, RngCore, rngs::OsRng};
 
 use crate::{
-    NonceStore, TokenInput, TokenType, TruncatedTokenKeyId,
+    COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput, TokenType, TruncatedTokenKeyId,
     auth::authorize::Token,
     common::errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
 };
@@ -18,8 +18,12 @@ use super::{NK, TokenRequest, TokenResponse, public_key_to_token_key_id, truncat
 #[async_trait]
 
 pub trait IssuerKeyStore: Send + Sync {
-    /// Inserts a keypair with a given `truncated_token_key_id` into the key store.
-    async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: KeyPair);
+    /// Inserts a keypair with a given `truncated_token_key_id` into the key
+    /// store, only if it does not collide with an existing
+    /// `truncated_token_key_id`.
+    ///
+    /// Returns `true` if the key was inserted, `false` if a collision occurred.
+    async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: KeyPair) -> bool;
     /// Returns a keypair with a given `truncated_token_key_id` from the key store.
     async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<KeyPair>;
 }
@@ -64,8 +68,7 @@ impl IssuerServer {
         rng: &mut R,
         key_store: &IKS,
     ) -> Result<PublicKey, CreateKeypairError> {
-        let attempts_limit = 100;
-        for _ in 0..attempts_limit {
+        for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
             let key_pair = KeyPair::generate(rng, KEYSIZE_IN_BITS)
                 .map_err(|_| CreateKeypairError::SeedError)?;
             let truncated_token_key_id =
@@ -75,12 +78,13 @@ impl IssuerServer {
                 continue;
             }
 
-            key_store
-                .insert(truncated_token_key_id, key_pair.clone())
-                .await;
-            return Ok(key_pair.pk);
+            let public_key = key_pair.pk.clone();
+
+            if key_store.insert(truncated_token_key_id, key_pair).await {
+                return Ok(public_key);
+            }
         }
-        Err(CreateKeypairError::SeedError)
+        Err(CreateKeypairError::CollisionExhausted)
     }
 
     /// Issues a new token response.
@@ -171,16 +175,11 @@ impl OriginServer {
         let signature = Signature(token.authenticator().to_vec());
         let token_input_bytes = token_input.serialize();
 
-        let mut verified = false;
-        for public_key in public_keys {
-            if signature
-                .verify(&public_key, None, token_input_bytes.clone(), &options)
+        let verified = public_keys.iter().any(|public_key| {
+            signature
+                .verify(public_key, None, &token_input_bytes, &options)
                 .is_ok()
-            {
-                verified = true;
-                break;
-            }
-        }
+        });
 
         if !verified {
             return Err(RedeemTokenError::InvalidToken);
