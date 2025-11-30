@@ -136,7 +136,7 @@ impl TokenChallenge {
 }
 
 /// An error that occurred during serialization or deserialization.
-#[derive(Error, Debug)]
+#[derive(PartialEq, Eq, Error, Debug)]
 pub enum SerializationError {
     #[error("Invalid TokenChallenge")]
     /// Invalid TokenChallenge
@@ -174,7 +174,7 @@ pub fn build_www_authenticate_header(
 }
 
 /// Building error for the `Authorization` header values
-#[derive(Error, Debug)]
+#[derive(PartialEq, Eq, Error, Debug)]
 pub enum BuildError {
     #[error("Invalid TokenChallenge")]
     /// Invalid TokenChallenge

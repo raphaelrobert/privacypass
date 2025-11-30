@@ -10,7 +10,7 @@ use tls_codec::Error as TlsCodecError;
 use voprf::Error as VoprfError;
 
 /// Serialization error
-#[derive(Error, Debug)]
+#[derive(PartialEq, Eq, Error, Debug)]
 pub enum SerializationError {
     #[error("Invalid serialized data")]
     /// Invalid serialized data
@@ -22,7 +22,7 @@ pub enum SerializationError {
 }
 
 /// Errors that can occur when creating a keypair.
-#[derive(Error, Debug)]
+#[derive(PartialEq, Eq, Error, Debug)]
 pub enum CreateKeypairError {
     #[error("Seed is too long")]
     /// Error when the seed is too long.
@@ -44,7 +44,7 @@ pub enum CreateKeypairError {
 }
 
 /// Errors that can occur when issuing token requests.
-#[derive(Error, Debug)]
+#[derive(PartialEq, Eq, Error, Debug)]
 pub enum IssueTokenRequestError {
     #[error("Token blinding error")]
     /// Error when blinding the token.
@@ -61,32 +61,6 @@ pub enum IssueTokenRequestError {
         source: TokenChallengeSerializationError,
     },
 }
-
-impl PartialEq for CreateKeypairError {
-    fn eq(&self, other: &Self) -> bool {
-        use CreateKeypairError::*;
-        matches!(
-            (self, other),
-            (SeedError { .. }, SeedError { .. })
-                | (KeyGenerationFailed { .. }, KeyGenerationFailed { .. })
-        )
-    }
-}
-
-impl Eq for CreateKeypairError {}
-
-impl PartialEq for IssueTokenRequestError {
-    fn eq(&self, other: &Self) -> bool {
-        use IssueTokenRequestError::*;
-        matches!(
-            (self, other),
-            (BlindingError { .. }, BlindingError { .. })
-                | (InvalidTokenChallenge { .. }, InvalidTokenChallenge { .. })
-        )
-    }
-}
-
-impl Eq for IssueTokenRequestError {}
 
 /// Source errors for blinding failures.
 #[derive(Error, Debug, PartialEq, Eq)]
