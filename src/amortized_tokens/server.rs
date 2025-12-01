@@ -1,6 +1,7 @@
 //! Server-side implementation of the Amortized Tokens protocol.
 
 use generic_array::GenericArray;
+use log::{debug, warn};
 use rand::{RngCore, rngs::OsRng};
 use sha2::digest::OutputSizeUser;
 use typenum::Unsigned;
@@ -30,7 +31,9 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         <CS::Group as Group>::Scalar: Send + Sync,
         <CS::Group as Group>::Elem: Send + Sync,
     {
-        VoprfServer::<CS>::new_from_seed(seed, info).map_err(|_| CreateKeypairError::SeedError)
+        VoprfServer::<CS>::new_from_seed(seed, info)
+            .inspect_err(|e| debug!(error:% = e; "Failed to create VOPRF server from seed"))
+            .map_err(|_| CreateKeypairError::SeedError)
     }
 
     /// Create a new server. The new server does not contain any key material.
@@ -111,8 +114,9 @@ impl<CS: PrivateCipherSuite> Server<CS> {
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
 
         let mut blinded_elements = Vec::new();
-        for element in token_request.blinded_elements.iter() {
+        for (idx, element) in token_request.blinded_elements.iter().enumerate() {
             let blinded_element = BlindedElement::<CS>::deserialize(&element.blinded_element)
+                .inspect_err(|e| warn!(error:% = e, index = idx; "Failed to deserialize blinded element"))
                 .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
             blinded_elements.push(blinded_element);
         }
@@ -122,6 +126,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
             .collect::<Vec<_>>();
         let VoprfServerBatchEvaluateFinishResult { messages, proof } = server
             .batch_blind_evaluate_finish(&mut OsRng, blinded_elements.iter(), &prepared_elements)
+            .inspect_err(|e| warn!(error:% = e; "Failed to batch evaluate blinded elements"))
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
 
         let evaluated_elements = messages
@@ -171,6 +176,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
         let token_authenticator = server
             .evaluate(&token_input.serialize())
+            .inspect_err(|e| warn!(error:% = e; "Failed to evaluate token during redemption"))
             .map_err(|_| RedeemTokenError::InvalidToken)?
             .to_vec();
         if token.authenticator() == token_authenticator {
@@ -193,6 +199,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         <CS::Group as Group>::Elem: Send + Sync,
     {
         let server = VoprfServer::<CS>::new_with_key(private_key)
+            .inspect_err(|e| debug!(error:% = e; "Failed to create VOPRF server with key"))
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
         let token_key_id = public_key_to_token_key_id::<CS>(&server.get_public_key());

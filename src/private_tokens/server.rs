@@ -1,6 +1,7 @@
 //! Server-side implementation of Privately Verifiable Token protocol.
 
 use generic_array::{ArrayLength, GenericArray};
+use log::{debug, warn};
 use rand::{RngCore, rngs::OsRng};
 use sha2::digest::OutputSizeUser;
 use typenum::Unsigned;
@@ -27,7 +28,9 @@ pub struct Server<CS: PrivateCipherSuite> {
 
 impl<CS: PrivateCipherSuite> Server<CS> {
     fn server_from_seed(seed: &[u8], info: &[u8]) -> Result<VoprfServer<CS>, CreateKeypairError> {
-        VoprfServer::<CS>::new_from_seed(seed, info).map_err(|_| CreateKeypairError::SeedError)
+        VoprfServer::<CS>::new_from_seed(seed, info)
+            .inspect_err(|e| debug!(error:% = e; "Failed to create VOPRF server from seed"))
+            .map_err(|_| CreateKeypairError::SeedError)
     }
 
     /// Creates a new server.
@@ -99,6 +102,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
             .await
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
         let blinded_element = BlindedElement::<CS>::deserialize(&token_request.blinded_msg)
+            .inspect_err(|e| warn!(error:% = e; "Failed to deserialize blinded element"))
             .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
         let evaluated_result = server.blind_evaluate(&mut OsRng, &blinded_element);
 
@@ -142,6 +146,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
         let token_authenticator = server
             .evaluate(&token_input.serialize())
+            .inspect_err(|e| warn!(error:% = e; "Failed to evaluate token during redemption"))
             .map_err(|_| RedeemTokenError::InvalidToken)?
             .to_vec();
         if token.authenticator() == token_authenticator {
@@ -160,6 +165,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         private_key: &[u8],
     ) -> Result<PublicKey<CS>, CreateKeypairError> {
         let server = VoprfServer::<CS>::new_with_key(private_key)
+            .inspect_err(|e| debug!(error:% = e; "Failed to create VOPRF server with key"))
             .map_err(|_| CreateKeypairError::SeedError)?;
         let public_key = server.get_public_key();
         let truncated_token_key_id =

@@ -1,6 +1,7 @@
 //! Response implementation of the Privately Verifiable Token protocol.
 
 use generic_array::GenericArray;
+use log::warn;
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
 use voprf::*;
@@ -96,8 +97,10 @@ impl<CS: PrivateCipherSuite> TokenResponse<CS> {
         token_state: &TokenState<CS>,
     ) -> Result<PrivateToken<CS>, IssueTokenError> {
         let evaluation_element = EvaluationElement::deserialize(&self.evaluate_msg)
+            .inspect_err(|e| warn!(error:% = e; "Failed to deserialize evaluation element"))
             .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
         let proof = Proof::deserialize(&self.evaluate_proof)
+            .inspect_err(|e| warn!(error:% = e; "Failed to deserialize proof"))
             .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
         let token_input = token_state.token_input.serialize();
         // authenticator = client_context.Finalize(token_input, blind, evaluated_element, blinded_element, proof)
@@ -109,6 +112,7 @@ impl<CS: PrivateCipherSuite> TokenResponse<CS> {
                 &proof,
                 token_state.public_key,
             )
+            .inspect_err(|e| warn!(error:% = e; "Failed to finalize token"))
             .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
         let authenticator = GenericArray::from_slice(authenticator.as_ref()).clone();
 
