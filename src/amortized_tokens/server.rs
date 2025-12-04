@@ -33,7 +33,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
     {
         VoprfServer::<CS>::new_from_seed(seed, info)
             .inspect_err(|e| debug!(error:% = e; "Failed to create VOPRF server from seed"))
-            .map_err(|_| CreateKeypairError::SeedError)
+            .map_err(|source| CreateKeypairError::SeedError { source })
     }
 
     /// Create a new server. The new server does not contain any key material.
@@ -106,7 +106,10 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         token_request: AmortizedBatchTokenRequest<CS>,
     ) -> Result<AmortizedBatchTokenResponse<CS>, IssueTokenResponseError> {
         if token_request.token_type != CS::token_type() {
-            return Err(IssueTokenResponseError::InvalidTokenType);
+            return Err(IssueTokenResponseError::InvalidTokenType {
+                expected: CS::token_type(),
+                found: token_request.token_type,
+            });
         }
         let server = key_store
             .get(&token_request.truncated_token_key_id)
@@ -116,8 +119,10 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         let mut blinded_elements = Vec::new();
         for (idx, element) in token_request.blinded_elements.iter().enumerate() {
             let blinded_element = BlindedElement::<CS>::deserialize(&element.blinded_element)
-                .inspect_err(|e| warn!(error:% = e, index = idx; "Failed to deserialize blinded element"))
-                .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
+                .inspect_err(
+                    |e| warn!(error:% = e, index = idx; "Failed to deserialize blinded element"),
+                )
+                .map_err(|source| IssueTokenResponseError::InvalidBlindedMessage { source })?;
             blinded_elements.push(blinded_element);
         }
 
@@ -127,7 +132,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         let VoprfServerBatchEvaluateFinishResult { messages, proof } = server
             .batch_blind_evaluate_finish(&mut OsRng, blinded_elements.iter(), &prepared_elements)
             .inspect_err(|e| warn!(error:% = e; "Failed to batch evaluate blinded elements"))
-            .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
+            .map_err(|source| IssueTokenResponseError::BlindEvaluationFailed { source })?;
 
         let evaluated_elements = messages
             .map(|m| super::EvaluatedElement {
@@ -154,18 +159,26 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         nonce_store: &NS,
         token: AmortizedToken<CS>,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != CS::token_type() {
-            return Err(RedeemTokenError::InvalidToken);
+        let token_type = token.token_type();
+        if token_type != CS::token_type() {
+            return Err(RedeemTokenError::TokenTypeMismatch {
+                expected: CS::token_type(),
+                found: token_type,
+            });
         }
         let auth_len = <<CS::Hash as OutputSizeUser>::OutputSize as Unsigned>::USIZE;
-        if token.authenticator().len() != auth_len {
-            return Err(RedeemTokenError::InvalidToken);
+        let authenticator_len = token.authenticator().len();
+        if authenticator_len != auth_len {
+            return Err(RedeemTokenError::InvalidAuthenticatorLength {
+                expected: auth_len,
+                found: authenticator_len,
+            });
         }
         if nonce_store.exists(&token.nonce()).await {
             return Err(RedeemTokenError::DoubleSpending);
         }
         let token_input = TokenInput {
-            token_type: token.token_type(),
+            token_type,
             nonce: token.nonce(),
             challenge_digest: *token.challenge_digest(),
             token_key_id: *token.token_key_id(),
@@ -177,13 +190,16 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         let token_authenticator = server
             .evaluate(&token_input.serialize())
             .inspect_err(|e| warn!(error:% = e; "Failed to evaluate token during redemption"))
-            .map_err(|_| RedeemTokenError::InvalidToken)?
+            .map_err(|source| RedeemTokenError::AuthenticatorDerivationFailed {
+                token_type,
+                source,
+            })?
             .to_vec();
         if token.authenticator() == token_authenticator {
             nonce_store.insert(token.nonce()).await;
             Ok(())
         } else {
-            Err(RedeemTokenError::InvalidToken)
+            Err(RedeemTokenError::AuthenticatorMismatch { token_type })
         }
     }
 
@@ -200,7 +216,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
     {
         let server = VoprfServer::<CS>::new_with_key(private_key)
             .inspect_err(|e| debug!(error:% = e; "Failed to create VOPRF server with key"))
-            .map_err(|_| CreateKeypairError::SeedError)?;
+            .map_err(|source| CreateKeypairError::SeedError { source })?;
         let public_key = server.get_public_key();
         let token_key_id = public_key_to_token_key_id::<CS>(&server.get_public_key());
         key_store

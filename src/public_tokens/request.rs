@@ -52,7 +52,8 @@ impl TokenRequest {
 
         let challenge_digest = challenge
             .digest()
-            .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
+            .inspect_err(|e| warn!(error:% = e; "Failed to create challenge digest"))
+            .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
 
         let token_key_id = public_key_to_token_key_id(&public_key);
 
@@ -67,7 +68,9 @@ impl TokenRequest {
         let blinding_result = public_key
             .blind(rng, token_input.serialize(), false, &options)
             .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
-            .map_err(|_| IssueTokenRequestError::BlindingError)?;
+            .map_err(|source| IssueTokenRequestError::BlindingError {
+                source: source.into(),
+            })?;
 
         debug_assert!(blinding_result.blind_msg.len() == NK);
         let mut blinded_msg = [0u8; NK];

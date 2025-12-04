@@ -74,7 +74,7 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
     ) -> Result<(TokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
         let challenge_digest = challenge
             .digest()
-            .map_err(|_| IssueTokenRequestError::InvalidTokenChallenge)?;
+            .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
 
         let token_key_id = public_key_to_token_key_id::<CS>(&public_key);
 
@@ -86,12 +86,16 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
         let token_input = TokenInput::new(CS::token_type(), nonce, challenge_digest, token_key_id);
 
         let blinded_element = VoprfClient::<CS>::blind(&token_input.serialize(), &mut OsRng)
-            .map_err(|_| IssueTokenRequestError::BlindingError)?;
+            .map_err(|source| IssueTokenRequestError::BlindingError {
+                source: source.into(),
+            })?;
 
         #[cfg(feature = "kat")]
         let blinded_element = if let Some(blind) = _blind {
             VoprfClient::<CS>::deterministic_blind_unchecked(&token_input.serialize(), blind)
-                .map_err(|_| IssueTokenRequestError::BlindingError)?
+                .map_err(|source| IssueTokenRequestError::BlindingError {
+                    source: source.into(),
+                })?
         } else {
             blinded_element
         };

@@ -30,6 +30,7 @@ impl TokenResponse {
         // authenticator = rsabssa_finalize(pkI, nonce, blind_sig, blind_inv)
         let token_input = token_state.token_input.serialize();
         let options = Options::default();
+        let token_type = TokenType::Public;
         let blind_sig = BlindSignature(self.blind_sig.to_vec());
         let signature = token_state
             .public_key
@@ -41,7 +42,10 @@ impl TokenResponse {
                 &options,
             )
             .inspect_err(|e| warn!(error:% = e; "Failed to finalize blind signature"))
-            .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
+            .map_err(|source| IssueTokenError::SignatureFinalizationFailed {
+                token_type,
+                source,
+            })?;
         let authenticator: GenericArray<u8, U256> = *GenericArray::from_slice(&signature[0..256]);
         Ok(Token::new(
             TokenType::Public,
