@@ -1,6 +1,7 @@
 //! Request implementation of the Publicly Verifiable Token protocol.
 
 use blind_rsa_signatures::{BlindingResult, Options, PublicKey};
+use log::warn;
 use rand::{CryptoRng, RngCore};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -51,6 +52,7 @@ impl TokenRequest {
 
         let challenge_digest = challenge
             .digest()
+            .inspect_err(|e| warn!(error:% = e; "Failed to create challenge digest"))
             .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
 
         let token_key_id = public_key_to_token_key_id(&public_key);
@@ -65,6 +67,7 @@ impl TokenRequest {
         let options = Options::default();
         let blinding_result = public_key
             .blind(rng, token_input.serialize(), false, &options)
+            .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
             .map_err(|source| IssueTokenRequestError::BlindingError {
                 source: source.into(),
             })?;

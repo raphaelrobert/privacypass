@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use blind_rsa_signatures::{KeyPair, Options, PublicKey, Signature};
 use generic_array::ArrayLength;
+use log::{debug, warn};
 use rand::{CryptoRng, RngCore, rngs::OsRng};
 
 use crate::{
@@ -70,6 +71,7 @@ impl IssuerServer {
     ) -> Result<PublicKey, CreateKeypairError> {
         for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
             let key_pair = KeyPair::generate(rng, KEYSIZE_IN_BITS)
+                .inspect_err(|e| debug!(error:% = e; "Failed to generate RSA keypair"))
                 .map_err(|source| CreateKeypairError::KeyGenerationFailed { source })?;
             let truncated_token_key_id =
                 truncate_token_key_id(&public_key_to_token_key_id(&key_pair.pk));
@@ -113,6 +115,7 @@ impl IssuerServer {
         let blind_signature = key_pair
             .sk
             .blind_sign(rng, token_request.blinded_msg, &options)
+            .inspect_err(|e| warn!(error:% = e; "Failed to blind_sign token"))
             .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?;
 
         debug_assert!(blind_signature.len() == NK);
@@ -189,6 +192,7 @@ impl OriginServer {
         let verified = public_keys.iter().any(|public_key| {
             signature
                 .verify(public_key, None, &token_input_bytes, &options)
+                .inspect_err(|e| warn!(error:% = e; "Verify failed"))
                 .is_ok()
         });
 
