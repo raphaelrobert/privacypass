@@ -52,7 +52,8 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
     /// valid `TokenResponse`.
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, SerializationError> {
         let mut bytes = bytes;
-        Self::tls_deserialize(&mut bytes).map_err(|_| SerializationError::InvalidData)
+        Self::tls_deserialize(&mut bytes)
+            .map_err(|source| SerializationError::InvalidData { source })
     }
 
     /// Issue a token.
@@ -64,15 +65,30 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
         token_state: &TokenState<CS>,
     ) -> Result<Vec<AmortizedToken<CS>>, IssueTokenError> {
         let mut evaluated_elements = Vec::new();
-        for element in self.evaluated_elements.iter() {
-            let evaluated_element =
-                EvaluationElement::<CS>::deserialize(&element.evaluated_element)
-                    .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
+        let default_token_type = token_state
+            .token_inputs
+            .first()
+            .map(|token_input| token_input.token_type)
+            .unwrap_or_else(CS::token_type);
+        for (index, element) in self.evaluated_elements.iter().enumerate() {
+            let token_type = token_state
+                .token_inputs
+                .get(index)
+                .map(|token_input| token_input.token_type)
+                .unwrap_or(default_token_type);
+            let evaluated_element = EvaluationElement::<CS>::deserialize(
+                &element.evaluated_element,
+            )
+            .map_err(|source| IssueTokenError::InvalidEvaluationElement { token_type, source })?;
             evaluated_elements.push(evaluated_element);
         }
 
-        let proof = Proof::deserialize(&self.evaluated_proof)
-            .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
+        let proof = Proof::deserialize(&self.evaluated_proof).map_err(|source| {
+            IssueTokenError::InvalidProof {
+                token_type: default_token_type,
+                source,
+            }
+        })?;
 
         let client_batch_finalize_result = VoprfClient::batch_finalize(
             &token_state
@@ -85,9 +101,15 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
             &proof,
             token_state.public_key,
         )
-        .map_err(|_| IssueTokenError::InvalidTokenResponse)?
+        .map_err(|source| IssueTokenError::BatchFinalizationFailed {
+            token_type: default_token_type,
+            source,
+        })?
         .collect::<Result<Vec<_>>>()
-        .map_err(|_| IssueTokenError::InvalidTokenResponse)?;
+        .map_err(|source| IssueTokenError::BatchFinalizationFailed {
+            token_type: default_token_type,
+            source,
+        })?;
 
         let mut tokens = Vec::new();
 

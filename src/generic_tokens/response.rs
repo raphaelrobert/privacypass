@@ -65,7 +65,8 @@ impl GenericBatchTokenResponse {
     /// # Errors
     /// Returns `SerializationError::InvalidData` if the byte slice is not valid.
     pub fn try_from_bytes(mut bytes: &[u8]) -> Result<Self, SerializationError> {
-        Self::tls_deserialize(&mut bytes).map_err(|_| SerializationError::InvalidData)
+        Self::tls_deserialize(&mut bytes)
+            .map_err(|source| SerializationError::InvalidData { source })
     }
 }
 
@@ -87,33 +88,40 @@ impl GenericBatchTokenResponse {
             .zip(token_states.token_states.iter())
         {
             if let Some(response) = token_response {
-                match (response, token_state) {
+                let expected = match token_state {
+                    GenericTokenState::PrivateP384(_) => TokenType::PrivateP384,
+                    GenericTokenState::Public(_) => TokenType::Public,
+                    GenericTokenState::PrivateRistretto255(_) => TokenType::PrivateRistretto255,
+                };
+                let found = match &response {
+                    GenericTokenResponse::PrivateP384(_) => TokenType::PrivateP384,
+                    GenericTokenResponse::Public(_) => TokenType::Public,
+                    GenericTokenResponse::PrivateRistretto255(_) => TokenType::PrivateRistretto255,
+                };
+                if expected != found {
+                    return Err(IssueTokenError::UnexpectedTokenResponseType { expected, found });
+                }
+
+                let token = match (response, token_state) {
                     (
                         GenericTokenResponse::PrivateP384(response),
                         GenericTokenState::PrivateP384(state),
-                    ) => {
-                        let token = response
-                            .issue_token(state)
-                            .map(GenericToken::from_private_p384)?;
-                        tokens.push(token);
-                    }
+                    ) => response
+                        .issue_token(state)
+                        .map(GenericToken::from_private_p384)?,
                     (GenericTokenResponse::Public(response), GenericTokenState::Public(state)) => {
-                        let token = response.issue_token(state).map(GenericToken::from_public)?;
-                        tokens.push(token);
+                        response.issue_token(state).map(GenericToken::from_public)?
                     }
                     (
                         GenericTokenResponse::PrivateRistretto255(response),
                         GenericTokenState::PrivateRistretto255(state),
-                    ) => {
-                        let token = response
-                            .issue_token(state)
-                            .map(GenericToken::from_private_ristretto)?;
-                        tokens.push(token);
-                    }
-                    _ => {
-                        return Err(IssueTokenError::InvalidTokenResponse);
-                    }
-                }
+                    ) => response
+                        .issue_token(state)
+                        .map(GenericToken::from_private_ristretto)?,
+                    // The mismatch case is handled above.
+                    _ => unreachable!("token type mismatch checked earlier"),
+                };
+                tokens.push(token);
             }
         }
 

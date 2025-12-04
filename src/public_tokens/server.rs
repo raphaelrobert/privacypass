@@ -70,7 +70,7 @@ impl IssuerServer {
     ) -> Result<PublicKey, CreateKeypairError> {
         for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
             let key_pair = KeyPair::generate(rng, KEYSIZE_IN_BITS)
-                .map_err(|_| CreateKeypairError::SeedError)?;
+                .map_err(|source| CreateKeypairError::KeyGenerationFailed { source })?;
             let truncated_token_key_id =
                 truncate_token_key_id(&public_key_to_token_key_id(&key_pair.pk));
 
@@ -98,7 +98,10 @@ impl IssuerServer {
     ) -> Result<TokenResponse, IssueTokenResponseError> {
         let rng = &mut OsRng;
         if token_request.token_type != TokenType::Public {
-            return Err(IssueTokenResponseError::InvalidTokenType);
+            return Err(IssueTokenResponseError::InvalidTokenType {
+                expected: TokenType::Public,
+                found: token_request.token_type,
+            });
         }
         let key_pair = key_store
             .get(&token_request.truncated_token_key_id)
@@ -110,7 +113,7 @@ impl IssuerServer {
         let blind_signature = key_pair
             .sk
             .blind_sign(rng, token_request.blinded_msg, &options)
-            .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
+            .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?;
 
         debug_assert!(blind_signature.len() == NK);
         let mut blind_sig = [0u8; NK];
@@ -149,17 +152,25 @@ impl OriginServer {
         nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != TokenType::Public {
-            return Err(RedeemTokenError::InvalidToken);
+        let token_type = token.token_type();
+        if token_type != TokenType::Public {
+            return Err(RedeemTokenError::TokenTypeMismatch {
+                expected: TokenType::Public,
+                found: token_type,
+            });
         }
-        if token.authenticator().len() != KEYSIZE_IN_BYTES {
-            return Err(RedeemTokenError::InvalidToken);
+        let authenticator_len = token.authenticator().len();
+        if authenticator_len != KEYSIZE_IN_BYTES {
+            return Err(RedeemTokenError::InvalidAuthenticatorLength {
+                expected: KEYSIZE_IN_BYTES,
+                found: authenticator_len,
+            });
         }
         if nonce_store.exists(&token.nonce()).await {
             return Err(RedeemTokenError::DoubleSpending);
         }
         let token_input = TokenInput::new(
-            token.token_type(),
+            token_type,
             token.nonce(),
             *token.challenge_digest(),
             *token.token_key_id(),
@@ -182,7 +193,7 @@ impl OriginServer {
         });
 
         if !verified {
-            return Err(RedeemTokenError::InvalidToken);
+            return Err(RedeemTokenError::InvalidSignature { token_type });
         }
 
         nonce_store.insert(token.nonce()).await;

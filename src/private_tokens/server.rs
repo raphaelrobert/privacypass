@@ -27,7 +27,8 @@ pub struct Server<CS: PrivateCipherSuite> {
 
 impl<CS: PrivateCipherSuite> Server<CS> {
     fn server_from_seed(seed: &[u8], info: &[u8]) -> Result<VoprfServer<CS>, CreateKeypairError> {
-        VoprfServer::<CS>::new_from_seed(seed, info).map_err(|_| CreateKeypairError::SeedError)
+        VoprfServer::<CS>::new_from_seed(seed, info)
+            .map_err(|source| CreateKeypairError::SeedError { source })
     }
 
     /// Creates a new server.
@@ -92,14 +93,17 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         token_request: TokenRequest<CS>,
     ) -> Result<TokenResponse<CS>, IssueTokenResponseError> {
         if token_request.token_type != CS::token_type() {
-            return Err(IssueTokenResponseError::InvalidTokenType);
+            return Err(IssueTokenResponseError::InvalidTokenType {
+                expected: CS::token_type(),
+                found: token_request.token_type,
+            });
         }
         let server = key_store
             .get(&token_request.truncated_token_key_id)
             .await
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
         let blinded_element = BlindedElement::<CS>::deserialize(&token_request.blinded_msg)
-            .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
+            .map_err(|source| IssueTokenResponseError::InvalidBlindedMessage { source })?;
         let evaluated_result = server.blind_evaluate(&mut OsRng, &blinded_element);
 
         Ok(TokenResponse {
@@ -119,18 +123,26 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != CS::token_type() {
-            return Err(RedeemTokenError::InvalidToken);
+        let token_type = token.token_type();
+        if token_type != CS::token_type() {
+            return Err(RedeemTokenError::TokenTypeMismatch {
+                expected: CS::token_type(),
+                found: token_type,
+            });
         }
         let auth_len = <<CS::Hash as OutputSizeUser>::OutputSize as Unsigned>::USIZE;
-        if token.authenticator().len() != auth_len {
-            return Err(RedeemTokenError::InvalidToken);
+        let authenticator_len = token.authenticator().len();
+        if authenticator_len != auth_len {
+            return Err(RedeemTokenError::InvalidAuthenticatorLength {
+                expected: auth_len,
+                found: authenticator_len,
+            });
         }
         if nonce_store.exists(&token.nonce()).await {
             return Err(RedeemTokenError::DoubleSpending);
         }
         let token_input = TokenInput::new(
-            token.token_type(),
+            token_type,
             token.nonce(),
             *token.challenge_digest(),
             *token.token_key_id(),
@@ -142,13 +154,16 @@ impl<CS: PrivateCipherSuite> Server<CS> {
             .ok_or(RedeemTokenError::KeyIdNotFound)?;
         let token_authenticator = server
             .evaluate(&token_input.serialize())
-            .map_err(|_| RedeemTokenError::InvalidToken)?
+            .map_err(|source| RedeemTokenError::AuthenticatorDerivationFailed {
+                token_type,
+                source,
+            })?
             .to_vec();
         if token.authenticator() == token_authenticator {
             nonce_store.insert(token.nonce()).await;
             Ok(())
         } else {
-            Err(RedeemTokenError::InvalidToken)
+            Err(RedeemTokenError::AuthenticatorMismatch { token_type })
         }
     }
 
@@ -160,7 +175,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         private_key: &[u8],
     ) -> Result<PublicKey<CS>, CreateKeypairError> {
         let server = VoprfServer::<CS>::new_with_key(private_key)
-            .map_err(|_| CreateKeypairError::SeedError)?;
+            .map_err(|source| CreateKeypairError::SeedError { source })?;
         let public_key = server.get_public_key();
         let truncated_token_key_id =
             truncate_token_key_id(&public_key_to_token_key_id::<CS>(&server.get_public_key()));

@@ -149,7 +149,7 @@ pub fn build_authorization_header<Nk: ArrayLength>(
 }
 
 /// Building error for the `Authorization` header values
-#[derive(Error, Debug)]
+#[derive(PartialEq, Eq, Error, Debug)]
 pub enum BuildError {
     #[error("Invalid token")]
     /// Invalid token
@@ -172,7 +172,7 @@ pub fn parse_authorization_header<Nk: ArrayLength>(
 }
 
 /// Parsing error for the `WWW-Authenticate` header values
-#[derive(Error, Debug)]
+#[derive(PartialEq, Eq, Error, Debug)]
 pub enum ParseError {
     #[error("Invalid token")]
     /// Invalid token
