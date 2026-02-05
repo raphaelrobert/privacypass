@@ -1,3 +1,4 @@
+use blind_rsa_signatures::reexports::rand::rng;
 use p384::NistP384;
 use privacypass::{
     TokenType,
@@ -14,7 +15,6 @@ use privacypass::{
         public_memory_store::{IssuerMemoryKeyStore, OriginMemoryKeyStore},
     },
 };
-use rand::thread_rng;
 use voprf::Ristretto255;
 
 #[tokio::test]
@@ -45,7 +45,7 @@ async fn generic_tokens_cycle() {
 
     // === Set up the public token server ===
 
-    let rng = &mut thread_rng();
+    let rng = &mut rng();
 
     // Server: Instantiate in-memory keystore and nonce store.
     let issuer_key_store = IssuerMemoryKeyStore::default();

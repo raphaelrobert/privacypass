@@ -87,7 +87,7 @@ pub(crate) async fn evaluate_vector<CS: PrivateCipherSuite>(vector: PrivateToken
     // Convert parameters
     let token_challenge = TokenChallenge::deserialize(vector.token_challenge.as_slice()).unwrap();
     let challenge_digest: [u8; 32] = token_challenge.digest().unwrap();
-    let nonce: [u8; 32] = <[u8; 32]>::try_from(vector.nonce.as_ref()).unwrap();
+    let nonce: [u8; 32] = <[u8; 32]>::try_from(vector.nonce.as_slice()).unwrap();
     let blind = <CS::Group as Group>::deserialize_scalar(&vector.blind).unwrap();
 
     // Client: Prepare a TokenRequest after having received a challenge

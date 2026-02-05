@@ -117,8 +117,7 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
             .iter()
             .zip(token_state.token_inputs.iter())
         {
-            let authenticator =
-                GenericArray::from_slice(authenticator.as_ref()).clone();
+            let authenticator = GenericArray::from_slice(authenticator.as_ref()).clone();
             let token = Token::new(
                 token_input.token_type,
                 token_input.nonce,

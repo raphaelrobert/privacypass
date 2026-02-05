@@ -9,14 +9,14 @@ use privacypass::{
     },
 };
 
+use blind_rsa_signatures::reexports::rand::CryptoRng;
 use criterion::{Criterion, async_executor::FuturesExecutor};
 use generic_array::ArrayLength;
-use rand::{CryptoRng, RngCore};
 use tokio::runtime::Runtime;
 
 use privacypass::{TokenType, auth::authenticate::TokenChallenge};
 
-async fn create_public_keypair<R: RngCore + CryptoRng>(
+async fn create_public_keypair<R: CryptoRng>(
     rng: &mut R,
     key_store: public_memory_store::IssuerMemoryKeyStore,
     server: privacypass::public_tokens::server::IssuerServer,
@@ -52,7 +52,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
     c.bench_function("PUBLIC SERVER: Generate key pair", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
-                let rng = rand::thread_rng();
+                let rng = blind_rsa_signatures::reexports::rand::rng();
                 let key_store = IssuerMemoryKeyStore::default();
                 let server = IssuerServer::new();
                 (rng, key_store, server)
@@ -67,7 +67,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
     c.bench_function("PUBLIC CLIENT: Issue token request", move |b| {
         b.iter_with_setup(
             || {
-                let mut rng = rand::thread_rng();
+                let mut rng = blind_rsa_signatures::reexports::rand::rng();
                 let key_store = IssuerMemoryKeyStore::default();
                 let server = IssuerServer::new();
 
@@ -92,7 +92,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
     c.bench_function("PUBLIC SERVER: Issue token response", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
-                let rng = &mut rand::thread_rng();
+                let rng = &mut blind_rsa_signatures::reexports::rand::rng();
                 let key_store = IssuerMemoryKeyStore::default();
                 let server = IssuerServer::new();
 
@@ -119,7 +119,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
     c.bench_function("PUBLIC CLIENT: Issue token", move |b| {
         b.iter_with_setup(
             || {
-                let rng = &mut rand::thread_rng();
+                let rng = &mut blind_rsa_signatures::reexports::rand::rng();
                 let key_store = IssuerMemoryKeyStore::default();
                 let server = IssuerServer::new();
 
@@ -152,7 +152,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
     c.bench_function("PUBLIC SERVER: Redeem token", move |b| {
         b.to_async(FuturesExecutor).iter_with_setup(
             || {
-                let rng = &mut rand::thread_rng();
+                let rng = &mut blind_rsa_signatures::reexports::rand::rng();
                 let issuer_key_store = IssuerMemoryKeyStore::default();
                 let origin_key_store = OriginMemoryKeyStore::default();
 
