@@ -1,9 +1,14 @@
 //! Server-side implementation of Publicly Verifiable Token protocol.
 
 use async_trait::async_trait;
-use blind_rsa_signatures::{KeyPair, Options, PublicKey, Signature};
+use blind_rsa_signatures::reexports::rand::CryptoRng;
+use blind_rsa_signatures::{
+    Deterministic, KeyPair as GenericKeyPair, PSS, PublicKey as GenericPublicKey, Sha384, Signature,
+};
 use generic_array::ArrayLength;
-use rand::{CryptoRng, RngCore, rngs::OsRng};
+
+type KeyPair = GenericKeyPair<Sha384, PSS, Deterministic>;
+type PublicKey = GenericPublicKey<Sha384, PSS, Deterministic>;
 
 use crate::{
     COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput, TokenType, TruncatedTokenKeyId,
@@ -41,7 +46,7 @@ pub trait OriginKeyStore {
 /// Serializes a keypair into a DER-encoded PKCS#8 document.
 #[must_use]
 pub fn serialize_public_key(public_key: &PublicKey) -> Vec<u8> {
-    public_key.to_spki(Some(&Options::default())).unwrap()
+    public_key.to_spki().unwrap()
 }
 
 const KEYSIZE_IN_BITS: usize = 2048;
@@ -63,7 +68,7 @@ impl IssuerServer {
     ///
     /// # Errors
     /// Returns an error if creating the keypair fails.
-    pub async fn create_keypair<IKS: IssuerKeyStore, R: RngCore + CryptoRng>(
+    pub async fn create_keypair<IKS: IssuerKeyStore, R: CryptoRng>(
         &self,
         rng: &mut R,
         key_store: &IKS,
@@ -96,7 +101,6 @@ impl IssuerServer {
         key_store: &IKS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
-        let rng = &mut OsRng;
         if token_request.token_type != TokenType::Public {
             return Err(IssueTokenResponseError::InvalidTokenType {
                 expected: TokenType::Public,
@@ -109,10 +113,9 @@ impl IssuerServer {
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
 
         // blind_sig = rsabssa_blind_sign(skI, TokenRequest.blinded_msg)
-        let options = Options::default();
         let blind_signature = key_pair
             .sk
-            .blind_sign(rng, token_request.blinded_msg, &options)
+            .blind_sign(token_request.blinded_msg)
             .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?;
 
         debug_assert!(blind_signature.len() == NK);
@@ -182,13 +185,12 @@ impl OriginServer {
             return Err(RedeemTokenError::KeyIdNotFound);
         }
 
-        let options = Options::default();
         let signature = Signature(token.authenticator().to_vec());
         let token_input_bytes = token_input.serialize();
 
         let verified = public_keys.iter().any(|public_key| {
-            signature
-                .verify(public_key, None, &token_input_bytes, &options)
+            public_key
+                .verify(&signature, None, &token_input_bytes)
                 .is_ok()
         });
 

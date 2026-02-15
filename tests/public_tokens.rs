@@ -1,4 +1,5 @@
-use blind_rsa_signatures::{KeyPair, Options, PublicKey, SecretKey};
+use blind_rsa_signatures::reexports::rand::rng;
+use blind_rsa_signatures::{Deterministic, KeyPair, PSS, PublicKey, SecretKey, Sha384};
 use privacypass::{
     TokenType,
     auth::authenticate::TokenChallenge,
@@ -12,11 +13,10 @@ use privacypass::{
         public_memory_store::{IssuerMemoryKeyStore, OriginMemoryKeyStore},
     },
 };
-use rand::thread_rng;
 
 #[tokio::test]
 async fn public_tokens_cycle() {
-    let rng = &mut thread_rng();
+    let rng = &mut rng();
 
     // Server: Instantiate in-memory keystore and nonce store.
     let issuer_key_store = IssuerMemoryKeyStore::default();
@@ -84,7 +84,7 @@ async fn public_tokens_cycle() {
 
 #[tokio::test]
 async fn redeem_token_supports_multiple_public_keys_per_truncated_id() {
-    let rng = &mut thread_rng();
+    let rng = &mut rng();
 
     let issuer_key_store = IssuerMemoryKeyStore::default();
     let origin_key_store = OriginMemoryKeyStore::default();
@@ -103,13 +103,14 @@ async fn redeem_token_supports_multiple_public_keys_per_truncated_id() {
 
     let truncated_token_key_id =
         u8::from_str_radix(TRUNCATED_TOKEN_KEY_ID_HEX, 16).expect("valid truncated id");
-    let options = Options::default();
-
-    let initial_public_key =
-        PublicKey::from_spki(&decode_hex(INITIAL_PUBLIC_KEY_SPKI_DER_HEX), Some(&options))
-            .expect("initial public key should decode");
-    let initial_secret_key = SecretKey::from_der(&decode_hex(INITIAL_SECRET_KEY_PKCS8_DER_HEX))
-        .expect("initial secret key should decode");
+    let initial_public_key = PublicKey::<Sha384, PSS, Deterministic>::from_spki(&decode_hex(
+        INITIAL_PUBLIC_KEY_SPKI_DER_HEX,
+    ))
+    .expect("initial public key should decode");
+    let initial_secret_key = SecretKey::<Sha384, PSS, Deterministic>::from_der(&decode_hex(
+        INITIAL_SECRET_KEY_PKCS8_DER_HEX,
+    ))
+    .expect("initial secret key should decode");
     let initial_keypair = KeyPair {
         pk: initial_public_key.clone(),
         sk: initial_secret_key,
@@ -140,11 +141,14 @@ async fn redeem_token_supports_multiple_public_keys_per_truncated_id() {
         .unwrap();
     let token = token_response.issue_token(&token_state).unwrap();
 
-    let rotated_public_key =
-        PublicKey::from_spki(&decode_hex(ROTATED_PUBLIC_KEY_SPKI_DER_HEX), Some(&options))
-            .expect("rotated public key should decode");
-    let rotated_secret_key = SecretKey::from_der(&decode_hex(ROTATED_SECRET_KEY_PKCS8_DER_HEX))
-        .expect("rotated secret key should decode");
+    let rotated_public_key = PublicKey::<Sha384, PSS, Deterministic>::from_spki(&decode_hex(
+        ROTATED_PUBLIC_KEY_SPKI_DER_HEX,
+    ))
+    .expect("rotated public key should decode");
+    let rotated_secret_key = SecretKey::<Sha384, PSS, Deterministic>::from_der(&decode_hex(
+        ROTATED_SECRET_KEY_PKCS8_DER_HEX,
+    ))
+    .expect("rotated secret key should decode");
     let rotated_keypair = KeyPair {
         pk: rotated_public_key.clone(),
         sk: rotated_secret_key,

@@ -1,6 +1,8 @@
 //! Helper RNG that returns the same set of values for each call to (try_)fill_bytes.
 
-use rand::{CryptoRng, Error, RngCore, rngs::OsRng};
+use blind_rsa_signatures::DefaultRng;
+use blind_rsa_signatures::reexports::rand::{TryCryptoRng, TryRng};
+use std::convert::Infallible;
 
 /// This RNG step is used to generate deterministic values for the nonce, salt,
 /// and blind.
@@ -44,7 +46,7 @@ impl DeterministicRng {
         self.additional_blind.as_deref()
     }
 
-    fn fill_with_data(&mut self, dest: &mut [u8]) {
+    fn fill_with_data(&mut self, dest: &mut [u8]) -> Result<(), Infallible> {
         match self.step {
             RngStep::Nonce => {
                 dest.copy_from_slice(&self.nonce);
@@ -60,32 +62,30 @@ impl DeterministicRng {
             }
             RngStep::AdditionalBlind => {
                 let mut ab = [0u8; 256];
-                OsRng.fill_bytes(&mut ab);
+                DefaultRng.try_fill_bytes(&mut ab)?;
                 dest.copy_from_slice(&ab);
                 self.additional_blind = Some(ab.to_vec());
                 self.step = RngStep::AdditionalBlind;
             }
         }
-    }
-}
-
-impl RngCore for DeterministicRng {
-    fn next_u32(&mut self) -> u32 {
-        unimplemented!()
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        unimplemented!()
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.fill_with_data(dest);
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
-        self.fill_with_data(dest);
         Ok(())
     }
 }
 
-impl CryptoRng for DeterministicRng {}
+impl TryRng for DeterministicRng {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
+        unimplemented!()
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
+        unimplemented!()
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Infallible> {
+        self.fill_with_data(dest)
+    }
+}
+
+impl TryCryptoRng for DeterministicRng {}

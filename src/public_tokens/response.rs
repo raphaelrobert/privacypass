@@ -1,6 +1,6 @@
 //! Response implementation of the Publicly Verifiable Token protocol.
 
-use blind_rsa_signatures::{BlindSignature, Options};
+use blind_rsa_signatures::BlindSignature;
 use generic_array::{GenericArray, typenum::U256};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -28,18 +28,11 @@ impl TokenResponse {
     pub fn issue_token(self, token_state: &TokenState) -> Result<PublicToken, IssueTokenError> {
         // authenticator = rsabssa_finalize(pkI, nonce, blind_sig, blind_inv)
         let token_input = token_state.token_input.serialize();
-        let options = Options::default();
         let token_type = TokenType::Public;
         let blind_sig = BlindSignature(self.blind_sig.to_vec());
         let signature = token_state
             .public_key
-            .finalize(
-                &blind_sig,
-                &token_state.blinding_result.secret,
-                None,
-                token_input,
-                &options,
-            )
+            .finalize(&blind_sig, &token_state.blinding_result, token_input)
             .map_err(|source| IssueTokenError::SignatureFinalizationFailed {
                 token_type,
                 source,
