@@ -1,6 +1,7 @@
 //! Response implementation of the Amortized Tokens protocol.
 
 use generic_array::GenericArray;
+use log::warn;
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
 use voprf::{EvaluationElement, Group, Proof, Result, VoprfClient};
@@ -76,10 +77,15 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
                 .get(index)
                 .map(|token_input| token_input.token_type)
                 .unwrap_or(default_token_type);
-            let evaluated_element = EvaluationElement::<CS>::deserialize(
-                &element.evaluated_element,
-            )
-            .map_err(|source| IssueTokenError::InvalidEvaluationElement { token_type, source })?;
+            let evaluated_element =
+                EvaluationElement::<CS>::deserialize(&element.evaluated_element)
+                    .inspect_err(
+                        |e| warn!(error:% = e, index; "Failed to deserialize evaluated element"),
+                    )
+                    .map_err(|source| IssueTokenError::InvalidEvaluationElement {
+                        token_type,
+                        source,
+                    })?;
             evaluated_elements.push(evaluated_element);
         }
 
@@ -101,11 +107,13 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
             &proof,
             token_state.public_key,
         )
+        .inspect_err(|e| warn!(error:% = e; "Failed to batch finalize"))
         .map_err(|source| IssueTokenError::BatchFinalizationFailed {
             token_type: default_token_type,
             source,
         })?
         .collect::<Result<Vec<_>>>()
+        .inspect_err(|e| warn!(error:% = e; "Failed to collect finalized tokens"))
         .map_err(|source| IssueTokenError::BatchFinalizationFailed {
             token_type: default_token_type,
             source,

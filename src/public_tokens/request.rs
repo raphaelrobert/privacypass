@@ -2,6 +2,7 @@
 
 use blind_rsa_signatures::BlindingResult;
 use blind_rsa_signatures::reexports::rand::CryptoRng;
+use log::warn;
 
 use super::PublicKey;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -53,6 +54,7 @@ impl TokenRequest {
 
         let challenge_digest = challenge
             .digest()
+            .inspect_err(|e| warn!(error:% = e; "Failed to create challenge digest"))
             .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
 
         let token_key_id = public_key_to_token_key_id(&public_key);
@@ -66,6 +68,7 @@ impl TokenRequest {
 
         let blinding_result = public_key
             .blind(rng, token_input.serialize())
+            .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
             .map_err(|source| IssueTokenRequestError::BlindingError {
                 source: source.into(),
             })?;

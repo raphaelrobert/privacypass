@@ -21,6 +21,7 @@ async-trait = "0.1.89"
 base64 = "0.22"
 generic-array = "1.3.5"
 rand = "0.8"
+log = { version = "0.4", features = ["kv"] }
 serde = "1"
 sha2 = "0.10.9"
 thiserror = "2"

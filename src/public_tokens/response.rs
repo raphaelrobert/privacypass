@@ -2,6 +2,7 @@
 
 use blind_rsa_signatures::BlindSignature;
 use generic_array::{GenericArray, typenum::U256};
+use log::warn;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{TokenType, auth::authorize::Token, common::errors::IssueTokenError};
@@ -33,6 +34,7 @@ impl TokenResponse {
         let signature = token_state
             .public_key
             .finalize(&blind_sig, &token_state.blinding_result, token_input)
+            .inspect_err(|e| warn!(error:% = e; "Failed to finalize blind signature"))
             .map_err(|source| IssueTokenError::SignatureFinalizationFailed {
                 token_type,
                 source,
