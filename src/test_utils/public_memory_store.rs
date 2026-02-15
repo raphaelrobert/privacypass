@@ -2,7 +2,10 @@
 //! `OriginKeyStore` traits.
 use crate::{TruncatedTokenKeyId, public_tokens::server::*};
 use async_trait::async_trait;
-use blind_rsa_signatures::{KeyPair, PublicKey};
+use blind_rsa_signatures::{Deterministic, PSS, Sha384};
+
+type KeyPair = blind_rsa_signatures::KeyPair<Sha384, PSS, Deterministic>;
+type PublicKey = blind_rsa_signatures::PublicKey<Sha384, PSS, Deterministic>;
 use std::collections::{HashMap, hash_map::Entry};
 use tokio::sync::Mutex;
 

@@ -2,9 +2,9 @@ use std::{fs::File, io::Write};
 
 use serde::{Deserialize, Serialize};
 
-use blind_rsa_signatures::{KeyPair, Options, PublicKey, SecretKey};
+use blind_rsa_signatures::{DefaultRng, Deterministic, KeyPair, PSS, PublicKey, SecretKey, Sha384};
 
-use rand::{RngCore, rngs::OsRng};
+use blind_rsa_signatures::reexports::rand::Rng;
 use tls_codec::Serialize as TlsSerializeTrait;
 
 use privacypass::{
@@ -73,14 +73,17 @@ pub(crate) async fn evaluate_vector(vector: PublicTokenTestVector) {
     let origin_server = OriginServer::new();
 
     // Keys
-    let options = Options::default();
-
-    let sec_key = SecretKey::from_pem(&String::from_utf8_lossy(&vector.sk_s)).unwrap();
-    let pub_key = PublicKey::from_spki(&vector.pk_s, Some(&options)).unwrap();
+    let sec_key =
+        SecretKey::<Sha384, PSS, Deterministic>::from_pem(&String::from_utf8_lossy(&vector.sk_s))
+            .unwrap();
+    let pub_key = PublicKey::<Sha384, PSS, Deterministic>::from_spki(&vector.pk_s).unwrap();
 
     // KAT: Check public key
     // Derive the public key from the private and compare it
-    assert_eq!(sec_key.to_public_key(), pub_key.0);
+    assert_eq!(
+        sec_key.public_key().unwrap().to_spki().unwrap(),
+        pub_key.to_spki().unwrap()
+    );
 
     // Serialize the public key and compare it
     assert_eq!(serialize_public_key(&pub_key), vector.pk_s);
@@ -182,7 +185,7 @@ pub(crate) async fn generate_kat_public_token() -> PublicTokenTestVector {
     let origin_server = OriginServer::new();
 
     // Keys
-    let keypair = KeyPair::generate(&mut OsRng, 2048).unwrap();
+    let keypair = KeyPair::<Sha384, PSS, Deterministic>::generate(&mut DefaultRng, 2048).unwrap();
 
     let sk_s = keypair.sk.to_pem().unwrap().into_bytes();
     let pk_s = serialize_public_key(&keypair.pk);
@@ -202,13 +205,13 @@ pub(crate) async fn generate_kat_public_token() -> PublicTokenTestVector {
 
     // Prepare the deterministic number generator
     let mut nonce: Nonce = [0u8; 32];
-    OsRng.fill_bytes(&mut nonce);
+    DefaultRng.fill_bytes(&mut nonce);
 
     let mut blind = [0u8; 256];
-    OsRng.fill_bytes(&mut blind);
+    DefaultRng.fill_bytes(&mut blind);
 
     let mut salt = [0u8; 48];
-    OsRng.fill_bytes(&mut salt);
+    DefaultRng.fill_bytes(&mut salt);
 
     let det_rng = &mut DeterministicRng::new(
         nonce.clone().to_vec(),
@@ -216,9 +219,9 @@ pub(crate) async fn generate_kat_public_token() -> PublicTokenTestVector {
         blind.clone().to_vec(),
     );
 
-    let redemption_context = if OsRng.next_u32().is_multiple_of(2) {
+    let redemption_context = if DefaultRng.next_u32().is_multiple_of(2) {
         let mut bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut bytes);
+        DefaultRng.fill_bytes(&mut bytes);
         Some(bytes)
     } else {
         None

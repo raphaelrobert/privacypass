@@ -32,7 +32,7 @@ p384 = { version = "0.13.0", default-features = false, features = [
   "hash2curve",
   "voprf",
 ] }
-blind-rsa-signatures = "0.15.0"
+blind-rsa-signatures = "0.17"
 http = "1"
 typenum = "1"
 nom = "8"

@@ -1,5 +1,6 @@
 //! # Publicly Verifiable Tokens
 
+use blind_rsa_signatures::{Deterministic, PSS, Sha384};
 use sha2::{Digest, Sha256};
 use typenum::U256;
 
@@ -17,7 +18,8 @@ pub use response::*;
 
 /// Publicly Verifiable Token alias
 pub type PublicToken = Token<U256>;
-pub use blind_rsa_signatures::PublicKey;
+/// Publicly Verifiable Token public key type alias (SHA-384, PSS, Deterministic).
+pub type PublicKey = blind_rsa_signatures::PublicKey<Sha384, PSS, Deterministic>;
 
 use self::server::serialize_public_key;
 

@@ -1,8 +1,10 @@
 //! Request implementation of the Publicly Verifiable Token protocol.
 
-use blind_rsa_signatures::{BlindingResult, Options, PublicKey};
+use blind_rsa_signatures::BlindingResult;
+use blind_rsa_signatures::reexports::rand::CryptoRng;
 use log::warn;
-use rand::{CryptoRng, RngCore};
+
+use super::PublicKey;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
@@ -42,7 +44,7 @@ impl TokenRequest {
     ///
     /// # Errors
     /// Returns an error if the challenge is invalid.
-    pub fn new<R: RngCore + CryptoRng>(
+    pub fn new<R: CryptoRng>(
         rng: &mut R,
         public_key: PublicKey,
         challenge: &TokenChallenge,
@@ -64,17 +66,16 @@ impl TokenRequest {
 
         let token_input = TokenInput::new(TokenType::Public, nonce, challenge_digest, token_key_id);
 
-        let options = Options::default();
         let blinding_result = public_key
-            .blind(rng, token_input.serialize(), false, &options)
+            .blind(rng, token_input.serialize())
             .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
             .map_err(|source| IssueTokenRequestError::BlindingError {
                 source: source.into(),
             })?;
 
-        debug_assert!(blinding_result.blind_msg.len() == NK);
+        debug_assert!(blinding_result.blind_message.len() == NK);
         let mut blinded_msg = [0u8; NK];
-        blinded_msg.copy_from_slice(blinding_result.blind_msg.as_slice());
+        blinded_msg.copy_from_slice(blinding_result.blind_message.as_slice());
 
         let token_request = TokenRequest {
             token_type: TokenType::Public,
