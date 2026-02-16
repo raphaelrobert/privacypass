@@ -4,6 +4,7 @@ use generic_array::GenericArray;
 use log::{debug, warn};
 use rand::{RngCore, rngs::OsRng};
 use sha2::digest::OutputSizeUser;
+use subtle::ConstantTimeEq;
 use typenum::Unsigned;
 use voprf::{BlindedElement, Group, Result, VoprfServer, VoprfServerBatchEvaluateFinishResult};
 
@@ -195,7 +196,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
                 source,
             })?
             .to_vec();
-        if token.authenticator() == token_authenticator {
+        if token.authenticator().ct_eq(&token_authenticator).into() {
             nonce_store.insert(token.nonce()).await;
             Ok(())
         } else {
