@@ -19,10 +19,26 @@ use crate::{
 
 use super::{NK, TokenRequest, TokenResponse, public_key_to_token_key_id, truncate_token_key_id};
 
-/// Minimal trait for a key store to store key material on the server-side. Note
-/// that the store requires inner mutability.
+/// Key store for RSA issuer keys (public tokens).
+///
+/// The store requires interior mutability.
+///
+/// # Truncated key ID collision space
+///
+/// RFC 9578 mandates a single-byte `truncated_token_key_id` (256 possible
+/// values). By the birthday bound, collision probability exceeds 50% at
+/// ~20 active keys. Key creation retries up to
+/// [`COLLISION_AVOIDANCE_ATTEMPTS`](crate::COLLISION_AVOIDANCE_ATTEMPTS)
+/// times, but the space is inherently small. Use [`remove`](Self::remove)
+/// to reclaim slots when rotating keys.
+///
+/// # Zeroization
+///
+/// RSA `KeyPair` does **not** implement `Zeroize` or `ZeroizeOnDrop`
+/// (upstream `blind-rsa-signatures` gap). Implementors storing private keys
+/// at rest should serialize into a `Zeroizing<Vec<u8>>` wrapper or
+/// otherwise ensure that private key bytes are zeroized on drop.
 #[async_trait]
-
 pub trait IssuerKeyStore: Send + Sync {
     /// Inserts a keypair with a given `truncated_token_key_id` into the key
     /// store, only if it does not collide with an existing
@@ -30,18 +46,43 @@ pub trait IssuerKeyStore: Send + Sync {
     ///
     /// Returns `true` if the key was inserted, `false` if a collision occurred.
     async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: KeyPair) -> bool;
-    /// Returns a keypair with a given `truncated_token_key_id` from the key store.
+    /// Returns a keypair with a given `truncated_token_key_id` from the key
+    /// store.
     async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<KeyPair>;
+    /// Removes a keypair by its `truncated_token_key_id`, reclaiming the
+    /// slot for future key creation.
+    ///
+    /// Returns `true` if a key was removed, `false` if the ID was not found.
+    async fn remove(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> bool;
 }
 
-/// Minimal trait for a key store to store key material on the server-side. Note
-/// that the store requires inner mutability.
+/// Key store for public keys used by origin servers to verify tokens.
+///
+/// The store requires interior mutability.
+///
+/// # Truncated key ID collision space
+///
+/// Multiple public keys may map to the same `truncated_token_key_id`.
+/// [`get`](Self::get) returns all matching keys; the origin server tries
+/// each during verification.
+///
+/// # Zeroization
+///
+/// `PublicKey` does not implement `Zeroize`, but public keys are not secret
+/// material, so no zeroization is required.
 #[async_trait]
 pub trait OriginKeyStore {
-    /// Inserts a keypair with a given `truncated_token_key_id` into the key store.
+    /// Inserts a public key with a given `truncated_token_key_id` into the
+    /// key store.
     async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: PublicKey);
-    /// Returns all public keys with a given `truncated_token_key_id` from the key store.
+    /// Returns all public keys with a given `truncated_token_key_id` from
+    /// the key store.
     async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Vec<PublicKey>;
+    /// Removes all public keys for a given `truncated_token_key_id`.
+    ///
+    /// Returns `true` if any keys were removed, `false` if the ID was not
+    /// found.
+    async fn remove(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> bool;
 }
 
 /// Serializes a keypair into a DER-encoded PKCS#8 document.

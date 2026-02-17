@@ -38,6 +38,14 @@ impl<C: PrivateCipherSuite> PrivateKeyStore for MemoryKeyStoreVoprf<C> {
     async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<VoprfServer<C>> {
         self.keys.lock().await.get(truncated_token_key_id).cloned()
     }
+
+    async fn remove(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> bool {
+        self.keys
+            .lock()
+            .await
+            .remove(truncated_token_key_id)
+            .is_some()
+    }
 }
 
 impl<CS: PrivateCipherSuite> Debug for MemoryKeyStoreVoprf<CS> {

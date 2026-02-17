@@ -54,6 +54,8 @@ pub type Nonce = [u8; 32];
 /// Challenge digest
 pub type ChallengeDigest = [u8; 32];
 
+/// Truncates a 32-byte token key ID to a single byte as required by
+/// RFC 9578.
 pub(crate) fn truncate_token_key_id(token_key_id: &TokenKeyId) -> TruncatedTokenKeyId {
     *token_key_id.iter().last().unwrap_or(&0)
 }
@@ -136,4 +138,11 @@ impl TokenInput {
     }
 }
 
+/// Maximum number of key generation retries before returning
+/// [`CreateKeypairError::CollisionExhausted`](crate::common::errors::CreateKeypairError::CollisionExhausted).
+///
+/// With a single-byte `truncated_token_key_id` (256 slots), 100 attempts
+/// is generous for low key counts but will fail reliably once the store
+/// approaches capacity. Use the `remove` method on key store traits to
+/// reclaim slots when rotating keys.
 pub(crate) const COLLISION_AVOIDANCE_ATTEMPTS: usize = 100;
