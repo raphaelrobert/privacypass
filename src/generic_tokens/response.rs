@@ -68,6 +68,19 @@ impl GenericBatchTokenResponse {
         Self::tls_deserialize(&mut bytes)
             .map_err(|source| SerializationError::InvalidData { source })
     }
+
+    /// Returns the number of successfully issued tokens (`Some` entries).
+    ///
+    /// Callers can compare this against `token_responses.len()` to
+    /// distinguish full success (all issued) from partial success
+    /// (some `None` entries).
+    #[must_use]
+    pub fn issued_count(&self) -> usize {
+        self.token_responses
+            .iter()
+            .filter(|r| r.token_response.is_some())
+            .count()
+    }
 }
 
 impl GenericBatchTokenResponse {

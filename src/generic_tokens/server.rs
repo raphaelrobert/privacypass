@@ -1,5 +1,6 @@
 //! Server-side implementation of Privately Verifiable Token protocol.
 
+use log::warn;
 use p384::NistP384;
 use voprf::Ristretto255;
 
@@ -43,8 +44,14 @@ impl Server {
 
     /// Issues token responses.
     ///
+    /// When some but not all tokens in a generic batch fail, the server
+    /// produces `None` entries for the failed tokens and returns the rest.
+    /// Callers should inspect [`GenericBatchTokenResponse::issued_count`]
+    /// to distinguish full success (HTTP 200) from partial success
+    /// (HTTP 206).
+    ///
     /// # Errors
-    /// Returns an error if the token request is invalid.
+    /// Returns an error only for batch-level failures (e.g. `BatchTooLarge`).
     pub async fn issue_token_responses<
         P384KS: PrivateKeyStore<CS = NistP384>,
         R255KS: PrivateKeyStore<CS = Ristretto255>,
@@ -63,43 +70,47 @@ impl Server {
                 size: batch_size,
             });
         }
-        let mut token_responses = Vec::new();
-        for request in token_request.token_requests {
-            match request {
+        let mut token_responses = Vec::with_capacity(batch_size);
+        for (index, request) in token_request.token_requests.into_iter().enumerate() {
+            let result = match request {
                 super::GenericTokenRequest::PrivateP384(token_request) => {
-                    let token_response = PrivateServer::new()
+                    PrivateServer::new()
                         .issue_token_response(private_p384_key_store, *token_request)
-                        .await?;
-                    let optional_token_response = super::OptionalTokenResponse {
-                        token_response: Some(super::GenericTokenResponse::PrivateP384(Box::new(
-                            token_response,
-                        ))),
-                    };
-                    token_responses.push(optional_token_response);
+                        .await
+                        .map(|r| {
+                            super::GenericTokenResponse::PrivateP384(Box::new(r))
+                        })
                 }
                 super::GenericTokenRequest::Public(token_request) => {
-                    let token_response = IssuerServer::new()
+                    IssuerServer::new()
                         .issue_token_response(issuer_key_store, *token_request)
-                        .await?;
-                    let optional_token_response = super::OptionalTokenResponse {
-                        token_response: Some(super::GenericTokenResponse::Public(Box::new(
-                            token_response,
-                        ))),
-                    };
-                    token_responses.push(optional_token_response);
+                        .await
+                        .map(|r| {
+                            super::GenericTokenResponse::Public(Box::new(r))
+                        })
                 }
                 super::GenericTokenRequest::PrivateRistretto255(token_request) => {
-                    let token_response = PrivateServer::new()
-                        .issue_token_response(private_ristretto255_key_store, *token_request)
-                        .await?;
-                    let optional_token_response = super::OptionalTokenResponse {
-                        token_response: Some(super::GenericTokenResponse::PrivateRistretto255(
-                            Box::new(token_response),
-                        )),
-                    };
-                    token_responses.push(optional_token_response);
+                    PrivateServer::new()
+                        .issue_token_response(
+                            private_ristretto255_key_store,
+                            *token_request,
+                        )
+                        .await
+                        .map(|r| {
+                            super::GenericTokenResponse::PrivateRistretto255(
+                                Box::new(r),
+                            )
+                        })
                 }
-            }
+            };
+            let token_response = match result {
+                Ok(response) => Some(response),
+                Err(error) => {
+                    warn!(index, error:% = error; "Failed to issue token in batch");
+                    None
+                }
+            };
+            token_responses.push(super::OptionalTokenResponse { token_response });
         }
         Ok(GenericBatchTokenResponse { token_responses })
     }
