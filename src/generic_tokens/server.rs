@@ -4,6 +4,7 @@ use p384::NistP384;
 use voprf::Ristretto255;
 
 use crate::{
+    DEFAULT_MAX_BATCH_SIZE,
     common::{errors::IssueTokenResponseError, store::PrivateKeyStore},
     private_tokens::server::Server as PrivateServer,
     public_tokens::server::{IssuerKeyStore, IssuerServer},
@@ -13,14 +14,31 @@ use super::GenericBatchTokenRequest;
 use super::GenericBatchTokenResponse;
 
 /// Server side implementation of Generic Tokens.
-#[derive(Default, Debug)]
-pub struct Server {}
+#[derive(Debug)]
+pub struct Server {
+    max_batch_size: usize,
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Server {
     /// Creates a new server.
     #[must_use]
     pub const fn new() -> Self {
-        Self {}
+        Self {
+            max_batch_size: DEFAULT_MAX_BATCH_SIZE,
+        }
+    }
+
+    /// Creates a new server with a custom maximum batch size. The default is
+    /// [`DEFAULT_MAX_BATCH_SIZE`](crate::DEFAULT_MAX_BATCH_SIZE).
+    #[must_use]
+    pub const fn with_max_batch_size(max_batch_size: usize) -> Self {
+        Self { max_batch_size }
     }
 
     /// Issues token responses.
@@ -38,6 +56,13 @@ impl Server {
         issuer_key_store: &IKS,
         token_request: GenericBatchTokenRequest,
     ) -> Result<GenericBatchTokenResponse, IssueTokenResponseError> {
+        let batch_size = token_request.token_requests.len();
+        if batch_size > self.max_batch_size {
+            return Err(IssueTokenResponseError::BatchTooLarge {
+                max: self.max_batch_size,
+                size: batch_size,
+            });
+        }
         let mut token_responses = Vec::new();
         for request in token_request.token_requests {
             match request {

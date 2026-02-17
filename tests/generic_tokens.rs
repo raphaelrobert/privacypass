@@ -3,6 +3,7 @@ use p384::NistP384;
 use privacypass::{
     TokenType,
     auth::authenticate::TokenChallenge,
+    common::errors::IssueTokenResponseError,
     generic_tokens::{self, GenericBatchTokenRequest, GenericToken},
     private_tokens::{self, server::Server as PrivateServer},
     public_tokens::{
@@ -206,4 +207,62 @@ async fn generic_tokens_cycle() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn generic_tokens_batch_too_large() {
+    let max_batch = 2;
+
+    let private_p384_key_store =
+        private_memory_store::MemoryKeyStoreVoprf::<NistP384>::default();
+    let private_ristretto255_key_store =
+        private_memory_store::MemoryKeyStoreVoprf::<Ristretto255>::default();
+    let issuer_key_store = IssuerMemoryKeyStore::default();
+
+    let private_p384_server = PrivateServer::new();
+    let private_p384_public_key = private_p384_server
+        .create_keypair(&private_p384_key_store)
+        .await
+        .unwrap();
+
+    let challenge = TokenChallenge::new(
+        TokenType::PrivateP384,
+        "example.com",
+        None,
+        &["example.com".to_string()],
+    );
+
+    let mut builder = GenericBatchTokenRequest::builder();
+    for _ in 0..(max_batch + 1) {
+        let (token_request, token_state) =
+            private_tokens::TokenRequest::<NistP384>::new(
+                private_p384_public_key,
+                &challenge,
+            )
+            .unwrap();
+        builder = builder
+            .add_token_request(token_request.into(), token_state.into());
+    }
+    let (token_request, _token_states) = builder.build();
+
+    let server = generic_tokens::server::Server::with_max_batch_size(max_batch);
+    let result = server
+        .issue_token_responses(
+            &private_p384_key_store,
+            &private_ristretto255_key_store,
+            &issuer_key_store,
+            token_request,
+        )
+        .await;
+
+    assert!(
+        matches!(
+            result,
+            Err(IssueTokenResponseError::BatchTooLarge {
+                max: 2,
+                size: 3,
+            })
+        ),
+        "Expected BatchTooLarge error, got {result:?}"
+    );
 }

@@ -138,6 +138,13 @@ impl TokenInput {
     }
 }
 
+/// Default maximum batch size for amortized and generic token issuance.
+///
+/// Limits the number of tokens a client can request in a single batch
+/// to prevent server-side resource exhaustion.
+/// Override via `Server::with_max_batch_size()`.
+pub const DEFAULT_MAX_BATCH_SIZE: usize = 100;
+
 /// Maximum number of key generation retries before returning
 /// [`CreateKeypairError::CollisionExhausted`](crate::common::errors::CreateKeypairError::CollisionExhausted).
 ///
