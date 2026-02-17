@@ -172,37 +172,51 @@ impl OriginServer {
                 found: authenticator_len,
             });
         }
-        if nonce_store.exists(&token.nonce()).await {
-            return Err(RedeemTokenError::DoubleSpending);
-        }
+        let nonce = token.nonce();
         let token_input = TokenInput::new(
             token_type,
-            token.nonce(),
+            nonce,
             *token.challenge_digest(),
             *token.token_key_id(),
         );
 
-        let truncated_token_key_id = truncate_token_key_id(token.token_key_id());
-        let public_keys = key_store.get(&truncated_token_key_id).await;
-        if public_keys.is_empty() {
-            return Err(RedeemTokenError::KeyIdNotFound);
+        if !nonce_store.reserve(&nonce).await {
+            return Err(RedeemTokenError::DoubleSpending);
         }
 
-        let signature = Signature(token.authenticator().to_vec());
-        let token_input_bytes = token_input.serialize();
+        let crypto_result = async {
+            let truncated_token_key_id = truncate_token_key_id(token.token_key_id());
+            let public_keys = key_store.get(&truncated_token_key_id).await;
+            if public_keys.is_empty() {
+                return Err(RedeemTokenError::KeyIdNotFound);
+            }
 
-        let verified = public_keys.iter().any(|public_key| {
-            public_key
-                .verify(&signature, None, &token_input_bytes)
-                .inspect_err(|e| warn!(error:% = e; "Verify failed"))
-                .is_ok()
-        });
+            let signature = Signature(token.authenticator().to_vec());
+            let token_input_bytes = token_input.serialize();
 
-        if !verified {
-            return Err(RedeemTokenError::InvalidSignature { token_type });
+            let verified = public_keys.iter().any(|public_key| {
+                public_key
+                    .verify(&signature, None, &token_input_bytes)
+                    .inspect_err(|e| warn!(error:% = e; "Verify failed"))
+                    .is_ok()
+            });
+
+            if !verified {
+                return Err(RedeemTokenError::InvalidSignature { token_type });
+            }
+            Ok(())
         }
+        .await;
 
-        nonce_store.insert(token.nonce()).await;
-        Ok(())
+        match crypto_result {
+            Ok(()) => {
+                nonce_store.commit(&nonce).await;
+                Ok(())
+            }
+            Err(e) => {
+                nonce_store.release(&nonce).await;
+                Err(e)
+            }
+        }
     }
 }

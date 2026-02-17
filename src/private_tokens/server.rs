@@ -142,33 +142,50 @@ impl<CS: PrivateCipherSuite> Server<CS> {
                 found: authenticator_len,
             });
         }
-        if nonce_store.exists(&token.nonce()).await {
-            return Err(RedeemTokenError::DoubleSpending);
-        }
+        let nonce = token.nonce();
         let token_input = TokenInput::new(
             token_type,
-            token.nonce(),
+            nonce,
             *token.challenge_digest(),
             *token.token_key_id(),
         );
 
-        let server = key_store
-            .get(&truncate_token_key_id(token.token_key_id()))
-            .await
-            .ok_or(RedeemTokenError::KeyIdNotFound)?;
-        let token_authenticator = server
-            .evaluate(&token_input.serialize())
-            .inspect_err(|e| warn!(error:% = e; "Failed to evaluate token during redemption"))
-            .map_err(|source| RedeemTokenError::AuthenticatorDerivationFailed {
-                token_type,
-                source,
-            })?
-            .to_vec();
-        if token.authenticator().ct_eq(&token_authenticator).into() {
-            nonce_store.insert(token.nonce()).await;
+        if !nonce_store.reserve(&nonce).await {
+            return Err(RedeemTokenError::DoubleSpending);
+        }
+
+        let crypto_result = async {
+            let server = key_store
+                .get(&truncate_token_key_id(token.token_key_id()))
+                .await
+                .ok_or(RedeemTokenError::KeyIdNotFound)?;
+            let token_authenticator = server
+                .evaluate(&token_input.serialize())
+                .inspect_err(|e| {
+                    warn!(error:% = e; "Failed to evaluate token during redemption");
+                })
+                .map_err(|source| RedeemTokenError::AuthenticatorDerivationFailed {
+                    token_type,
+                    source,
+                })?
+                .to_vec();
+            let verified: bool = token.authenticator().ct_eq(&token_authenticator).into();
+            if !verified {
+                return Err(RedeemTokenError::AuthenticatorMismatch { token_type });
+            }
             Ok(())
-        } else {
-            Err(RedeemTokenError::AuthenticatorMismatch { token_type })
+        }
+        .await;
+
+        match crypto_result {
+            Ok(()) => {
+                nonce_store.commit(&nonce).await;
+                Ok(())
+            }
+            Err(e) => {
+                nonce_store.release(&nonce).await;
+                Err(e)
+            }
         }
     }
 

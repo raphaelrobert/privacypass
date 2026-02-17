@@ -58,14 +58,48 @@ pub(crate) fn truncate_token_key_id(token_key_id: &TokenKeyId) -> TruncatedToken
     *token_key_id.iter().last().unwrap_or(&0)
 }
 
-/// Minimal trait for a nonce store that can be used to track redeemed tokens
-/// and prevent double spending. Note that the store requires inner mutability.
+/// Nonce store for tracking redeemed tokens and preventing double spending.
+///
+/// Implements a three-state machine: **absent → reserved → committed**, with
+/// **reserved → absent** via [`release`](NonceStore::release).
+///
+/// # Security contract
+///
+/// - [`reserve`](NonceStore::reserve) is atomic: exactly one concurrent caller
+///   wins the race, preventing TOCTOU double-spending.
+/// - [`release`](NonceStore::release) releases a reservation when cryptographic
+///   verification fails, preventing nonce-burning attacks.
+/// - [`commit`](NonceStore::commit) finalizes a nonce after successful
+///   cryptographic verification.
+///
+/// # Stale reservations
+///
+/// A crash between [`reserve`](NonceStore::reserve) and
+/// [`commit`](NonceStore::commit)/[`release`](NonceStore::release) leaves a
+/// nonce in the reserved state. Production implementations should apply a TTL
+/// to reserved entries so they expire automatically.
+///
+/// The store requires interior mutability.
 #[async_trait]
 pub trait NonceStore: Send + Sync {
-    /// Returns `true` if the nonce exists in the nonce store and `false` otherwise.
-    async fn exists(&self, nonce: &Nonce) -> bool;
-    /// Inserts a new nonce in the nonce store.
-    async fn insert(&self, nonce: Nonce);
+    /// Atomically transitions a nonce from absent to reserved.
+    ///
+    /// Returns `true` if newly reserved, `false` if already reserved
+    /// or committed (replay / concurrent duplicate).
+    async fn reserve(&self, nonce: &Nonce) -> bool;
+
+    /// Transitions a nonce from reserved to committed.
+    ///
+    /// Called after cryptographic verification succeeds. Only reserved nonces
+    /// can be committed; absent or already committed nonces are no-ops.
+    async fn commit(&self, nonce: &Nonce);
+
+    /// Transitions a nonce from reserved back to absent.
+    ///
+    /// Called when cryptographic verification fails, releasing the reservation
+    /// so the nonce is not permanently burned. Only reserved nonces can be
+    /// released; committed or absent nonces are no-ops.
+    async fn release(&self, nonce: &Nonce);
 }
 
 #[derive(Debug)]
