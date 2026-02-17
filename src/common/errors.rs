@@ -38,6 +38,13 @@ pub enum CreateKeypairError {
         #[source]
         source: BlindRsaError,
     },
+    #[error("Key serialization failed")]
+    /// Error when serializing the public key fails.
+    KeySerializationFailed {
+        /// Underlying RSA error that triggered the failure.
+        #[source]
+        source: BlindRsaError,
+    },
     #[error("Collision exhausted")]
     /// Error when collision attempts are exhausted
     CollisionExhausted,

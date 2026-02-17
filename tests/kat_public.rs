@@ -86,7 +86,7 @@ pub(crate) async fn evaluate_vector(vector: PublicTokenTestVector) {
     );
 
     // Serialize the public key and compare it
-    assert_eq!(serialize_public_key(&pub_key), vector.pk_s);
+    assert_eq!(serialize_public_key(&pub_key).unwrap(), vector.pk_s);
 
     let keypair = KeyPair {
         sk: sec_key,
@@ -94,12 +94,15 @@ pub(crate) async fn evaluate_vector(vector: PublicTokenTestVector) {
     };
 
     // Issuer server: Set the keypair
-    issuer_server.set_keypair(&issuer_key_store, keypair).await;
+    issuer_server
+        .set_keypair(&issuer_key_store, keypair)
+        .await
+        .unwrap();
 
     // Origin key store: Set the public key
     origin_key_store
         .insert(
-            public_key_to_truncated_token_key_id(&pub_key),
+            public_key_to_truncated_token_key_id(&pub_key).unwrap(),
             pub_key.clone(),
         )
         .await;
@@ -188,17 +191,18 @@ pub(crate) async fn generate_kat_public_token() -> PublicTokenTestVector {
     let keypair = KeyPair::<Sha384, PSS, Deterministic>::generate(&mut DefaultRng, 2048).unwrap();
 
     let sk_s = keypair.sk.to_pem().unwrap().into_bytes();
-    let pk_s = serialize_public_key(&keypair.pk);
+    let pk_s = serialize_public_key(&keypair.pk).unwrap();
 
     // Issuer server: Set the keypair
     issuer_server
         .set_keypair(&issuer_key_store, keypair.clone())
-        .await;
+        .await
+        .unwrap();
 
     // Origin key store: Set the public key
     origin_key_store
         .insert(
-            public_key_to_truncated_token_key_id(&keypair.pk),
+            public_key_to_truncated_token_key_id(&keypair.pk).unwrap(),
             keypair.pk.clone(),
         )
         .await;

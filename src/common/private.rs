@@ -16,23 +16,19 @@ pub trait PrivateCipherSuite:
     + Sync
 {
     /// Returns the token type for the cipher suite.
+    fn token_type() -> TokenType;
+}
+
+impl PrivateCipherSuite for p384::NistP384 {
     fn token_type() -> TokenType {
-        match Self::ID {
-            "P384-SHA384" => TokenType::PrivateP384,
-            "ristretto255-SHA512" => TokenType::PrivateRistretto255,
-            _ => panic!("Unsupported token type"),
-        }
+        TokenType::PrivateP384
     }
 }
 
-impl<C> PrivateCipherSuite for C where
-    C: CipherSuite<Group: Group<Elem: Send + Sync, Scalar: Send + Sync>>
-        + PartialEq
-        + Debug
-        + Clone
-        + Send
-        + Sync
-{
+impl PrivateCipherSuite for voprf::Ristretto255 {
+    fn token_type() -> TokenType {
+        TokenType::PrivateRistretto255
+    }
 }
 
 /// Public key alias

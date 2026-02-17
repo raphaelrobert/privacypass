@@ -76,11 +76,15 @@ impl TryRng for DeterministicRng {
     type Error = Infallible;
 
     fn try_next_u32(&mut self) -> Result<u32, Infallible> {
-        unimplemented!()
+        let mut buf = [0u8; 4];
+        self.fill_with_data(&mut buf)?;
+        Ok(u32::from_le_bytes(buf))
     }
 
     fn try_next_u64(&mut self) -> Result<u64, Infallible> {
-        unimplemented!()
+        let mut buf = [0u8; 8];
+        self.fill_with_data(&mut buf)?;
+        Ok(u64::from_le_bytes(buf))
     }
 
     fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Infallible> {

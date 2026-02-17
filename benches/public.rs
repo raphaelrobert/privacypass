@@ -167,7 +167,7 @@ pub fn criterion_public_benchmark(c: &mut Criterion) {
                         .unwrap();
                     origin_key_store
                         .insert(
-                            public_key_to_truncated_token_key_id(&public_key),
+                            public_key_to_truncated_token_key_id(&public_key).unwrap(),
                             public_key.clone(),
                         )
                         .await;
