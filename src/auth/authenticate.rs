@@ -77,7 +77,7 @@ impl TokenChallenge {
         if self.redemption_context.is_empty() {
             None
         } else {
-            Some(self.redemption_context.as_slice().try_into().unwrap())
+            self.redemption_context.as_slice().try_into().ok()
         }
     }
 

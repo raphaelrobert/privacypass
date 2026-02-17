@@ -35,7 +35,7 @@ async fn public_tokens_cycle() {
 
     origin_key_store
         .insert(
-            public_key_to_truncated_token_key_id(&public_key),
+            public_key_to_truncated_token_key_id(&public_key).unwrap(),
             public_key.clone(),
         )
         .await;
@@ -117,7 +117,7 @@ async fn redeem_token_supports_multiple_public_keys_per_truncated_id() {
     };
     assert_eq!(
         truncated_token_key_id,
-        public_key_to_truncated_token_key_id(&initial_keypair.pk)
+        public_key_to_truncated_token_key_id(&initial_keypair.pk).unwrap()
     );
     issuer_key_store
         .insert(truncated_token_key_id, initial_keypair.clone())
@@ -155,7 +155,7 @@ async fn redeem_token_supports_multiple_public_keys_per_truncated_id() {
     };
     assert_eq!(
         truncated_token_key_id,
-        public_key_to_truncated_token_key_id(&rotated_keypair.pk)
+        public_key_to_truncated_token_key_id(&rotated_keypair.pk).unwrap()
     );
 
     origin_key_store

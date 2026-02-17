@@ -85,10 +85,14 @@ pub trait OriginKeyStore {
     async fn remove(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> bool;
 }
 
-/// Serializes a keypair into a DER-encoded PKCS#8 document.
-#[must_use]
-pub fn serialize_public_key(public_key: &PublicKey) -> Vec<u8> {
-    public_key.to_spki().unwrap()
+/// Serializes a public key into a DER-encoded SPKI document.
+///
+/// # Errors
+/// Returns an error if the public key cannot be serialized.
+pub fn serialize_public_key(
+    public_key: &PublicKey,
+) -> Result<Vec<u8>, blind_rsa_signatures::Error> {
+    public_key.to_spki()
 }
 
 const KEYSIZE_IN_BITS: usize = 2048;
@@ -119,8 +123,10 @@ impl IssuerServer {
             let key_pair = KeyPair::generate(rng, KEYSIZE_IN_BITS)
                 .inspect_err(|e| debug!(error:% = e; "Failed to generate RSA keypair"))
                 .map_err(|source| CreateKeypairError::KeyGenerationFailed { source })?;
-            let truncated_token_key_id =
-                truncate_token_key_id(&public_key_to_token_key_id(&key_pair.pk));
+            let truncated_token_key_id = truncate_token_key_id(
+                &public_key_to_token_key_id(&key_pair.pk)
+                    .map_err(|source| CreateKeypairError::KeySerializationFailed { source })?,
+            );
 
             if key_store.get(&truncated_token_key_id).await.is_some() {
                 continue;
@@ -170,11 +176,21 @@ impl IssuerServer {
     }
 
     /// Sets the given keypair.
+    ///
+    /// # Errors
+    /// Returns an error if the public key cannot be serialized.
     #[cfg(feature = "kat")]
-    pub async fn set_keypair<IKS: IssuerKeyStore>(&self, key_store: &IKS, key_pair: KeyPair) {
-        let truncated_token_key_id =
-            truncate_token_key_id(&public_key_to_token_key_id(&key_pair.pk));
+    pub async fn set_keypair<IKS: IssuerKeyStore>(
+        &self,
+        key_store: &IKS,
+        key_pair: KeyPair,
+    ) -> Result<(), CreateKeypairError> {
+        let truncated_token_key_id = truncate_token_key_id(
+            &public_key_to_token_key_id(&key_pair.pk)
+                .map_err(|source| CreateKeypairError::KeySerializationFailed { source })?,
+        );
         key_store.insert(truncated_token_key_id, key_pair).await;
+        Ok(())
     }
 }
 

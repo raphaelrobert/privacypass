@@ -131,8 +131,12 @@ impl GenericBatchTokenResponse {
                     ) => response
                         .issue_token(state)
                         .map(GenericToken::from_private_ristretto)?,
-                    // The mismatch case is handled above.
-                    _ => unreachable!("token type mismatch checked earlier"),
+                    _ => {
+                        return Err(IssueTokenError::UnexpectedTokenResponseType {
+                            expected,
+                            found,
+                        });
+                    }
                 };
                 tokens.push(token);
             }

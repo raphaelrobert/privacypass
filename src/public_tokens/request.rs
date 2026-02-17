@@ -57,7 +57,11 @@ impl TokenRequest {
             .inspect_err(|e| warn!(error:% = e; "Failed to create challenge digest"))
             .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
 
-        let token_key_id = public_key_to_token_key_id(&public_key);
+        let token_key_id = public_key_to_token_key_id(&public_key).map_err(|source| {
+            IssueTokenRequestError::BlindingError {
+                source: source.into(),
+            }
+        })?;
 
         // nonce = random(32)
         // challenge_digest = SHA256(challenge)

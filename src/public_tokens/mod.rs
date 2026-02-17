@@ -4,6 +4,8 @@ use blind_rsa_signatures::{Deterministic, PSS, Sha384};
 use sha2::{Digest, Sha256};
 use typenum::U256;
 
+use blind_rsa_signatures::Error as BlindRsaError;
+
 use crate::{TokenKeyId, TruncatedTokenKeyId, auth::authorize::Token, truncate_token_key_id};
 
 pub mod request;
@@ -26,13 +28,20 @@ use self::server::serialize_public_key;
 /// Size of the authenticator
 pub const NK: usize = 256;
 
-/// Converts a public key to a token key ID
-pub fn public_key_to_truncated_token_key_id(public_key: &PublicKey) -> TruncatedTokenKeyId {
-    truncate_token_key_id(&public_key_to_token_key_id(public_key))
+/// Converts a public key to a truncated token key ID.
+///
+/// # Errors
+/// Returns an error if the public key cannot be serialized.
+pub fn public_key_to_truncated_token_key_id(
+    public_key: &PublicKey,
+) -> Result<TruncatedTokenKeyId, BlindRsaError> {
+    Ok(truncate_token_key_id(&public_key_to_token_key_id(
+        public_key,
+    )?))
 }
 
-fn public_key_to_token_key_id(public_key: &PublicKey) -> TokenKeyId {
-    let public_key = serialize_public_key(public_key);
+fn public_key_to_token_key_id(public_key: &PublicKey) -> Result<TokenKeyId, BlindRsaError> {
+    let public_key = serialize_public_key(public_key)?;
 
-    Sha256::digest(public_key).into()
+    Ok(Sha256::digest(public_key).into())
 }

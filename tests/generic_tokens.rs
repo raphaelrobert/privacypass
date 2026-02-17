@@ -67,7 +67,8 @@ async fn generic_tokens_cycle() {
         .insert(
             privacypass::public_tokens::public_key_to_truncated_token_key_id(
                 &public_token_public_key,
-            ),
+            )
+            .unwrap(),
             public_token_public_key.clone(),
         )
         .await;
