@@ -17,5 +17,5 @@ jobs:
         with:
           persist-credentials: false
       - uses: extractions/setup-just@v3
-      - run: cargo install cargo-deny --locked
+      - run: cargo binstall cargo-deny --no-confirm
       - run: just check
