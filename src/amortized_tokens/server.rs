@@ -9,7 +9,7 @@ use typenum::Unsigned;
 use voprf::{BlindedElement, Group, Result, VoprfServer, VoprfServerBatchEvaluateFinishResult};
 
 use crate::{
-    COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput,
+    COLLISION_AVOIDANCE_ATTEMPTS, DEFAULT_MAX_BATCH_SIZE, NonceStore, TokenInput,
     common::{
         errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
         private::{PrivateCipherSuite, PublicKey, public_key_to_token_key_id},
@@ -21,9 +21,16 @@ use crate::{
 use super::{AmortizedBatchTokenRequest, AmortizedBatchTokenResponse, AmortizedToken};
 
 /// Server-side component of the batched token issuance protocol.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Server<CS: PrivateCipherSuite> {
+    max_batch_size: usize,
     _marker: std::marker::PhantomData<CS>,
+}
+
+impl<CS: PrivateCipherSuite> Default for Server<CS> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<CS: PrivateCipherSuite> Server<CS> {
@@ -41,6 +48,17 @@ impl<CS: PrivateCipherSuite> Server<CS> {
     #[must_use]
     pub const fn new() -> Self {
         Self {
+            max_batch_size: DEFAULT_MAX_BATCH_SIZE,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Creates a new server with a custom maximum batch size. The default is
+    /// [`DEFAULT_MAX_BATCH_SIZE`](crate::DEFAULT_MAX_BATCH_SIZE).
+    #[must_use]
+    pub const fn with_max_batch_size(max_batch_size: usize) -> Self {
+        Self {
+            max_batch_size,
             _marker: std::marker::PhantomData,
         }
     }
@@ -110,6 +128,13 @@ impl<CS: PrivateCipherSuite> Server<CS> {
             return Err(IssueTokenResponseError::InvalidTokenType {
                 expected: CS::token_type(),
                 found: token_request.token_type,
+            });
+        }
+        let batch_size = token_request.blinded_elements.len();
+        if batch_size > self.max_batch_size {
+            return Err(IssueTokenResponseError::BatchTooLarge {
+                max: self.max_batch_size,
+                size: batch_size,
             });
         }
         let server = key_store

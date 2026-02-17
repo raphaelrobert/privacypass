@@ -2,7 +2,10 @@ use p384::NistP384;
 use privacypass::{
     amortized_tokens::{AmortizedBatchTokenRequest, server::*},
     auth::authenticate::TokenChallenge,
-    common::{errors::RedeemTokenError, private::PrivateCipherSuite},
+    common::{
+        errors::{IssueTokenResponseError, RedeemTokenError},
+        private::PrivateCipherSuite,
+    },
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 use voprf::Ristretto255;
@@ -72,4 +75,40 @@ async fn amortized_tokens_cycle_type<CS: PrivateCipherSuite>() {
             Err(RedeemTokenError::DoubleSpending)
         );
     }
+}
+
+#[tokio::test]
+async fn amortized_tokens_batch_too_large() {
+    amortized_tokens_batch_too_large_type::<NistP384>().await;
+    amortized_tokens_batch_too_large_type::<Ristretto255>().await;
+}
+
+async fn amortized_tokens_batch_too_large_type<CS: PrivateCipherSuite>() {
+    let max_batch: usize = 5;
+    let nr: u16 = 6;
+
+    let key_store = MemoryKeyStoreVoprf::<CS>::default();
+    let server = Server::with_max_batch_size(max_batch);
+
+    let public_key = server.create_keypair(&key_store).await.unwrap();
+
+    let challenge = TokenChallenge::new(
+        CS::token_type(),
+        "example.com",
+        None,
+        &["example.com".to_string()],
+    );
+
+    let (token_request, _token_state) =
+        AmortizedBatchTokenRequest::new(public_key, &challenge, nr).unwrap();
+
+    let result = server.issue_token_response(&key_store, token_request).await;
+
+    assert!(
+        matches!(
+            result,
+            Err(IssueTokenResponseError::BatchTooLarge { max: 5, size: 6 })
+        ),
+        "Expected BatchTooLarge error, got {result:?}"
+    );
 }

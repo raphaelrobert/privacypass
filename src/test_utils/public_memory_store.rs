@@ -30,6 +30,14 @@ impl IssuerKeyStore for IssuerMemoryKeyStore {
     async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<KeyPair> {
         self.keys.lock().await.get(truncated_token_key_id).cloned()
     }
+
+    async fn remove(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> bool {
+        self.keys
+            .lock()
+            .await
+            .remove(truncated_token_key_id)
+            .is_some()
+    }
 }
 
 /// Public key store that stores keys in memory.
@@ -54,5 +62,13 @@ impl OriginKeyStore for OriginMemoryKeyStore {
             .get(truncated_token_key_id)
             .cloned()
             .unwrap_or_default()
+    }
+
+    async fn remove(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> bool {
+        self.keys
+            .lock()
+            .await
+            .remove(truncated_token_key_id)
+            .is_some()
     }
 }

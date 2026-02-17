@@ -108,6 +108,14 @@ pub enum IssueTokenResponseError {
         /// Actual token type found in the request.
         found: TokenType,
     },
+    #[error("Batch size {size} exceeds maximum {max}")]
+    /// Error when the batch size exceeds the server's configured limit.
+    BatchTooLarge {
+        /// Maximum allowed batch size.
+        max: usize,
+        /// Actual batch size in the request.
+        size: usize,
+    },
 }
 
 /// Errors that can occur when issuing tokens.
