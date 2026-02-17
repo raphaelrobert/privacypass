@@ -73,34 +73,19 @@ impl Server {
         let mut token_responses = Vec::with_capacity(batch_size);
         for (index, request) in token_request.token_requests.into_iter().enumerate() {
             let result = match request {
-                super::GenericTokenRequest::PrivateP384(token_request) => {
-                    PrivateServer::new()
-                        .issue_token_response(private_p384_key_store, *token_request)
-                        .await
-                        .map(|r| {
-                            super::GenericTokenResponse::PrivateP384(Box::new(r))
-                        })
-                }
-                super::GenericTokenRequest::Public(token_request) => {
-                    IssuerServer::new()
-                        .issue_token_response(issuer_key_store, *token_request)
-                        .await
-                        .map(|r| {
-                            super::GenericTokenResponse::Public(Box::new(r))
-                        })
-                }
+                super::GenericTokenRequest::PrivateP384(token_request) => PrivateServer::new()
+                    .issue_token_response(private_p384_key_store, *token_request)
+                    .await
+                    .map(|r| super::GenericTokenResponse::PrivateP384(Box::new(r))),
+                super::GenericTokenRequest::Public(token_request) => IssuerServer::new()
+                    .issue_token_response(issuer_key_store, *token_request)
+                    .await
+                    .map(|r| super::GenericTokenResponse::Public(Box::new(r))),
                 super::GenericTokenRequest::PrivateRistretto255(token_request) => {
                     PrivateServer::new()
-                        .issue_token_response(
-                            private_ristretto255_key_store,
-                            *token_request,
-                        )
+                        .issue_token_response(private_ristretto255_key_store, *token_request)
                         .await
-                        .map(|r| {
-                            super::GenericTokenResponse::PrivateRistretto255(
-                                Box::new(r),
-                            )
-                        })
+                        .map(|r| super::GenericTokenResponse::PrivateRistretto255(Box::new(r)))
                 }
             };
             let token_response = match result {

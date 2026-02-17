@@ -102,17 +102,12 @@ async fn amortized_tokens_batch_too_large_type<CS: PrivateCipherSuite>() {
     let (token_request, _token_state) =
         AmortizedBatchTokenRequest::new(public_key, &challenge, nr).unwrap();
 
-    let result = server
-        .issue_token_response(&key_store, token_request)
-        .await;
+    let result = server.issue_token_response(&key_store, token_request).await;
 
     assert!(
         matches!(
             result,
-            Err(IssueTokenResponseError::BatchTooLarge {
-                max: 5,
-                size: 6,
-            })
+            Err(IssueTokenResponseError::BatchTooLarge { max: 5, size: 6 })
         ),
         "Expected BatchTooLarge error, got {result:?}"
     );
