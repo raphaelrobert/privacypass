@@ -2,5 +2,6 @@
 //! tokens
 
 pub mod errors;
+pub mod extensions;
 pub mod private;
 pub mod store;
