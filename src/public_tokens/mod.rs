@@ -6,7 +6,9 @@ use typenum::U256;
 
 use blind_rsa_signatures::Error as BlindRsaError;
 
-use crate::{TokenKeyId, TruncatedTokenKeyId, auth::authorize::Token, truncate_token_key_id};
+use crate::{
+    TokenKeyId, TokenType, TruncatedTokenKeyId, auth::authorize::Token, truncate_token_key_id,
+};
 
 pub mod request;
 pub mod response;
@@ -44,4 +46,30 @@ fn public_key_to_token_key_id(public_key: &PublicKey) -> Result<TokenKeyId, Blin
     let public_key = serialize_public_key(public_key)?;
 
     Ok(Sha256::digest(public_key).into())
+}
+
+/// Token issuance protocol to be used by servers and clients
+#[derive(Clone, Debug, Default)]
+pub enum TokenProtocol<'a> {
+    /// Privacy Pass issuance protocol
+    #[default]
+    Basic,
+    /// Privacy Pass issuance with Public Metadata
+    ///
+    /// Specified by `draft-ietf-privacypass-public-metadata-issuance`.
+    PublicMetadata {
+        /// A reference to the public metadata, cryptographically bound to
+        /// the generated token.
+        metadata: &'a [u8],
+    },
+}
+
+impl<'a> TokenProtocol<'a> {
+    /// Returns the token type associated with this protocol
+    pub fn token_type(&self) -> TokenType {
+        match self {
+            TokenProtocol::Basic => TokenType::Public,
+            TokenProtocol::PublicMetadata { .. } => TokenType::PublicMetadata,
+        }
+    }
 }

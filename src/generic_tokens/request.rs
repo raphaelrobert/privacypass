@@ -183,12 +183,12 @@ impl Deserialize for GenericTokenRequest {
         let mut all_bytes = (peeked).chain(bytes);
 
         match token_type {
-            TokenType::PrivateP384 => {
+            TokenType::PrivateP384 | TokenType::PrivateMetadata => {
                 let token_request =
                     crate::private_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
                 Ok(GenericTokenRequest::PrivateP384(Box::new(token_request)))
             }
-            TokenType::Public => {
+            TokenType::Public | TokenType::PublicMetadata => {
                 let token_request =
                     crate::public_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
                 Ok(GenericTokenRequest::Public(Box::new(token_request)))
