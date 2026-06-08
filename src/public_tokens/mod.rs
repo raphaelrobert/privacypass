@@ -49,7 +49,7 @@ fn public_key_to_token_key_id(public_key: &PublicKey) -> Result<TokenKeyId, Blin
 }
 
 /// Token issuance protocol to be used by servers and clients
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum TokenProtocol<'a> {
     /// Privacy Pass issuance protocol
     #[default]

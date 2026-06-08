@@ -245,12 +245,11 @@ async fn public_metadata_tokens() {
 
     // Client: Prepare a TokenRequest after having received a challenge
     let (token_request, token_state) =
-        TokenRequest::new_with_protocol(rng, public_key, &token_challenge, protocol.clone())
-            .unwrap();
+        TokenRequest::new_with_protocol(rng, public_key, &token_challenge, protocol).unwrap();
 
     // Issuer server: Issue a TokenResponse
     let token_response = issuer_server
-        .issue_token_response_protocol(&issuer_key_store, token_request, protocol.clone())
+        .issue_token_response_protocol(&issuer_key_store, token_request, protocol)
         .await
         .unwrap();
 
@@ -262,19 +261,14 @@ async fn public_metadata_tokens() {
 
     // Origin server: Redeem the token
     origin_server
-        .redeem_token_protocol(
-            &origin_key_store,
-            &nonce_store,
-            token.clone(),
-            protocol.clone(),
-        )
+        .redeem_token_protocol(&origin_key_store, &nonce_store, token.clone(), protocol)
         .await
         .unwrap();
 
     // Origin server: Test double spend protection
     assert_eq!(
         origin_server
-            .redeem_token_protocol(&origin_key_store, &nonce_store, token, protocol.clone())
+            .redeem_token_protocol(&origin_key_store, &nonce_store, token, protocol)
             .await,
         Err(RedeemTokenError::DoubleSpending)
     );

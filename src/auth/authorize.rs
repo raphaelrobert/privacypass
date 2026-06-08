@@ -219,14 +219,25 @@ pub fn parse_authorization_header<Nk: ArrayLength>(
     value: &HeaderValue,
 ) -> Result<Token<Nk>, ParseError> {
     let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
-    let tokens = parse_header_value(s)?;
-    let token = tokens[0].0.clone();
+
+    parse_authorization_str(s)
+}
+
+/// Parses an `Authorization` string according to the following scheme:
+///
+/// `PrivateToken token=...`
+///
+/// # Errors
+/// Returns an error if the header value is not valid.
+pub fn parse_authorization_str<Nk: ArrayLength>(s: &str) -> Result<Token<Nk>, ParseError> {
+    let token = parse_authorization_str_ext(s)?.0;
+
     Ok(token)
 }
 
 /// Parses an `Authorization` header according to the following scheme:
 ///
-/// `PrivateToken token=... [, extensions=...]`
+/// `PrivateToken token="..." [, extensions="..."]`
 ///
 /// # Errors
 /// Returns an error if the header value is not valid.
@@ -234,8 +245,22 @@ pub fn parse_authorization_header_ext<Nk: ArrayLength>(
     value: &HeaderValue,
 ) -> Result<(Token<Nk>, Option<Extensions>), ParseError> {
     let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
-    let mut tokens = parse_header_value(s)?;
-    Ok(tokens.pop().unwrap())
+
+    parse_authorization_str_ext(s)
+}
+
+/// Parses an `Authorization` string according to the following scheme:
+///
+/// `PrivateToken token="..." [, extensions="..."]`
+///
+/// # Errors
+/// Returns an error if the header value is not valid.
+pub fn parse_authorization_str_ext<Nk: ArrayLength>(
+    s: &str,
+) -> Result<(Token<Nk>, Option<Extensions>), ParseError> {
+    let tokens = parse_header_value(s)?;
+
+    tokens.into_iter().next().ok_or(ParseError::InvalidInput)
 }
 
 /// Parsing error for the `WWW-Authenticate` header values
@@ -312,6 +337,7 @@ fn parse_private_tokens(input: &str) -> IResult<&str, Vec<(&str, Option<&str>)>>
     separated_list1(tag(","), parse_private_token).parse(input)
 }
 
+#[allow(clippy::type_complexity)]
 fn parse_header_value<Nk: ArrayLength>(
     input: &str,
 ) -> Result<Vec<(Token<Nk>, Option<Extensions>)>, ParseError> {

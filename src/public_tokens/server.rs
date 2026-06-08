@@ -333,6 +333,70 @@ impl IssuerServer {
     }
 }
 
+/// Verifies a token without performing nonce validation
+///
+/// Useful for debug CLIs and configurations where nonce validation is separate from validating the
+/// tokens themselves.
+///
+/// # Errors
+/// Returns an error if the token is invalid.
+pub fn verify_token<Nk: ArrayLength>(
+    public_key: &PublicKey,
+    token: &Token<Nk>,
+    protocol: TokenProtocol<'_>,
+) -> Result<(), RedeemTokenError> {
+    if token.token_type() != protocol.token_type() {
+        return Err(RedeemTokenError::TokenTypeMismatch {
+            expected: protocol.token_type(),
+            found: token.token_type(),
+        });
+    }
+
+    let authenticator_len = token.authenticator().len();
+    if authenticator_len != KEYSIZE_IN_BYTES {
+        return Err(RedeemTokenError::InvalidAuthenticatorLength {
+            expected: KEYSIZE_IN_BYTES,
+            found: authenticator_len,
+        });
+    }
+
+    let token_input = TokenInput::new(
+        token.token_type(),
+        token.nonce(),
+        *token.challenge_digest(),
+        *token.token_key_id(),
+    );
+
+    let signature = Signature(token.authenticator().to_vec());
+    let token_input_bytes = token_input.serialize();
+
+    let verified = match protocol {
+        TokenProtocol::Basic => public_key
+            .verify(&signature, None, &token_input_bytes)
+            .inspect_err(|e| warn!(error:% = e; "Verify failed"))
+            .is_ok(),
+        TokenProtocol::PublicMetadata { metadata } => {
+            let pbrsa_pk = PbrsaPublicKey::new(public_key.as_ref().clone());
+            match pbrsa_pk.derive_public_key_for_metadata(metadata) {
+                Ok(derived) => derived
+                    .verify(&signature, None, &token_input_bytes, Some(metadata))
+                    .inspect_err(|e| warn!(error:% = e; "Verify failed"))
+                    .is_ok(),
+                Err(e) => {
+                    warn!(error:% = e; "Key derivation failed");
+                    false
+                }
+            }
+        }
+    };
+    if !verified {
+        return Err(RedeemTokenError::InvalidSignature {
+            token_type: token.token_type(),
+        });
+    }
+    Ok(())
+}
+
 /// Server-side implementation of Publicly Verifiable Token protocol for
 /// origins.
 #[derive(Default, Debug)]
@@ -362,21 +426,14 @@ impl OriginServer {
             });
         }
 
-        let authenticator_len = token.authenticator().len();
-        if authenticator_len != KEYSIZE_IN_BYTES {
+        if token.authenticator().len() != KEYSIZE_IN_BYTES {
             return Err(RedeemTokenError::InvalidAuthenticatorLength {
                 expected: KEYSIZE_IN_BYTES,
-                found: authenticator_len,
+                found: token.authenticator().len(),
             });
         }
 
         let nonce = token.nonce();
-        let token_input = TokenInput::new(
-            token.token_type(),
-            nonce,
-            *token.challenge_digest(),
-            *token.token_key_id(),
-        );
 
         if !nonce_store.reserve(&nonce).await {
             return Err(RedeemTokenError::DoubleSpending);
@@ -389,28 +446,9 @@ impl OriginServer {
                 return Err(RedeemTokenError::KeyIdNotFound);
             }
 
-            let signature = Signature(token.authenticator().to_vec());
-            let token_input_bytes = token_input.serialize();
-
-            let verified = public_keys.iter().any(|public_key| match protocol {
-                TokenProtocol::Basic => public_key
-                    .verify(&signature, None, &token_input_bytes)
-                    .inspect_err(|e| warn!(error:% = e; "Verify failed"))
-                    .is_ok(),
-                TokenProtocol::PublicMetadata { metadata } => {
-                    let pbrsa_pk = PbrsaPublicKey::new(public_key.as_ref().clone());
-                    match pbrsa_pk.derive_public_key_for_metadata(metadata) {
-                        Ok(derived) => derived
-                            .verify(&signature, None, &token_input_bytes, Some(metadata))
-                            .inspect_err(|e| warn!(error:% = e; "Verify failed"))
-                            .is_ok(),
-                        Err(e) => {
-                            warn!(error:% = e; "Key derivation failed");
-                            false
-                        }
-                    }
-                }
-            });
+            let verified = public_keys
+                .iter()
+                .any(|public_key| verify_token(public_key, &token, protocol).is_ok());
 
             if !verified {
                 return Err(RedeemTokenError::InvalidSignature {
