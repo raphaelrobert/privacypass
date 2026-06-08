@@ -44,7 +44,7 @@ impl TokenRequest {
     /// Issue a new token request using the given protocol.
     ///
     /// # Errors
-    /// Returns an error if the challenge is invalid or if blinding the token input fails..
+    /// Returns an error if the challenge is invalid or if blinding the token input fails.
     pub fn new_with_protocol<R: CryptoRng>(
         rng: &mut R,
         public_key: PublicKey,
@@ -93,15 +93,17 @@ impl TokenRequest {
                         source: source.into(),
                     })?;
 
-                m = Some(metadata.to_vec());
-                dpk = Some(derived_pk.clone());
-
-                derived_pk
+                let result = derived_pk
                     .blind(rng, token_input.serialize(), Some(metadata))
                     .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
                     .map_err(|source| IssueTokenRequestError::BlindingError {
                         source: source.into(),
-                    })?
+                    })?;
+
+                m = Some(metadata.to_vec());
+                dpk = Some(derived_pk);
+
+                result
             }
         };
 
