@@ -1,5 +1,8 @@
 //! Server-side implementation of Publicly Verifiable Token protocol.
 
+use std::collections::HashMap;
+use std::sync::{PoisonError, RwLock};
+
 use async_trait::async_trait;
 use blind_rsa_signatures::pbrsa::{
     PartiallyBlindKeyPair, PartiallyBlindPublicKey, PartiallyBlindSecretKey,
@@ -18,6 +21,7 @@ type PublicKey = GenericPublicKey<Sha384, PSS, Deterministic>;
 pub(crate) type PbrsaKeyPair = PartiallyBlindKeyPair<Sha384, PSS, Deterministic>;
 pub(crate) type PbrsaPublicKey = PartiallyBlindPublicKey<Sha384, PSS, Deterministic>;
 
+use crate::TokenKeyId;
 use crate::public_tokens::TokenProtocol;
 use crate::{
     COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput, TruncatedTokenKeyId,
@@ -126,13 +130,46 @@ const KEYSIZE_IN_BYTES: usize = KEYSIZE_IN_BITS / 8;
 /// Server-side implementation of Publicly Verifiable Token protocol for
 /// issuers.
 #[derive(Default, Debug)]
-pub struct IssuerServer {}
+pub struct IssuerServer {
+    /// Caches the validated PBRSA conversion so we don't re-validate on every token response.
+    /// Keyed by the full key id so the map stays stable across rotation
+    pbrsa_cache: RwLock<HashMap<TokenKeyId, PbrsaKeyPair>>,
+}
 
 impl IssuerServer {
     /// Creates a new server.
     #[must_use]
-    pub const fn new() -> Self {
-        Self {}
+    pub fn new() -> Self {
+        Self {
+            pbrsa_cache: RwLock::new(HashMap::new()),
+        }
+    }
+
+    /// Gets the PBRSA keypair associated with the given Blind-RSA keypair.
+    ///
+    /// The given keypair MUST have been generated as a PBRSA keypair,
+    /// i.e. using safe primes (p and q where (p-1)/2 and (q-1)/2 are also prime)
+    fn get_pbrsa_pair(
+        &self,
+        key_pair: &KeyPair,
+    ) -> Result<PbrsaKeyPair, blind_rsa_signatures::Error> {
+        let key_id = public_key_to_token_key_id(&key_pair.pk)?;
+
+        if let Some(pbrsa) = self
+            .pbrsa_cache
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&key_id)
+        {
+            Ok(pbrsa.clone())
+        } else {
+            let pbrsa = keypair_to_pbrsa(key_pair)?;
+            self.pbrsa_cache
+                .write()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(key_id, pbrsa.clone());
+            Ok(pbrsa)
+        }
     }
 
     /// Creates a new keypair and inserts it into the key store.
@@ -184,10 +221,10 @@ impl IssuerServer {
                 .inspect_err(|e| debug!(error:% = e; "Key Conversion Failed"))
                 .map_err(|source| CreateKeypairError::KeyGenerationFailed { source })?;
 
-            let truncated_token_key_id = truncate_token_key_id(
-                &public_key_to_token_key_id(&key_pair.pk)
-                    .map_err(|source| CreateKeypairError::KeySerializationFailed { source })?,
-            );
+            let token_key_id = public_key_to_token_key_id(&key_pair.pk)
+                .map_err(|source| CreateKeypairError::KeySerializationFailed { source })?;
+
+            let truncated_token_key_id = truncate_token_key_id(&token_key_id);
 
             if key_store.get(&truncated_token_key_id).await.is_some() {
                 continue;
@@ -196,6 +233,11 @@ impl IssuerServer {
             let public_key = key_pair.pk.clone();
 
             if key_store.insert(truncated_token_key_id, key_pair).await {
+                self.pbrsa_cache
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .insert(token_key_id, pbrsa_key_pair);
+
                 return Ok(public_key);
             }
         }
@@ -233,7 +275,8 @@ impl IssuerServer {
                 .inspect_err(|e| warn!(error:% = e; "Failed to blind_sign token"))
                 .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?,
             TokenProtocol::PublicMetadata { metadata } => {
-                let pbrsa = keypair_to_pbrsa(&key_pair)
+                let pbrsa = self
+                    .get_pbrsa_pair(&key_pair)
                     .inspect_err(
                         |e| warn!(error:% = e; "Stored key not PBRSA compatible (no safe primes)"),
                     )
