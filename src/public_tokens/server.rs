@@ -14,6 +14,7 @@ use blind_rsa_signatures::{
 };
 use generic_array::ArrayLength;
 use log::{debug, warn};
+use tls_codec::Serialize;
 
 type KeyPair = GenericKeyPair<Sha384, PSS, Deterministic>;
 type PublicKey = GenericPublicKey<Sha384, PSS, Deterministic>;
@@ -21,13 +22,13 @@ type PublicKey = GenericPublicKey<Sha384, PSS, Deterministic>;
 pub(crate) type PbrsaKeyPair = PartiallyBlindKeyPair<Sha384, PSS, Deterministic>;
 pub(crate) type PbrsaPublicKey = PartiallyBlindPublicKey<Sha384, PSS, Deterministic>;
 
-use crate::TokenKeyId;
-use crate::public_tokens::TokenProtocol;
+use crate::common::extensions::Extensions;
 use crate::{
     COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput, TruncatedTokenKeyId,
     auth::authorize::Token,
     common::errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
 };
+use crate::{TokenKeyId, TokenType};
 
 use super::{NK, TokenRequest, TokenResponse, public_key_to_token_key_id, truncate_token_key_id};
 
@@ -244,20 +245,26 @@ impl IssuerServer {
         Err(CreateKeypairError::CollisionExhausted)
     }
 
-    /// Issues a new token response using the given protocol.
+    /// Issues a new token response.
     ///
     /// # Errors
-    /// Returns an error if the token request is invalid, or if protocol == PublicMetadata and the
+    /// Returns an error if the token request is invalid, or if token_type == PublicMetadata and the
     /// key is not PBRSA compatible.
-    pub async fn issue_token_response_protocol<IKS: IssuerKeyStore>(
+    pub async fn issue_token_response<IKS: IssuerKeyStore>(
         &self,
         key_store: &IKS,
         token_request: TokenRequest,
-        protocol: TokenProtocol<'_>,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
-        if token_request.token_type != protocol.token_type() {
+        if token_request.extensions.is_some() {
+            if token_request.token_type != TokenType::PublicMetadata {
+                return Err(IssueTokenResponseError::InvalidTokenType {
+                    expected: TokenType::PublicMetadata,
+                    found: token_request.token_type,
+                });
+            }
+        } else if token_request.token_type != TokenType::Public {
             return Err(IssueTokenResponseError::InvalidTokenType {
-                expected: protocol.token_type(),
+                expected: TokenType::Public,
                 found: token_request.token_type,
             });
         }
@@ -268,13 +275,16 @@ impl IssuerServer {
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
 
         // blind_sig = rsabssa_blind_sign(skI, TokenRequest.blinded_msg)
-        let blind_signature = match protocol {
-            TokenProtocol::Basic => key_pair
-                .sk
-                .blind_sign(token_request.blinded_msg)
-                .inspect_err(|e| warn!(error:% = e; "Failed to blind_sign token"))
-                .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?,
-            TokenProtocol::PublicMetadata { metadata } => {
+
+        let blind_signature = match token_request.extensions {
+            Some(extensions) => {
+                let metadata = extensions
+                    .tls_serialize_detached()
+                    .inspect_err(|e| warn!(error:% = e; "Failed to serialize extensions"))
+                    .map_err(
+                        |source| IssueTokenResponseError::ExtensionSerializationError { source },
+                    )?;
+
                 let pbrsa = self
                     .get_pbrsa_pair(&key_pair)
                     .inspect_err(
@@ -283,7 +293,7 @@ impl IssuerServer {
                     .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?;
 
                 let derived_sk = pbrsa
-                    .derive_secret_key_for_metadata(metadata)
+                    .derive_secret_key_for_metadata(&metadata)
                     .inspect_err(|e| warn!(error:% = e; "Failed to derive augmented secret key"))
                     .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?;
 
@@ -292,6 +302,11 @@ impl IssuerServer {
                     .inspect_err(|e| warn!(error:% = e; "Failed to blind_sign token"))
                     .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?
             }
+            None => key_pair
+                .sk
+                .blind_sign(token_request.blinded_msg)
+                .inspect_err(|e| warn!(error:% = e; "Failed to blind_sign token"))
+                .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?,
         };
 
         debug_assert!(blind_signature.len() == NK);
@@ -299,19 +314,6 @@ impl IssuerServer {
         blind_sig.copy_from_slice(blind_signature.as_slice());
 
         Ok(TokenResponse { blind_sig })
-    }
-
-    /// Issues a new token response.
-    ///
-    /// # Errors
-    /// Returns an error if the token request is invalid.
-    pub async fn issue_token_response<IKS: IssuerKeyStore>(
-        &self,
-        key_store: &IKS,
-        token_request: TokenRequest,
-    ) -> Result<TokenResponse, IssueTokenResponseError> {
-        self.issue_token_response_protocol(key_store, token_request, TokenProtocol::Basic)
-            .await
     }
 
     /// Sets the given keypair.
@@ -343,11 +345,18 @@ impl IssuerServer {
 pub fn verify_token<Nk: ArrayLength>(
     public_key: &PublicKey,
     token: &Token<Nk>,
-    protocol: TokenProtocol<'_>,
+    extensions: Option<&Extensions>,
 ) -> Result<(), RedeemTokenError> {
-    if token.token_type() != protocol.token_type() {
+    if extensions.is_some() {
+        if token.token_type() != TokenType::PublicMetadata {
+            return Err(RedeemTokenError::TokenTypeMismatch {
+                expected: TokenType::PublicMetadata,
+                found: token.token_type(),
+            });
+        }
+    } else if token.token_type() != TokenType::Public {
         return Err(RedeemTokenError::TokenTypeMismatch {
-            expected: protocol.token_type(),
+            expected: TokenType::Public,
             found: token.token_type(),
         });
     }
@@ -370,16 +379,17 @@ pub fn verify_token<Nk: ArrayLength>(
     let signature = Signature(token.authenticator().to_vec());
     let token_input_bytes = token_input.serialize();
 
-    let verified = match protocol {
-        TokenProtocol::Basic => public_key
-            .verify(&signature, None, &token_input_bytes)
-            .inspect_err(|e| warn!(error:% = e; "Verify failed"))
-            .is_ok(),
-        TokenProtocol::PublicMetadata { metadata } => {
+    let verified = match extensions {
+        Some(extensions) => {
+            let metadata = extensions
+                .tls_serialize_detached()
+                .inspect_err(|e| warn!(error:% = e; "Extension serialization failed"))
+                .map_err(|source| RedeemTokenError::ExtensionSerializationError { source })?;
+
             let pbrsa_pk = PbrsaPublicKey::new(public_key.as_ref().clone());
-            match pbrsa_pk.derive_public_key_for_metadata(metadata) {
+            match pbrsa_pk.derive_public_key_for_metadata(&metadata) {
                 Ok(derived) => derived
-                    .verify(&signature, None, &token_input_bytes, Some(metadata))
+                    .verify(&signature, None, &token_input_bytes, Some(&metadata))
                     .inspect_err(|e| warn!(error:% = e; "Verify failed"))
                     .is_ok(),
                 Err(e) => {
@@ -388,6 +398,10 @@ pub fn verify_token<Nk: ArrayLength>(
                 }
             }
         }
+        None => public_key
+            .verify(&signature, None, &token_input_bytes)
+            .inspect_err(|e| warn!(error:% = e; "Verify failed"))
+            .is_ok(),
     };
     if !verified {
         return Err(RedeemTokenError::InvalidSignature {
@@ -408,20 +422,24 @@ impl OriginServer {
         Self {}
     }
 
-    /// Redeems a token using the given protocol.
+    /// Redeems a token using the given extensions.
     ///
     /// # Errors
     /// Returns an error if the token is invalid or deriving the key for the metadata fails.
-    pub async fn redeem_token_protocol<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength>(
+    pub async fn redeem_token_with_extensions<
+        OKS: OriginKeyStore,
+        NS: NonceStore,
+        Nk: ArrayLength,
+    >(
         &self,
         key_store: &OKS,
         nonce_store: &NS,
         token: Token<Nk>,
-        protocol: TokenProtocol<'_>,
+        extensions: &Extensions,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != protocol.token_type() {
+        if token.token_type() != TokenType::PublicMetadata {
             return Err(RedeemTokenError::TokenTypeMismatch {
-                expected: protocol.token_type(),
+                expected: TokenType::PublicMetadata,
                 found: token.token_type(),
             });
         }
@@ -448,7 +466,7 @@ impl OriginServer {
 
             let verified = public_keys
                 .iter()
-                .any(|public_key| verify_token(public_key, &token, protocol).is_ok());
+                .any(|public_key| verify_token(public_key, &token, Some(extensions)).is_ok());
 
             if !verified {
                 return Err(RedeemTokenError::InvalidSignature {
@@ -481,7 +499,55 @@ impl OriginServer {
         nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
-        self.redeem_token_protocol(key_store, nonce_store, token, TokenProtocol::Basic)
-            .await
+        if token.token_type() != TokenType::Public {
+            return Err(RedeemTokenError::TokenTypeMismatch {
+                expected: TokenType::Public,
+                found: token.token_type(),
+            });
+        }
+
+        if token.authenticator().len() != KEYSIZE_IN_BYTES {
+            return Err(RedeemTokenError::InvalidAuthenticatorLength {
+                expected: KEYSIZE_IN_BYTES,
+                found: token.authenticator().len(),
+            });
+        }
+
+        let nonce = token.nonce();
+
+        if !nonce_store.reserve(&nonce).await {
+            return Err(RedeemTokenError::DoubleSpending);
+        }
+
+        let crypto_result = async {
+            let truncated_token_key_id = truncate_token_key_id(token.token_key_id());
+            let public_keys = key_store.get(&truncated_token_key_id).await;
+            if public_keys.is_empty() {
+                return Err(RedeemTokenError::KeyIdNotFound);
+            }
+
+            let verified = public_keys
+                .iter()
+                .any(|public_key| verify_token(public_key, &token, None).is_ok());
+
+            if !verified {
+                return Err(RedeemTokenError::InvalidSignature {
+                    token_type: token.token_type(),
+                });
+            }
+            Ok(())
+        }
+        .await;
+
+        match crypto_result {
+            Ok(()) => {
+                nonce_store.commit(&nonce).await;
+                Ok(())
+            }
+            Err(e) => {
+                nonce_store.release(&nonce).await;
+                Err(e)
+            }
+        }
     }
 }

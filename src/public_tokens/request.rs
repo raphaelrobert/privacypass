@@ -1,16 +1,19 @@
 //! Request implementation of the Publicly Verifiable Token protocol.
 
+use std::io::{Read, Write};
+
 use blind_rsa_signatures::reexports::rand::CryptoRng;
 use blind_rsa_signatures::{BlindingResult, pbrsa::PartiallyBlindPublicKey};
 use log::warn;
+use tls_codec::{Deserialize, Serialize, Size};
 
 use super::PublicKey;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
+use crate::common::extensions::Extensions;
 use crate::public_tokens::server::PbrsaPublicKey;
 use crate::{
     ChallengeDigest, Nonce, TokenInput, TokenType, auth::authenticate::TokenChallenge,
-    common::errors::IssueTokenRequestError, public_tokens::TokenProtocol, truncate_token_key_id,
+    common::errors::IssueTokenRequestError, truncate_token_key_id,
 };
 
 use super::{NK, public_key_to_token_key_id};
@@ -35,23 +38,71 @@ pub struct TokenState {
 ///     uint8_t blinded_msg[Nk];
 ///  } TokenRequest;
 /// ```
-#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TokenRequest {
     pub(crate) token_type: TokenType,
     pub(crate) truncated_token_key_id: u8,
     pub(crate) blinded_msg: [u8; NK],
+    pub(crate) extensions: Option<Extensions>,
+}
+
+// We have to implement these manually in order to avoid having the Option<T> serialization byte
+impl Size for TokenRequest {
+    fn tls_serialized_len(&self) -> usize {
+        self.token_type.tls_serialized_len()
+            + self.truncated_token_key_id.tls_serialized_len()
+            + self.blinded_msg.tls_serialized_len()
+            + match &self.extensions {
+                Some(e) => e.tls_serialized_len(),
+                None => 0,
+            }
+    }
+}
+
+impl Serialize for TokenRequest {
+    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+        let mut written = 0;
+        written += self.token_type.tls_serialize(writer)?;
+        written += self.truncated_token_key_id.tls_serialize(writer)?;
+        written += self.blinded_msg.tls_serialize(writer)?;
+        if let Some(extensions) = &self.extensions {
+            written += extensions.tls_serialize(writer)?;
+        }
+
+        Ok(written)
+    }
+}
+
+impl Deserialize for TokenRequest {
+    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
+        let token_type = TokenType::tls_deserialize(bytes)?;
+        let truncated_token_key_id = u8::tls_deserialize(bytes)?;
+        let blinded_msg = <[u8; NK]>::tls_deserialize(bytes)?;
+
+        let extensions = if token_type == TokenType::PublicMetadata {
+            Some(Extensions::tls_deserialize(bytes)?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            token_type,
+            truncated_token_key_id,
+            blinded_msg,
+            extensions,
+        })
+    }
 }
 
 impl TokenRequest {
-    /// Issue a new token request using the given protocol.
+    /// Issue a new token request.
     ///
     /// # Errors
-    /// Returns an error if the challenge is invalid or if blinding the token input fails.
-    pub fn new_with_protocol<R: CryptoRng>(
+    /// Returns an error if the challenge is invalid.
+    pub fn new<R: CryptoRng>(
         rng: &mut R,
         public_key: PublicKey,
         challenge: &TokenChallenge,
-        protocol: TokenProtocol,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
         let mut nonce: Nonce = [0u8; 32];
         rng.fill_bytes(&mut nonce);
@@ -67,56 +118,111 @@ impl TokenRequest {
             }
         })?;
 
-        let token_input =
-            TokenInput::new(protocol.token_type(), nonce, challenge_digest, token_key_id);
+        let token_input = TokenInput::new(TokenType::Public, nonce, challenge_digest, token_key_id);
 
         // nonce = random(32)
         // challenge_digest = SHA256(challenge)
         // token_input = concat(0x0002, nonce, challenge_digest, token_key_id)
         // blinded_msg, blind_inv = rsabssa_blind(pkI, token_input)
 
-        let mut m: Option<_> = None;
-        let mut dpk: Option<_> = None;
-
-        let blinding_result = match protocol {
-            TokenProtocol::Basic => public_key
-                .blind(rng, token_input.serialize())
-                .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
-                .map_err(|source| IssueTokenRequestError::BlindingError {
-                    source: source.into(),
-                })?,
-            TokenProtocol::PublicMetadata { metadata } => {
-                let pbrsa_pk: PbrsaPublicKey =
-                    PartiallyBlindPublicKey::new(public_key.as_ref().clone());
-                let derived_pk = pbrsa_pk
-                    .derive_public_key_for_metadata(metadata)
-                    .inspect_err(|e| warn!(error:% = e; "Failed to derive metadata public key"))
-                    .map_err(|source| IssueTokenRequestError::BlindingError {
-                        source: source.into(),
-                    })?;
-
-                let result = derived_pk
-                    .blind(rng, token_input.serialize(), Some(metadata))
-                    .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
-                    .map_err(|source| IssueTokenRequestError::BlindingError {
-                        source: source.into(),
-                    })?;
-
-                m = Some(metadata.to_vec());
-                dpk = Some(derived_pk);
-
-                result
-            }
-        };
+        let blinding_result = public_key
+            .blind(rng, token_input.serialize())
+            .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
+            .map_err(|source| IssueTokenRequestError::BlindingError {
+                source: source.into(),
+            })?;
 
         debug_assert!(blinding_result.blind_message.len() == NK);
         let mut blinded_msg = [0u8; NK];
         blinded_msg.copy_from_slice(blinding_result.blind_message.as_slice());
 
         let token_request = TokenRequest {
-            token_type: protocol.token_type(),
+            token_type: TokenType::Public,
             truncated_token_key_id: truncate_token_key_id(&token_key_id),
             blinded_msg,
+            extensions: None,
+        };
+
+        let token_state = TokenState {
+            blinding_result,
+            token_input,
+            challenge_digest,
+            public_key,
+            metadata: None,
+            derived_pk: None,
+        };
+
+        Ok((token_request, token_state))
+    }
+
+    /// Issue a new token request using the given extensions
+    ///
+    /// # Errors
+    /// Returns an error if the challenge is invalid or if blinding the token input fails.
+    pub fn new_with_extensions<R: CryptoRng>(
+        rng: &mut R,
+        public_key: PublicKey,
+        challenge: &TokenChallenge,
+        extensions: Extensions,
+    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+        let mut nonce: Nonce = [0u8; 32];
+        rng.fill_bytes(&mut nonce);
+
+        let challenge_digest = challenge
+            .digest()
+            .inspect_err(|e| warn!(error:% = e; "Failed to create challenge digest"))
+            .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
+
+        let token_key_id = public_key_to_token_key_id(&public_key).map_err(|source| {
+            IssueTokenRequestError::BlindingError {
+                source: source.into(),
+            }
+        })?;
+
+        let token_input = TokenInput::new(
+            TokenType::PublicMetadata,
+            nonce,
+            challenge_digest,
+            token_key_id,
+        );
+
+        // nonce = random(32)
+        // challenge_digest = SHA256(challenge)
+        // token_input = concat(0x0002, nonce, challenge_digest, token_key_id)
+        // blinded_msg, blind_inv = rsabssa_blind(pkI, token_input)
+
+        let metadata = extensions
+            .tls_serialize_detached()
+            .inspect_err(|e| warn!(error:% = e; "Failed to serialize extensions"))
+            .map_err(|source| IssueTokenRequestError::ExtensionSerializationError { source })?;
+
+        let pbrsa_pk: PbrsaPublicKey = PartiallyBlindPublicKey::new(public_key.as_ref().clone());
+        let derived_pk = pbrsa_pk
+            .derive_public_key_for_metadata(&metadata)
+            .inspect_err(|e| warn!(error:% = e; "Failed to derive metadata public key"))
+            .map_err(|source| IssueTokenRequestError::BlindingError {
+                source: source.into(),
+            })?;
+
+        let blinding_result = derived_pk
+            .blind(rng, token_input.serialize(), Some(&metadata))
+            .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
+            .map_err(|source| IssueTokenRequestError::BlindingError {
+                source: source.into(),
+            })?;
+
+        let m = Some(metadata.to_vec());
+        let dpk = Some(derived_pk);
+
+        debug_assert!(blinding_result.blind_message.len() == NK);
+        let mut blinded_msg = [0u8; NK];
+        blinded_msg.copy_from_slice(blinding_result.blind_message.as_slice());
+
+        let token_request = TokenRequest {
+            token_type: TokenType::PublicMetadata,
+            truncated_token_key_id: truncate_token_key_id(&token_key_id),
+            blinded_msg,
+            extensions: Some(extensions),
         };
 
         let token_state = TokenState {
@@ -127,18 +233,7 @@ impl TokenRequest {
             metadata: m,
             derived_pk: dpk,
         };
-        Ok((token_request, token_state))
-    }
 
-    /// Issue a new token request.
-    ///
-    /// # Errors
-    /// Returns an error if the challenge is invalid.
-    pub fn new<R: CryptoRng>(
-        rng: &mut R,
-        public_key: PublicKey,
-        challenge: &TokenChallenge,
-    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
-        Self::new_with_protocol(rng, public_key, challenge, TokenProtocol::Basic)
+        Ok((token_request, token_state))
     }
 }

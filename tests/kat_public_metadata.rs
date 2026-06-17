@@ -1,13 +1,13 @@
 use blind_rsa_signatures::{Deterministic, KeyPair, PSS, PublicKey, SecretKey, Sha384};
 use serde::{Deserialize, Serialize};
-use tls_codec::Serialize as TlsSerializeTrait;
+use tls_codec::{Deserialize as _, Serialize as _};
 
 use privacypass::{
     TokenType,
     auth::authenticate::TokenChallenge,
+    common::extensions::Extensions,
     public_tokens::{
-        TokenProtocol, TokenRequest, det_rng::DeterministicRng,
-        public_key_to_truncated_token_key_id, server::*,
+        TokenRequest, det_rng::DeterministicRng, public_key_to_truncated_token_key_id, server::*,
     },
     test_utils::{
         nonce_store::MemoryNonceStore,
@@ -81,11 +81,7 @@ async fn evaluate_vector(vector: PublicMetadataTokenTestVector) {
         )
         .await;
 
-    // The extensions field is the raw metadata bytes passed to TokenProtocol::PublicMetadata
-    let metadata = vector.extensions.clone();
-    let protocol = TokenProtocol::PublicMetadata {
-        metadata: &metadata,
-    };
+    let extensions: Extensions = Extensions::tls_deserialize_exact(vector.extensions).unwrap();
 
     let mut blind = vector.blind.clone();
     blind.reverse();
@@ -99,22 +95,17 @@ async fn evaluate_vector(vector: PublicMetadataTokenTestVector) {
     assert_eq!(token_challenge.token_type(), TokenType::PublicMetadata);
 
     let (token_request, token_state) =
-        TokenRequest::new_with_protocol(det_rng, pub_key, &token_challenge, protocol).unwrap();
-
-    // TODO: this is due to wrong api
-    // will fix in next commit
-    let mut token_request_bytes = token_request.tls_serialize_detached().unwrap();
-    token_request_bytes.extend_from_slice(&vector.extensions);
+        TokenRequest::new_with_extensions(det_rng, pub_key, &token_challenge, extensions.clone())
+            .unwrap();
 
     // KAT: Check token request
-    // assert_eq!(
-    // token_request.tls_serialize_detached().unwrap(),
-    // vector.token_request
-    // );
-    assert_eq!(token_request_bytes, vector.token_request);
+    assert_eq!(
+        token_request.tls_serialize_detached().unwrap(),
+        vector.token_request
+    );
 
     let token_response = issuer_server
-        .issue_token_response_protocol(&issuer_key_store, token_request, protocol)
+        .issue_token_response(&issuer_key_store, token_request)
         .await
         .unwrap();
 
@@ -133,7 +124,7 @@ async fn evaluate_vector(vector: PublicMetadataTokenTestVector) {
 
     // Origin: Redeem the token
     origin_server
-        .redeem_token_protocol(&origin_key_store, &nonce_store, token, protocol)
+        .redeem_token_with_extensions(&origin_key_store, &nonce_store, token, &extensions)
         .await
         .unwrap();
 }
