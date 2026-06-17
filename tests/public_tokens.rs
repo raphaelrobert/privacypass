@@ -2,7 +2,7 @@ use blind_rsa_signatures::reexports::crypto_bigint::BoxedUint;
 use blind_rsa_signatures::reexports::rand::rng;
 use blind_rsa_signatures::reexports::rsa::RsaPrivateKey;
 use blind_rsa_signatures::{Deterministic, KeyPair, PSS, PublicKey, SecretKey, Sha384};
-use privacypass::public_tokens::TokenProtocol;
+use privacypass::common::extensions::{Extension, ExtensionType, Extensions};
 use privacypass::{
     TokenType,
     auth::authenticate::TokenChallenge,
@@ -240,16 +240,17 @@ async fn public_metadata_tokens() {
         &["example.com".to_string()],
     );
     let challenge_digest = token_challenge.digest().unwrap();
-    let metadata = b"Hello world";
-    let protocol = TokenProtocol::PublicMetadata { metadata };
+    let extension = Extension::new(ExtensionType(0), b"Hello world".to_vec());
+    let extensions = Extensions::new(vec![extension]);
 
     // Client: Prepare a TokenRequest after having received a challenge
     let (token_request, token_state) =
-        TokenRequest::new_with_protocol(rng, public_key, &token_challenge, protocol).unwrap();
+        TokenRequest::new_with_extensions(rng, public_key, &token_challenge, extensions.clone())
+            .unwrap();
 
     // Issuer server: Issue a TokenResponse
     let token_response = issuer_server
-        .issue_token_response_protocol(&issuer_key_store, token_request, protocol)
+        .issue_token_response(&issuer_key_store, token_request)
         .await
         .unwrap();
 
@@ -261,14 +262,14 @@ async fn public_metadata_tokens() {
 
     // Origin server: Redeem the token
     origin_server
-        .redeem_token_protocol(&origin_key_store, &nonce_store, token.clone(), protocol)
+        .redeem_token_with_extensions(&origin_key_store, &nonce_store, token.clone(), &extensions)
         .await
         .unwrap();
 
     // Origin server: Test double spend protection
     assert_eq!(
         origin_server
-            .redeem_token_protocol(&origin_key_store, &nonce_store, token, protocol)
+            .redeem_token_with_extensions(&origin_key_store, &nonce_store, token, &extensions)
             .await,
         Err(RedeemTokenError::DoubleSpending)
     );

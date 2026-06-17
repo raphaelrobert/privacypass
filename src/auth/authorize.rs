@@ -526,7 +526,7 @@ mod tests {
                 vector.nonce,
                 vector.challenge_digest,
                 vector.token_key_id,
-                *GenericArray::from_slice(&[0u8; 32]),
+                Array::from([0u8; 32]),
             );
 
             let (header_name, header_value) =

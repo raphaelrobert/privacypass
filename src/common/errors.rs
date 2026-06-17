@@ -105,6 +105,13 @@ pub enum DeterministicIssuanceError {
     #[error(transparent)]
     /// Error when constructing the underlying token request.
     IssueTokenRequest(#[from] IssueTokenRequestError),
+    #[error("Extension serialization error")]
+    /// Error when serializing Extensions fails
+    ExtensionSerializationError {
+        /// Underlying TLS error that triggered the failure
+        #[source]
+        source: TlsCodecError,
+    },
 }
 
 /// Source errors for blinding failures.
@@ -160,6 +167,13 @@ pub enum IssueTokenResponseError {
         max: usize,
         /// Actual batch size in the request.
         size: usize,
+    },
+    #[error("Extension serialization error")]
+    /// Error when serializing Extensions fails
+    ExtensionSerializationError {
+        /// Underlying TLS error that triggered the failure
+        #[source]
+        source: TlsCodecError,
     },
 }
 
@@ -266,5 +280,12 @@ pub enum RedeemTokenError {
     InvalidSignature {
         /// Token type that was being redeemed.
         token_type: TokenType,
+    },
+    #[error("Extension serialization error")]
+    /// Error when serializing Extensions fails
+    ExtensionSerializationError {
+        /// Underlying TLS error that triggered the failure
+        #[source]
+        source: TlsCodecError,
     },
 }
