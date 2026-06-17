@@ -417,7 +417,7 @@ mod tests {
         let token_key_id = [3u8; 32];
         let authenticator = [4u8; 32];
         let token = Token::<U32>::new(
-            TokenType::PrivateP384,
+            TokenType::PublicMetadata,
             nonce,
             challenge_digest,
             token_key_id,
@@ -433,12 +433,116 @@ mod tests {
 
         let (token, maybe_extensions) =
             parse_authorization_header_ext::<U32>(&header_value).unwrap();
-        assert_eq!(token.token_type(), TokenType::PrivateP384);
+        assert_eq!(token.token_type(), TokenType::PublicMetadata);
         assert_eq!(token.nonce(), nonce);
         assert_eq!(token.challenge_digest(), &challenge_digest);
         assert_eq!(token.token_key_id(), &token_key_id);
         assert_eq!(token.authenticator(), &authenticator);
         assert_eq!(maybe_extensions, Some(extensions));
+    }
+
+    struct Vector {
+        nonce: [u8; 32],
+        challenge_digest: [u8; 32],
+        token_key_id: [u8; 32],
+    }
+
+    fn hex_to_bytes(s: &str) -> Vec<u8> {
+        let mut output = vec![];
+        let chars: Vec<char> = s.chars().collect();
+
+        for pair in chars.chunks(2) {
+            let string_pair: String = pair.iter().collect();
+            output.push(u8::from_str_radix(&string_pair, 16).unwrap());
+        }
+
+        output
+    }
+
+    fn hex32(s: &str) -> [u8; 32] {
+        hex_to_bytes(s).try_into().unwrap()
+    }
+
+    #[test]
+    fn builder_parser_extensions_test_cross_compat() {
+        // test vectors taken from
+        // https://github.com/cloudflare/privacypass-ts/blob/main/test/test_data/auth_scheme_token_with_extensions_v1.json
+        // challenge digests were extracted from the token_authenticator_input field, located after
+        // 2-byte token input and 32-byte nonce
+        let vectors = [
+            Vector {
+                nonce: hex32("e01978182c469e5e026d66558ee186568614f235e41ef7e2378e6f202688abab"),
+                challenge_digest: hex32(
+                    "d95573d45e84e65d5ce4adaff401040b823a5586c30855580bff3ea0118f8192",
+                ),
+                token_key_id: hex32(
+                    "ca572f8982a9ca248a3056186322d93ca147266121ddeb5632c07f1f71cd2708",
+                ),
+            },
+            Vector {
+                nonce: hex32("e01978182c469e5e026d66558ee186568614f235e41ef7e2378e6f202688abab"),
+                challenge_digest: hex32(
+                    "0021e3fccff3e175dabdef586fafdbb26fc0a869ee29d0229b592729fa6b1289",
+                ),
+                token_key_id: hex32(
+                    "ca572f8982a9ca248a3056186322d93ca147266121ddeb5632c07f1f71cd2708",
+                ),
+            },
+            Vector {
+                nonce: hex32("e01978182c469e5e026d66558ee186568614f235e41ef7e2378e6f202688abab"),
+                challenge_digest: hex32(
+                    "e67c893c237722726064008792670a0368dbe8fcfd47c8233613bee3e1ee52ff",
+                ),
+                token_key_id: hex32(
+                    "ca572f8982a9ca248a3056186322d93ca147266121ddeb5632c07f1f71cd2708",
+                ),
+            },
+            Vector {
+                nonce: hex32("e01978182c469e5e026d66558ee186568614f235e41ef7e2378e6f202688abab"),
+                challenge_digest: hex32(
+                    "69a780715896548c5eecaee2be452eac6bb001078a057993f665c653133b7ffc",
+                ),
+                token_key_id: hex32(
+                    "ca572f8982a9ca248a3056186322d93ca147266121ddeb5632c07f1f71cd2708",
+                ),
+            },
+            Vector {
+                nonce: hex32("e01978182c469e5e026d66558ee186568614f235e41ef7e2378e6f202688abab"),
+                challenge_digest: hex32(
+                    "6d3d849f2508b23721cedafbbff8183c1d7f2ed2c586f3641b8131f5ed719ebf",
+                ),
+                token_key_id: hex32(
+                    "ca572f8982a9ca248a3056186322d93ca147266121ddeb5632c07f1f71cd2708",
+                ),
+            },
+        ];
+
+        // all vectors use extension(0x0000, uint8[01, 02, 03])
+        let extension = Extension::new(ExtensionType(0), vec![1, 2, 3]);
+        let extensions = Extensions::new(vec![extension]);
+
+        for vector in &vectors {
+            let token = Token::<U32>::new(
+                TokenType::PublicMetadata,
+                vector.nonce,
+                vector.challenge_digest,
+                vector.token_key_id,
+                *GenericArray::from_slice(&[0u8; 32]),
+            );
+
+            let (header_name, header_value) =
+                build_authorization_header_ext(&token, &extensions).unwrap();
+
+            assert_eq!(header_name, http::header::AUTHORIZATION);
+
+            let (token, maybe_extensions) =
+                parse_authorization_header_ext::<U32>(&header_value).unwrap();
+            assert_eq!(token.token_type(), TokenType::PublicMetadata);
+            assert_eq!(token.nonce(), vector.nonce);
+            assert_eq!(token.challenge_digest(), &vector.challenge_digest);
+            assert_eq!(token.token_key_id(), &vector.token_key_id);
+            assert_eq!(maybe_extensions, Some(extensions.clone()));
+        }
     }
 
     /// This is the same test as `builder_parser_extensions_test`, but we replace the `, `
