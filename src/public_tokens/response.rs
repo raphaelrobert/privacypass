@@ -5,7 +5,7 @@ use hybrid_array::{Array, typenum::U256};
 use log::warn;
 use tls_codec::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::{auth::authorize::Token, common::errors::IssueTokenError};
+use crate::{TokenType, auth::authorize::Token, common::errors::IssueTokenError};
 
 use super::{NK, PublicToken, TokenState};
 
@@ -31,28 +31,37 @@ impl TokenResponse {
         let token_input = token_state.token_input.serialize();
         let token_type = token_state.token_input.token_type;
         let blind_sig = BlindSignature(self.blind_sig.to_vec());
-        let signature = if let Some(derived_pk) = &token_state.derived_pk {
-            derived_pk
-                .finalize(
-                    &blind_sig,
-                    &token_state.blinding_result,
-                    token_input,
-                    token_state.metadata.as_deref(),
-                )
-                .inspect_err(|e| warn!(error:% = e; "Failed to finalize blind signature"))
-                .map_err(|source| IssueTokenError::SignatureFinalizationFailed {
-                    token_type,
-                    source,
-                })?
-        } else {
-            token_state
+
+        let signature = match token_type {
+            TokenType::Public => token_state
                 .public_key
                 .finalize(&blind_sig, &token_state.blinding_result, token_input)
                 .inspect_err(|e| warn!(error:% = e; "Failed to finalize blind signature"))
                 .map_err(|source| IssueTokenError::SignatureFinalizationFailed {
                     token_type,
                     source,
-                })?
+                })?,
+            TokenType::PublicMetadata => {
+                let (metadata, derived_pk) = token_state
+                    .pbrsa_state
+                    .as_ref()
+                    .ok_or(IssueTokenError::NoPbrsaState)
+                    .inspect_err(|e| warn!(error:% = e; "No PBRSA state found"))?;
+
+                derived_pk
+                    .finalize(
+                        &blind_sig,
+                        &token_state.blinding_result,
+                        token_input,
+                        Some(metadata),
+                    )
+                    .inspect_err(|e| warn!(error:% = e; "Failed to finalize blind signature"))
+                    .map_err(|source| IssueTokenError::SignatureFinalizationFailed {
+                        token_type,
+                        source,
+                    })?
+            }
+            _ => return Err(IssueTokenError::InvalidTokenType { token_type }),
         };
 
         let mut authenticator = Array::<u8, U256>::default();
