@@ -195,6 +195,15 @@ pub enum IssueTokenError {
         #[source]
         source: BlindRsaError,
     },
+    #[error("Invalid token type: {token_type:?}")]
+    /// Error when the token type is not supported (e.g. using private token in public issue_token)
+    InvalidTokenType {
+        /// Token type found in the token.
+        token_type: TokenType,
+    },
+    #[error("Expected to have a PBRSA state but there was none")]
+    /// Error when there is no PBRSA state when using `TokenType::PublicMetadata`
+    NoPbrsaState,
 }
 
 /// Errors that can occur when redeeming the token.

@@ -25,8 +25,7 @@ pub struct TokenState {
     pub(crate) challenge_digest: ChallengeDigest,
     pub(crate) blinding_result: BlindingResult,
     pub(crate) public_key: PublicKey,
-    pub(crate) metadata: Option<Vec<u8>>,
-    pub(crate) derived_pk: Option<PbrsaPublicKey>,
+    pub(crate) pbrsa_state: Option<(Vec<u8>, PbrsaPublicKey)>,
 }
 
 /// Token request as specified in the spec:
@@ -148,8 +147,7 @@ impl TokenRequest {
             token_input,
             challenge_digest,
             public_key,
-            metadata: None,
-            derived_pk: None,
+            pbrsa_state: None,
         };
 
         Ok((token_request, token_state))
@@ -211,8 +209,7 @@ impl TokenRequest {
                 source: source.into(),
             })?;
 
-        let m = Some(metadata.to_vec());
-        let dpk = Some(derived_pk);
+        let pbrsa_state = Some((metadata.to_vec(), derived_pk));
 
         debug_assert!(blinding_result.blind_message.len() == NK);
         let mut blinded_msg = [0u8; NK];
@@ -230,8 +227,7 @@ impl TokenRequest {
             token_input,
             challenge_digest,
             public_key,
-            metadata: m,
-            derived_pk: dpk,
+            pbrsa_state,
         };
 
         Ok((token_request, token_state))

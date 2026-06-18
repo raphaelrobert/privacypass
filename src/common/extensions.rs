@@ -1,6 +1,6 @@
 //! Types and functions related to the Extensions parameter.
 //!
-//! Specified in `draft-ietf-privacypass-auth-scheme-extensions`.
+//! Specified in `draft-ietf-privacypass-auth-scheme-extensions-03`.
 
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size, TlsByteVecU16, TlsVecU16};
@@ -13,7 +13,8 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 pub struct ExtensionType(pub u16);
 
 impl ExtensionType {
-    /// Reserved by `draft-ietf-privacypass-auth-scheme-extensions`
+    /// Reserved in
+    /// [`draft-ietf-privacypass-auth-scheme-extensions-03` &sect;3](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03#section-3)
     pub const RESERVED: ExtensionType = ExtensionType(0);
 }
 

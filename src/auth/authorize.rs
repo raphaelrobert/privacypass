@@ -165,7 +165,9 @@ pub fn build_authorization_header<Nk: ArrayLength>(
     Ok((header_name, header_value))
 }
 
-/// Builds an `Authorize` header according to the following scheme:
+/// Builds an `Authorize` header according to the following scheme,
+/// specified in
+/// [`draft-ietf-privacypass-auth-scheme-extensions-03`](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03):
 ///
 /// PrivateToken token="abc...", extensions="def..."
 ///
@@ -235,7 +237,9 @@ pub fn parse_authorization_str<Nk: ArrayLength>(s: &str) -> Result<Token<Nk>, Pa
     Ok(token)
 }
 
-/// Parses an `Authorization` header according to the following scheme:
+/// Parses an `Authorization` header according to the following scheme,
+/// specified in
+/// [`draft-ietf-privacypass-auth-scheme-extensions-03`](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03):
 ///
 /// `PrivateToken token="..." [, extensions="..."]`
 ///
@@ -249,7 +253,9 @@ pub fn parse_authorization_header_ext<Nk: ArrayLength>(
     parse_authorization_str_ext(s)
 }
 
-/// Parses an `Authorization` string according to the following scheme:
+/// Parses an `Authorization` string according to the following scheme,
+/// specified in
+/// [`draft-ietf-privacypass-auth-scheme-extensions-03`](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03):
 ///
 /// `PrivateToken token="..." [, extensions="..."]`
 ///
