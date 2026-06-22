@@ -437,20 +437,6 @@ impl OriginServer {
         token: Token<Nk>,
         extensions: &Extensions,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != TokenType::PublicMetadata {
-            return Err(RedeemTokenError::TokenTypeMismatch {
-                expected: TokenType::PublicMetadata,
-                found: token.token_type(),
-            });
-        }
-
-        if token.authenticator().len() != KEYSIZE_IN_BYTES {
-            return Err(RedeemTokenError::InvalidAuthenticatorLength {
-                expected: KEYSIZE_IN_BYTES,
-                found: token.authenticator().len(),
-            });
-        }
-
         let nonce = token.nonce();
 
         if !nonce_store.reserve(&nonce).await {
@@ -499,20 +485,6 @@ impl OriginServer {
         nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != TokenType::Public {
-            return Err(RedeemTokenError::TokenTypeMismatch {
-                expected: TokenType::Public,
-                found: token.token_type(),
-            });
-        }
-
-        if token.authenticator().len() != KEYSIZE_IN_BYTES {
-            return Err(RedeemTokenError::InvalidAuthenticatorLength {
-                expected: KEYSIZE_IN_BYTES,
-                found: token.authenticator().len(),
-            });
-        }
-
         let nonce = token.nonce();
 
         if !nonce_store.reserve(&nonce).await {

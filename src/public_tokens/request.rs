@@ -103,54 +103,7 @@ impl TokenRequest {
         public_key: PublicKey,
         challenge: &TokenChallenge,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
-        let mut nonce: Nonce = [0u8; 32];
-        rng.fill_bytes(&mut nonce);
-
-        let challenge_digest = challenge
-            .digest()
-            .inspect_err(|e| warn!(error:% = e; "Failed to create challenge digest"))
-            .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
-
-        let token_key_id = public_key_to_token_key_id(&public_key).map_err(|source| {
-            IssueTokenRequestError::BlindingError {
-                source: source.into(),
-            }
-        })?;
-
-        let token_input = TokenInput::new(TokenType::Public, nonce, challenge_digest, token_key_id);
-
-        // nonce = random(32)
-        // challenge_digest = SHA256(challenge)
-        // token_input = concat(0x0002, nonce, challenge_digest, token_key_id)
-        // blinded_msg, blind_inv = rsabssa_blind(pkI, token_input)
-
-        let blinding_result = public_key
-            .blind(rng, token_input.serialize())
-            .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
-            .map_err(|source| IssueTokenRequestError::BlindingError {
-                source: source.into(),
-            })?;
-
-        debug_assert!(blinding_result.blind_message.len() == NK);
-        let mut blinded_msg = [0u8; NK];
-        blinded_msg.copy_from_slice(blinding_result.blind_message.as_slice());
-
-        let token_request = TokenRequest {
-            token_type: TokenType::Public,
-            truncated_token_key_id: truncate_token_key_id(&token_key_id),
-            blinded_msg,
-            extensions: None,
-        };
-
-        let token_state = TokenState {
-            blinding_result,
-            token_input,
-            challenge_digest,
-            public_key,
-            pbrsa_state: None,
-        };
-
-        Ok((token_request, token_state))
+        Self::new_maybe_extensions(rng, public_key, challenge, None)
     }
 
     /// Issue a new token request using the given extensions
@@ -162,6 +115,15 @@ impl TokenRequest {
         public_key: PublicKey,
         challenge: &TokenChallenge,
         extensions: Extensions,
+    ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+        Self::new_maybe_extensions(rng, public_key, challenge, Some(extensions))
+    }
+
+    fn new_maybe_extensions<R: CryptoRng>(
+        rng: &mut R,
+        public_key: PublicKey,
+        challenge: &TokenChallenge,
+        extensions: Option<Extensions>,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
         let mut nonce: Nonce = [0u8; 32];
         rng.fill_bytes(&mut nonce);
@@ -177,49 +139,64 @@ impl TokenRequest {
             }
         })?;
 
-        let token_input = TokenInput::new(
-            TokenType::PublicMetadata,
-            nonce,
-            challenge_digest,
-            token_key_id,
-        );
+        let token_type = if extensions.is_some() {
+            TokenType::PublicMetadata
+        } else {
+            TokenType::Public
+        };
+
+        let token_input = TokenInput::new(token_type, nonce, challenge_digest, token_key_id);
 
         // nonce = random(32)
         // challenge_digest = SHA256(challenge)
         // token_input = concat(0x0002, nonce, challenge_digest, token_key_id)
         // blinded_msg, blind_inv = rsabssa_blind(pkI, token_input)
 
-        let metadata = extensions
-            .tls_serialize_detached()
-            .inspect_err(|e| warn!(error:% = e; "Failed to serialize extensions"))
-            .map_err(|source| IssueTokenRequestError::ExtensionSerializationError { source })?;
+        let (blinding_result, pbrsa_state) = if let Some(ref extensions) = extensions {
+            let metadata = extensions
+                .tls_serialize_detached()
+                .inspect_err(|e| warn!(error:% = e; "Failed to serialize extensions"))
+                .map_err(|source| IssueTokenRequestError::ExtensionSerializationError { source })?;
 
-        let pbrsa_pk: PbrsaPublicKey = PartiallyBlindPublicKey::new(public_key.as_ref().clone());
-        let derived_pk = pbrsa_pk
-            .derive_public_key_for_metadata(&metadata)
-            .inspect_err(|e| warn!(error:% = e; "Failed to derive metadata public key"))
-            .map_err(|source| IssueTokenRequestError::BlindingError {
-                source: source.into(),
-            })?;
+            let pbrsa_pk: PbrsaPublicKey =
+                PartiallyBlindPublicKey::new(public_key.as_ref().clone());
+            let derived_pk = pbrsa_pk
+                .derive_public_key_for_metadata(&metadata)
+                .inspect_err(|e| warn!(error:% = e; "Failed to derive metadata public key"))
+                .map_err(|source| IssueTokenRequestError::BlindingError {
+                    source: source.into(),
+                })?;
 
-        let blinding_result = derived_pk
-            .blind(rng, token_input.serialize(), Some(&metadata))
-            .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
-            .map_err(|source| IssueTokenRequestError::BlindingError {
-                source: source.into(),
-            })?;
+            let blinding_result = derived_pk
+                .blind(rng, token_input.serialize(), Some(&metadata))
+                .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
+                .map_err(|source| IssueTokenRequestError::BlindingError {
+                    source: source.into(),
+                })?;
 
-        let pbrsa_state = Some((metadata.to_vec(), derived_pk));
+            let pbrsa_state = Some((metadata, derived_pk));
+
+            (blinding_result, pbrsa_state)
+        } else {
+            let blinding_result = public_key
+                .blind(rng, token_input.serialize())
+                .inspect_err(|e| warn!(error:% = e; "Failed to blind token input"))
+                .map_err(|source| IssueTokenRequestError::BlindingError {
+                    source: source.into(),
+                })?;
+
+            (blinding_result, None)
+        };
 
         debug_assert!(blinding_result.blind_message.len() == NK);
         let mut blinded_msg = [0u8; NK];
         blinded_msg.copy_from_slice(blinding_result.blind_message.as_slice());
 
         let token_request = TokenRequest {
-            token_type: TokenType::PublicMetadata,
+            token_type,
             truncated_token_key_id: truncate_token_key_id(&token_key_id),
             blinded_msg,
-            extensions: Some(extensions),
+            extensions,
         };
 
         let token_state = TokenState {
