@@ -13,7 +13,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 pub struct ExtensionType(pub u16);
 
 impl ExtensionType {
-    /// Reserved in
+    /// Defined in
     /// [`draft-ietf-privacypass-auth-scheme-extensions-03` &sect;3](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03#section-3)
     pub const RESERVED: ExtensionType = ExtensionType(0);
 }
