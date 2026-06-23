@@ -187,7 +187,7 @@ impl Deserialize for GenericTokenRequest {
                     crate::private_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
                 Ok(GenericTokenRequest::PrivateP384(Box::new(token_request)))
             }
-            TokenType::Public | TokenType::PublicMetadata => {
+            TokenType::Public => {
                 let token_request =
                     crate::public_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
                 Ok(GenericTokenRequest::Public(Box::new(token_request)))
@@ -199,6 +199,10 @@ impl Deserialize for GenericTokenRequest {
                     token_request,
                 )))
             }
+            _ => Err(tls_codec::Error::DecodingError(format!(
+                "Unsupported token type: {:?}",
+                token_type
+            ))),
         }
     }
 }
