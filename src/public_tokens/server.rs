@@ -247,6 +247,11 @@ impl IssuerServer {
 
     /// Issues a new token response.
     ///
+    /// Note that this method does not validate the extensions provided in the token request. If
+    /// such validation is required (for example, validating that the provided extension types are
+    /// allowed by this issuer), issuers are expected to perform this validation before calling
+    /// this method.
+    ///
     /// # Errors
     /// Returns an error if the token request is invalid, or if token_type == PublicMetadata and the
     /// key is not PBRSA compatible.

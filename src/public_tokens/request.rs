@@ -37,6 +37,16 @@ pub struct TokenState {
 ///     uint8_t blinded_msg[Nk];
 ///  } TokenRequest;
 /// ```
+///
+/// or, if created with extensions:
+/// ```c
+/// struct {
+///     TokenRequest request;
+///     Extensions extensions;
+/// } ExtendedTokenRequest;
+/// ```
+/// As specified in
+/// [`draft-ietf-privacypass-public-metadata-issuance-03 §6.1`](https://www.ietf.org/archive/id/draft-ietf-privacypass-public-metadata-issuance-03.html#section-6.1).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TokenRequest {
     pub(crate) token_type: TokenType,
