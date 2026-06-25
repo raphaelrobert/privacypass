@@ -56,8 +56,9 @@ pub(crate) fn surrounded_by_alphanumeric(input: &str) -> bool {
 }
 
 pub(crate) fn unquote(input: &str) -> IResult<&str, &str> {
-    // older versions of the extensions draft specified that values should not be surrounded with double
-    // quotes, but the newest version of the draft specifies that values should be quoted.
-    // The use of alt() lets us support both versions
-    alt((delimited(tag("\""), base64_char, tag("\"")), base64_char)).parse(input)
+    delimited(tag("\""), base64_char, tag("\"")).parse(input)
+}
+
+pub(crate) fn maybe_unquote(input: &str) -> IResult<&str, &str> {
+    alt((unquote, base64_char)).parse(input)
 }
