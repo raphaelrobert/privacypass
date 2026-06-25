@@ -1,15 +1,11 @@
 //! This module contains the authorization logic for redemption phase of the
 //! protocol.
 
-use base64::{
-    Engine as _, alphabet,
-    engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig, general_purpose::URL_SAFE},
-};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use generic_array::{ArrayLength, GenericArray};
 use http::{HeaderValue, header::HeaderName};
 use nom::{
     IResult, Parser,
-    branch::alt,
     bytes::complete::{tag, tag_no_case},
     multi::{many1, separated_list1},
 };
@@ -17,22 +13,12 @@ use std::io::Write;
 use thiserror::Error;
 use tls_codec::{Deserialize, Error, Serialize, Size};
 
-use crate::{ChallengeDigest, Nonce, TokenKeyId, TokenType, common::extensions::Extensions};
+use crate::{
+    ChallengeDigest, Nonce, TokenKeyId, TokenType, auth::maybe_unquote,
+    common::extensions::Extensions,
+};
 
 use super::{key_name, opt_spaces, space, unquote};
-
-// Previous versions of the Token Extensions draft (`draft-ietf-privacypass-auth-scheme-extensions`)
-// didn't specify whether the token should be encoded with padding, leading some implementations to
-// always encode without padding. Thus, we need to decode extensions with this engine in order to
-// support those implementations.
-//
-// However, the latest version states that "the base64url value MUST include padding", so when
-// generating the header in `build_authorization_header_ext`, URL_SAFE should be used instead of
-// this engine.
-const URL_SAFE_INDIFFERENT: GeneralPurpose = GeneralPurpose::new(
-    &alphabet::URL_SAFE,
-    GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
-);
 
 /// A Token as defined in The Privacy Pass HTTP Authentication Scheme:
 ///
@@ -178,7 +164,7 @@ pub fn build_authorization_header_ext<Nk: ArrayLength>(
     extensions: &Extensions,
 ) -> Result<(HeaderName, HeaderValue), BuildError> {
     let value = format!(
-        // format specified by draft-ietf-privacypass-auth-scheme-extensions
+        // format specified by draft-ietf-privacypass-auth-scheme-extensions-03
         // draft requires that the parameters must be enclosed in double quotes
         "PrivateToken token=\"{}\", extensions=\"{}\"",
         URL_SAFE.encode(
@@ -186,7 +172,6 @@ pub fn build_authorization_header_ext<Nk: ArrayLength>(
                 .tls_serialize_detached()
                 .map_err(|_| BuildError::InvalidToken)?
         ),
-        // See comment above URL_SAFE_INDIFFERENT
         URL_SAFE.encode(
             extensions
                 .tls_serialize_detached()
@@ -232,9 +217,15 @@ pub fn parse_authorization_header<Nk: ArrayLength>(
 /// # Errors
 /// Returns an error if the header value is not valid.
 pub fn parse_authorization_str<Nk: ArrayLength>(s: &str) -> Result<Token<Nk>, ParseError> {
-    let token = parse_authorization_str_ext(s)?.0;
+    // in RFC 9577 section 2.2.2, it says the token field might be a quoted string, so when
+    // parsing just a token, we need to accept values that are not quoted as well.
+    let tokens = parse_header_value(s, false)?;
 
-    Ok(token)
+    tokens
+        .into_iter()
+        .next()
+        .ok_or(ParseError::InvalidInput)
+        .map(|(token, _)| token)
 }
 
 /// Parses an `Authorization` header according to the following scheme,
@@ -264,7 +255,10 @@ pub fn parse_authorization_header_ext<Nk: ArrayLength>(
 pub fn parse_authorization_str_ext<Nk: ArrayLength>(
     s: &str,
 ) -> Result<(Token<Nk>, Option<Extensions>), ParseError> {
-    let tokens = parse_header_value(s)?;
+    // In draft-ietf-privacypass-auth-scheme-extensions-03, it says token and extensions MUST be
+    // enclosed in double-quotes. Thus, when parsing both tokens and extensions, we should
+    // strictly accept only quoted values.
+    let tokens = parse_header_value(s, true)?;
 
     tokens.into_iter().next().ok_or(ParseError::InvalidInput)
 }
@@ -283,14 +277,22 @@ pub enum ParseError {
     InvalidExtensions,
 }
 
-fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
+fn parse_key_value(input: &str, strict_quotes: bool) -> IResult<&str, (&str, &str)> {
     let (input, _) = opt_spaces(input)?;
     let (input, key) = key_name(input)?;
     let (input, _) = opt_spaces(input)?;
     let (input, _) = tag("=").parse(input)?;
     let (input, _) = opt_spaces(input)?;
     let (input, value) = match key.to_lowercase().as_str() {
-        "token" | "extensions" => unquote(input)?,
+        // see comments in parse_authorization_str and parse_authorization_str_ext
+        "token" => {
+            if strict_quotes {
+                unquote(input)?
+            } else {
+                maybe_unquote(input)?
+            }
+        }
+        "extensions" => unquote(input)?,
         _ => {
             return Err(nom::Err::Failure(nom::error::make_error(
                 input,
@@ -301,16 +303,12 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
     Ok((input, (key, value)))
 }
 
-fn parse_private_token(input: &str) -> IResult<&str, (&str, Option<&str>)> {
+fn parse_private_token(input: &str, strict_quotes: bool) -> IResult<&str, (&str, Option<&str>)> {
     let (input, _) = opt_spaces(input)?;
     let (input, _) = tag_no_case("PrivateToken").parse(input)?;
     let (input, _) = many1(space).parse(input)?;
-    let (input, key_values) = separated_list1(
-        alt((tag(","), tag(" "))), // header could be separated by a space in older specs, so we
-        // need to support it
-        parse_key_value,
-    )
-    .parse(input)?;
+    let (input, key_values) =
+        separated_list1(tag(","), |i| parse_key_value(i, strict_quotes)).parse(input)?;
 
     let mut token = None;
     let mut extensions = None;
@@ -339,15 +337,20 @@ fn parse_private_token(input: &str) -> IResult<&str, (&str, Option<&str>)> {
     Ok((input, (token, extensions)))
 }
 
-fn parse_private_tokens(input: &str) -> IResult<&str, Vec<(&str, Option<&str>)>> {
-    separated_list1(tag(","), parse_private_token).parse(input)
+fn parse_private_tokens(
+    input: &str,
+    strict_quotes: bool,
+) -> IResult<&str, Vec<(&str, Option<&str>)>> {
+    separated_list1(tag(","), |i| parse_private_token(i, strict_quotes)).parse(input)
 }
 
 #[allow(clippy::type_complexity)]
 fn parse_header_value<Nk: ArrayLength>(
     input: &str,
+    strict_quotes: bool,
 ) -> Result<Vec<(Token<Nk>, Option<Extensions>)>, ParseError> {
-    let (output, tokens) = parse_private_tokens(input).map_err(|_| ParseError::InvalidInput)?;
+    let (output, tokens) =
+        parse_private_tokens(input, strict_quotes).map_err(|_| ParseError::InvalidInput)?;
     if !output.is_empty() {
         return Err(ParseError::InvalidInput);
     }
@@ -356,7 +359,7 @@ fn parse_header_value<Nk: ArrayLength>(
         .map(|(token_value, extensions_value)| {
             let ext = extensions_value
                 .map(|x| {
-                    let decoded = URL_SAFE_INDIFFERENT
+                    let decoded = URL_SAFE
                         .decode(x)
                         .map_err(|_| ParseError::InvalidExtensions)?;
                     Extensions::tls_deserialize(&mut decoded.as_slice())
@@ -388,7 +391,6 @@ mod tests {
     use crate::common::extensions::{Extension, ExtensionType, Extensions};
     use generic_array::GenericArray;
     use generic_array::typenum::U32;
-    use http::HeaderValue;
 
     #[test]
     fn builder_parser_test() {
@@ -549,42 +551,5 @@ mod tests {
             assert_eq!(token.token_key_id(), &vector.token_key_id);
             assert_eq!(maybe_extensions, Some(extensions.clone()));
         }
-    }
-
-    /// This is the same test as `builder_parser_extensions_test`, but we replace the `, `
-    /// separator with ` ` (single space) to make sure we can handle tokens generated by clients
-    /// using an older version of the TOKEN-EXTENSION spec.
-    #[test]
-    fn rfc_9110_regression_test() {
-        let nonce = [1u8; 32];
-        let challenge_digest = [2u8; 32];
-        let token_key_id = [3u8; 32];
-        let authenticator = [4u8; 32];
-        let token = Token::<U32>::new(
-            TokenType::PrivateP384,
-            nonce,
-            challenge_digest,
-            token_key_id,
-            *GenericArray::from_slice(&authenticator),
-        );
-
-        let extension = Extension::new(ExtensionType(5), b"hello world".to_vec());
-        let extensions = Extensions::new(vec![extension]);
-        let (header_name, header_value) =
-            build_authorization_header_ext(&token, &extensions).unwrap();
-
-        let header_value =
-            HeaderValue::from_str(&header_value.to_str().unwrap().replace(", ", " ")).unwrap();
-
-        assert_eq!(header_name, http::header::AUTHORIZATION);
-
-        let (token, maybe_extensions) =
-            parse_authorization_header_ext::<U32>(&header_value).unwrap();
-        assert_eq!(token.token_type(), TokenType::PrivateP384);
-        assert_eq!(token.nonce(), nonce);
-        assert_eq!(token.challenge_digest(), &challenge_digest);
-        assert_eq!(token.token_key_id(), &token_key_id);
-        assert_eq!(token.authenticator(), &authenticator);
-        assert_eq!(maybe_extensions, Some(extensions));
     }
 }
