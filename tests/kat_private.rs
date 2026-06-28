@@ -1,7 +1,7 @@
 use std::{fs::File, io::Write};
 
 use generic_array::GenericArray;
-use rand::{RngCore, rngs::OsRng};
+use rand::{Rng, rand_core::UnwrapErr, rngs::SysRng};
 use serde::{Deserialize, Serialize};
 
 use p384::NistP384;
@@ -174,7 +174,7 @@ pub(crate) async fn generate_kat_private_token<CS: PrivateCipherSuite>() -> Priv
 
     // Server: Create a new keypair
     let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
-    OsRng.fill_bytes(&mut seed);
+    UnwrapErr(SysRng).fill_bytes(&mut seed);
 
     let info = b"PrivacyPass";
 
@@ -189,9 +189,9 @@ pub(crate) async fn generate_kat_private_token<CS: PrivateCipherSuite>() -> Priv
 
     let pk_s = serialize_public_key::<CS>(public_key);
 
-    let redemption_context = if OsRng.next_u32().is_multiple_of(2) {
+    let redemption_context = if UnwrapErr(SysRng).next_u32().is_multiple_of(2) {
         let mut bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut bytes);
+        UnwrapErr(SysRng).fill_bytes(&mut bytes);
         Some(bytes)
     } else {
         None
@@ -210,10 +210,10 @@ pub(crate) async fn generate_kat_private_token<CS: PrivateCipherSuite>() -> Priv
     let challenge_digest: [u8; 32] = kat_token_challenge.digest().unwrap();
 
     let mut kat_nonce = [0u8; 32];
-    OsRng.fill_bytes(&mut kat_nonce);
+    UnwrapErr(SysRng).fill_bytes(&mut kat_nonce);
     let nonce = kat_nonce.to_vec();
 
-    let kat_blind = <CS::Group as Group>::random_scalar(&mut OsRng);
+    let kat_blind = <CS::Group as Group>::random_scalar(&mut SysRng).unwrap();
 
     let blind = <CS::Group as Group>::serialize_scalar(kat_blind).to_vec();
 

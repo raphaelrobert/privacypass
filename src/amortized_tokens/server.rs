@@ -2,7 +2,7 @@
 
 use generic_array::GenericArray;
 use log::{debug, warn};
-use rand::{RngCore, rngs::OsRng};
+use rand::{TryRng, rngs::SysRng};
 use sha2::digest::OutputSizeUser;
 use subtle::ConstantTimeEq;
 use typenum::Unsigned;
@@ -77,7 +77,9 @@ impl<CS: PrivateCipherSuite> Server<CS> {
     {
         for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
             let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
-            OsRng.fill_bytes(&mut seed);
+            SysRng
+                .try_fill_bytes(&mut seed)
+                .map_err(|source| CreateKeypairError::RngFailed { source })?;
             let server = Self::server_from_seed(&seed, b"PrivacyPass")?;
             let public_key = server.get_public_key();
             let truncated_token_key_id =
@@ -156,7 +158,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
             .batch_blind_evaluate_prepare(blinded_elements.iter())
             .collect::<Vec<_>>();
         let VoprfServerBatchEvaluateFinishResult { messages, proof } = server
-            .batch_blind_evaluate_finish(&mut OsRng, blinded_elements.iter(), &prepared_elements)
+            .batch_blind_evaluate_finish(&mut SysRng, blinded_elements.iter(), &prepared_elements)
             .inspect_err(|e| warn!(error:% = e; "Failed to batch evaluate blinded elements"))
             .map_err(|source| IssueTokenResponseError::BlindEvaluationFailed { source })?;
 

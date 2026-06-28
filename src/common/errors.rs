@@ -1,6 +1,7 @@
 //! Common error types
 
 use blind_rsa_signatures::Error as BlindRsaError;
+use rand::rngs::SysError;
 use thiserror::Error;
 
 use crate::{
@@ -48,6 +49,13 @@ pub enum CreateKeypairError {
     #[error("Collision exhausted")]
     /// Error when collision attempts are exhausted
     CollisionExhausted,
+    #[error("Failed to gather randomness from the operating system")]
+    /// Error when the operating system fails to provide randomness.
+    RngFailed {
+        /// Underlying OS randomness error that triggered the failure.
+        #[source]
+        source: SysError,
+    },
 }
 
 /// Errors that can occur when issuing token requests.
@@ -66,6 +74,13 @@ pub enum IssueTokenRequestError {
         /// Underlying token challenge serialization error that triggered the failure.
         #[source]
         source: TokenChallengeSerializationError,
+    },
+    #[error("Failed to gather randomness from the operating system")]
+    /// Error when the operating system fails to provide randomness.
+    RngFailed {
+        /// Underlying OS randomness error that triggered the failure.
+        #[source]
+        source: SysError,
     },
 }
 
