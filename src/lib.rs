@@ -9,37 +9,40 @@
 //!
 //!  - Privately Verfifiable Tokens
 //!  - Publicly Verfifiable Tokens
-//!  - Batched Tokens
-//!
+//!  - Amortized Tokens
+//!  - Generic Tokens
 
 #![warn(missing_docs)]
 #![deny(unreachable_pub)]
 #![deny(missing_debug_implementations)]
 #![deny(unsafe_code)]
 
+pub mod amortized_tokens;
 pub mod auth;
-pub mod batched_tokens_p384;
-pub mod batched_tokens_ristretto255;
+pub mod common;
+pub mod generic_tokens;
 pub mod private_tokens;
 pub mod public_tokens;
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
 
 use async_trait::async_trait;
+use std::fmt::Debug;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 pub use tls_codec::{Deserialize, Serialize};
+pub use voprf::{Group, VoprfServer};
 
 /// Token type
 #[derive(TlsSize, TlsSerialize, TlsDeserialize, Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u16)]
 pub enum TokenType {
-    /// Privately verifiable token
-    PrivateToken = 1,
-    /// Publicly verifiable token
-    PublicToken = 2,
-    /// Batched token
-    BatchedTokenRistretto255 = 0xF91A,
-    /// Batched token 2
-    BatchedTokenP384 = 0xF901,
+    /// Private p384 token
+    PrivateP384 = 1,
+    /// Public token
+    Public = 2,
+    /// Private ristretto255 token
+    PrivateRistretto255 = 5,
 }
 
 /// Token key ID
@@ -51,14 +54,54 @@ pub type Nonce = [u8; 32];
 /// Challenge digest
 pub type ChallengeDigest = [u8; 32];
 
-/// Minimal trait for a nonce store that can be used to track redeemed tokens
-/// and prevent double spending. Note that the store requires inner mutability.
+/// Truncates a 32-byte token key ID to a single byte as required by
+/// RFC 9578.
+pub(crate) fn truncate_token_key_id(token_key_id: &TokenKeyId) -> TruncatedTokenKeyId {
+    *token_key_id.iter().last().unwrap_or(&0)
+}
+
+/// Nonce store for tracking redeemed tokens and preventing double spending.
+///
+/// Implements a three-state machine: **absent → reserved → committed**, with
+/// **reserved → absent** via [`release`](NonceStore::release).
+///
+/// # Security contract
+///
+/// - [`reserve`](NonceStore::reserve) is atomic: exactly one concurrent caller
+///   wins the race, preventing TOCTOU double-spending.
+/// - [`release`](NonceStore::release) releases a reservation when cryptographic
+///   verification fails, preventing nonce-burning attacks.
+/// - [`commit`](NonceStore::commit) finalizes a nonce after successful
+///   cryptographic verification.
+///
+/// # Stale reservations
+///
+/// A crash between [`reserve`](NonceStore::reserve) and
+/// [`commit`](NonceStore::commit)/[`release`](NonceStore::release) leaves a
+/// nonce in the reserved state. Production implementations should apply a TTL
+/// to reserved entries so they expire automatically.
+///
+/// The store requires interior mutability.
 #[async_trait]
 pub trait NonceStore: Send + Sync {
-    /// Returns `true` if the nonce exists in the nonce store and `false` otherwise.
-    async fn exists(&self, nonce: &Nonce) -> bool;
-    /// Inserts a new nonce in the nonce store.
-    async fn insert(&self, nonce: Nonce);
+    /// Atomically transitions a nonce from absent to reserved.
+    ///
+    /// Returns `true` if newly reserved, `false` if already reserved
+    /// or committed (replay / concurrent duplicate).
+    async fn reserve(&self, nonce: &Nonce) -> bool;
+
+    /// Transitions a nonce from reserved to committed.
+    ///
+    /// Called after cryptographic verification succeeds. Only reserved nonces
+    /// can be committed; absent or already committed nonces are no-ops.
+    async fn commit(&self, nonce: &Nonce);
+
+    /// Transitions a nonce from reserved back to absent.
+    ///
+    /// Called when cryptographic verification fails, releasing the reservation
+    /// so the nonce is not permanently burned. Only reserved nonces can be
+    /// released; committed or absent nonces are no-ops.
+    async fn release(&self, nonce: &Nonce);
 }
 
 #[derive(Debug)]
@@ -94,3 +137,19 @@ impl TokenInput {
         token_input
     }
 }
+
+/// Default maximum batch size for amortized and generic token issuance.
+///
+/// Limits the number of tokens a client can request in a single batch
+/// to prevent server-side resource exhaustion.
+/// Override via `Server::with_max_batch_size()`.
+pub const DEFAULT_MAX_BATCH_SIZE: usize = 100;
+
+/// Maximum number of key generation retries before returning
+/// [`CreateKeypairError::CollisionExhausted`](crate::common::errors::CreateKeypairError::CollisionExhausted).
+///
+/// With a single-byte `truncated_token_key_id` (256 slots), 100 attempts
+/// is generous for low key counts but will fail reliably once the store
+/// approaches capacity. Use the `remove` method on key store traits to
+/// reclaim slots when rotating keys.
+pub(crate) const COLLISION_AVOIDANCE_ATTEMPTS: usize = 100;

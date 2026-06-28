@@ -1,43 +1,48 @@
 [package]
 name = "privacypass"
 version = "0.2.0"
-edition = "2021"
-description = "Implementation of Privacy Pass"
+edition = "2024"
+description = "Implementation of Privacy Pass (RFC 9578)"
 license = "MIT"
 documentation = "https://docs.rs/privacypass"
 repository = "https://github.com/raphaelrobert/privacypass"
 readme = "README.md"
-keywords = ["privacypass", "privacy", "pass", "ietf"]
-categories = ["cryptography", "privacy"]
+keywords = ["privacypass", "privacy", "pass", "ietf", "rfc9578"]
+categories = ["cryptography", "authentication", "network-programming"]
 
 [dependencies]
-async-trait = "0.1.56"
-base64 = "0.22.0"
-generic-array = "0.14.5"
-rand = "0.8.5"
+async-trait = "0.1.89"
+base64 = "0.22"
+generic-array = "1.3.5"
+rand = { version = "0.10", features = ["sys_rng"] }
+log = { version = "0.4", features = ["kv"] }
 serde = "1"
-sha2 = "0.10.2"
-thiserror = "1"
-tls_codec = { version = "0.4.1" }
-tls_codec_derive = "0.4.1"
-voprf = { version = "0.5", features = ["serde"] }
+sha2 = "0.10.9"
+subtle = "2"
+thiserror = "2"
+tls_codec = { version = "0.4.2" }
+tls_codec_derive = "0.4.2"
+voprf = { package = "voprf-ng", version = "=0.6.0-pre.3", features = ["serde"] }
 p384 = { version = "0.13.0", default-features = false, features = [
   "hash2curve",
   "voprf",
 ] }
-blind-rsa-signatures = "0.15.0"
+blind-rsa-signatures = "0.17"
 http = "1"
-typenum = "1.15.0"
-nom = "7"
+typenum = "1"
+nom = "8"
+tokio = { version = "1", features = ["full"], optional = true }
+trait-variant = "0.1.2"
 
 [features]
 default = []
 kat = ["voprf/danger"]
+test-utils = ["tokio"]
 
 [dev-dependencies]
-privacypass = { path = ".", features = ["kat"] }
-tokio = { version = "1.20.0", features = ["full"] }
-criterion = { version = "0.5.0", features = ["async_futures", "async_tokio"] }
+privacypass = { path = ".", features = ["kat", "test-utils"] }
+futures = "0.3"
+criterion = { version = "0.8.0", features = ["async_futures", "async_tokio"] }
 hex = { version = "0.4.3", features = ["serde"] }
 serde_json = "1.0"
 

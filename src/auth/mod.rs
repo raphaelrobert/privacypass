@@ -1,10 +1,10 @@
 //! Privacy Pass HTTP Authentication Scheme
 
 use nom::{
+    IResult, Parser,
     bytes::complete::{is_a, take_while1},
     combinator::verify,
     multi::many0,
-    IResult,
 };
 use std::str::FromStr;
 
@@ -16,7 +16,7 @@ pub(crate) fn space(input: &str) -> IResult<&str, &str> {
 }
 
 pub(crate) fn opt_spaces(input: &str) -> IResult<&str, Vec<&str>> {
-    many0(space)(input)
+    many0(space).parse(input)
 }
 
 pub(crate) fn parse_u32(input: &str) -> Result<u32, std::num::ParseIntError> {
@@ -30,7 +30,8 @@ pub(crate) fn base64_char(input: &str) -> IResult<&str, &str> {
 }
 
 pub(crate) fn key_name(input: &str) -> IResult<&str, &str> {
-    let (input, s) = verify(take_while1(is_alpha_or_dash), surrounded_by_alphanumeric)(input)?;
+    let (input, s) =
+        verify(take_while1(is_alpha_or_dash), surrounded_by_alphanumeric).parse(input)?;
     Ok((input, s))
 }
 

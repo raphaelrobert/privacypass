@@ -1,62 +1,47 @@
 //! # Publicly Verifiable Tokens
 
+use blind_rsa_signatures::{Deterministic, PSS, Sha384};
 use sha2::{Digest, Sha256};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-use typenum::U64;
+use typenum::U256;
 
-use crate::{auth::authorize::Token, Nonce, TokenKeyId, TokenType, TruncatedTokenKeyId};
+use blind_rsa_signatures::Error as BlindRsaError;
 
-pub mod client;
+use crate::{TokenKeyId, TruncatedTokenKeyId, auth::authorize::Token, truncate_token_key_id};
+
+pub mod request;
+pub mod response;
 pub mod server;
 
+#[cfg(feature = "kat")]
+pub mod det_rng;
+
+pub use request::*;
+pub use response::*;
+
 /// Publicly Verifiable Token alias
-pub type PublicToken = Token<U64>;
-pub use blind_rsa_signatures::PublicKey;
+pub type PublicToken = Token<U256>;
+/// Publicly Verifiable Token public key type alias (SHA-384, PSS, Deterministic).
+pub type PublicKey = blind_rsa_signatures::PublicKey<Sha384, PSS, Deterministic>;
 
 use self::server::serialize_public_key;
 
 /// Size of the authenticator
 pub const NK: usize = 256;
 
-/// Converts a public key to a token key ID
-pub fn public_key_to_truncated_token_key_id(public_key: &PublicKey) -> TruncatedTokenKeyId {
-    truncate_token_key_id(&public_key_to_token_key_id(public_key))
-}
-
-fn public_key_to_token_key_id(public_key: &PublicKey) -> TokenKeyId {
-    let public_key = serialize_public_key(public_key);
-
-    Sha256::digest(public_key).into()
-}
-
-fn truncate_token_key_id(token_key_id: &TokenKeyId) -> TruncatedTokenKeyId {
-    *token_key_id.iter().last().unwrap_or(&0)
-}
-
-/// Token request as specified in the spec:
+/// Converts a public key to a truncated token key ID.
 ///
-/// ```c
-/// struct {
-///     uint16_t token_type = 0x0002;
-///     uint8_t truncated_token_key_id;
-///     uint8_t blinded_msg[Nk];
-///  } TokenRequest;
-/// ```
-#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct TokenRequest {
-    token_type: TokenType,
-    truncated_token_key_id: u8,
-    blinded_msg: [u8; NK],
+/// # Errors
+/// Returns an error if the public key cannot be serialized.
+pub fn public_key_to_truncated_token_key_id(
+    public_key: &PublicKey,
+) -> Result<TruncatedTokenKeyId, BlindRsaError> {
+    Ok(truncate_token_key_id(&public_key_to_token_key_id(
+        public_key,
+    )?))
 }
 
-/// Token response as specified in the spec:
-///
-/// ```c
-/// struct {
-///     uint8_t blind_sig[Nk];
-///  } TokenResponse;
-/// ```
-#[derive(Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct TokenResponse {
-    blind_sig: [u8; NK],
+fn public_key_to_token_key_id(public_key: &PublicKey) -> Result<TokenKeyId, BlindRsaError> {
+    let public_key = serialize_public_key(public_key)?;
+
+    Ok(Sha256::digest(public_key).into())
 }

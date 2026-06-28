@@ -1,17 +1,21 @@
-mod private_memory_stores;
-
-use private_memory_stores::*;
-
+use p384::NistP384;
 use privacypass::{
     auth::authenticate::TokenChallenge,
-    private_tokens::{client::*, server::*},
-    TokenType,
+    common::{errors::RedeemTokenError, private::PrivateCipherSuite},
+    private_tokens::{TokenRequest, server::*},
+    test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
+use voprf::Ristretto255;
 
 #[tokio::test]
 async fn private_tokens_cycle() {
+    private_tokens_cycle_type::<NistP384>().await;
+    private_tokens_cycle_type::<Ristretto255>().await;
+}
+
+async fn private_tokens_cycle_type<CS: PrivateCipherSuite>() {
     // Server: Instantiate in-memory keystore and nonce store.
-    let key_store = MemoryKeyStore::default();
+    let key_store = MemoryKeyStoreVoprf::<CS>::default();
     let nonce_store = MemoryNonceStore::default();
 
     // Server: Create server
@@ -20,19 +24,16 @@ async fn private_tokens_cycle() {
     // Server: Create a new keypair
     let public_key = server.create_keypair(&key_store).await.unwrap();
 
-    // Client: Create client
-    let client = Client::new(public_key);
-
     // Generate a challenge
     let challenge = TokenChallenge::new(
-        TokenType::PrivateToken,
+        CS::token_type(),
         "example.com",
         None,
         &["example.com".to_string()],
     );
 
     // Client: Prepare a TokenRequest after having received a challenge
-    let (token_request, token_state) = client.issue_token_request(&challenge).unwrap();
+    let (token_request, token_state) = TokenRequest::new(public_key, &challenge).unwrap();
 
     // Server: Issue a TokenResponse
     let token_response = server
@@ -41,16 +42,18 @@ async fn private_tokens_cycle() {
         .unwrap();
 
     // Client: Turn the TokenResponse into a Token
-    let token = client.issue_token(&token_response, &token_state).unwrap();
+    let token = token_response.issue_token(&token_state).unwrap();
 
     // Server: Compare the challenge digest
     assert_eq!(token.challenge_digest(), &challenge.digest().unwrap());
 
     // Server: Redeem the token
-    assert!(server
-        .redeem_token(&key_store, &nonce_store, token.clone())
-        .await
-        .is_ok());
+    assert!(
+        server
+            .redeem_token(&key_store, &nonce_store, token.clone())
+            .await
+            .is_ok()
+    );
 
     // Server: Test double spend protection
     assert_eq!(

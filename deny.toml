@@ -1,0 +1,28 @@
+[graph]
+all-features = true
+
+[advisories]
+ignore = [
+    # Marvin Attack (RSA timing side-channel). No fix available upstream;
+    # transitive via blind-rsa-signatures -> rsa 0.10.0-rc.15.
+    { id = "RUSTSEC-2023-0071", reason = "no fixed version available; tracked upstream at RustCrypto/RSA#19" },
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

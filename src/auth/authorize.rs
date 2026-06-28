@@ -1,13 +1,13 @@
 //! This module contains the authorization logic for redemption phase of the
 //! protocol.
 
-use base64::{engine::general_purpose::URL_SAFE, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use generic_array::{ArrayLength, GenericArray};
-use http::{header::HeaderName, HeaderValue};
+use http::{HeaderValue, header::HeaderName};
 use nom::{
+    IResult, Parser,
     bytes::complete::{tag, tag_no_case},
     multi::{many1, separated_list1},
-    IResult,
 };
 use std::io::Write;
 use thiserror::Error;
@@ -30,7 +30,7 @@ use super::{base64_char, key_name, opt_spaces, space};
 /// ```
 
 #[derive(Clone, Debug)]
-pub struct Token<Nk: ArrayLength<u8>> {
+pub struct Token<Nk: ArrayLength> {
     token_type: TokenType,
     nonce: Nonce,
     challenge_digest: ChallengeDigest,
@@ -38,7 +38,7 @@ pub struct Token<Nk: ArrayLength<u8>> {
     authenticator: GenericArray<u8, Nk>,
 }
 
-impl<Nk: ArrayLength<u8>> Size for Token<Nk> {
+impl<Nk: ArrayLength> Size for Token<Nk> {
     fn tls_serialized_len(&self) -> usize {
         self.token_type.tls_serialized_len()
             + self.nonce.tls_serialized_len()
@@ -48,7 +48,7 @@ impl<Nk: ArrayLength<u8>> Size for Token<Nk> {
     }
 }
 
-impl<Nk: ArrayLength<u8>> Serialize for Token<Nk> {
+impl<Nk: ArrayLength> Serialize for Token<Nk> {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, Error> {
         Ok(self.token_type.tls_serialize(writer)?
             + self.nonce.tls_serialize(writer)?
@@ -58,7 +58,7 @@ impl<Nk: ArrayLength<u8>> Serialize for Token<Nk> {
     }
 }
 
-impl<Nk: ArrayLength<u8>> Deserialize for Token<Nk> {
+impl<Nk: ArrayLength> Deserialize for Token<Nk> {
     fn tls_deserialize<R: std::io::Read>(bytes: &mut R) -> Result<Self, Error>
     where
         Self: Sized,
@@ -77,12 +77,12 @@ impl<Nk: ArrayLength<u8>> Deserialize for Token<Nk> {
             nonce,
             challenge_digest,
             token_key_id,
-            authenticator: GenericArray::clone_from_slice(&authenticator),
+            authenticator: GenericArray::from_slice(&authenticator).clone(),
         })
     }
 }
 
-impl<Nk: ArrayLength<u8>> Token<Nk> {
+impl<Nk: ArrayLength> Token<Nk> {
     /// Creates a new Token.
     pub const fn new(
         token_type: TokenType,
@@ -132,7 +132,7 @@ impl<Nk: ArrayLength<u8>> Token<Nk> {
 ///
 /// # Errors
 /// Returns an error if the token is not valid.
-pub fn build_authorization_header<Nk: ArrayLength<u8>>(
+pub fn build_authorization_header<Nk: ArrayLength>(
     token: &Token<Nk>,
 ) -> Result<(HeaderName, HeaderValue), BuildError> {
     let value = format!(
@@ -149,7 +149,7 @@ pub fn build_authorization_header<Nk: ArrayLength<u8>>(
 }
 
 /// Building error for the `Authorization` header values
-#[derive(Error, Debug)]
+#[derive(PartialEq, Eq, Error, Debug)]
 pub enum BuildError {
     #[error("Invalid token")]
     /// Invalid token
@@ -162,7 +162,7 @@ pub enum BuildError {
 ///
 /// # Errors
 /// Returns an error if the header value is not valid.
-pub fn parse_authorization_header<Nk: ArrayLength<u8>>(
+pub fn parse_authorization_header<Nk: ArrayLength>(
     value: &HeaderValue,
 ) -> Result<Token<Nk>, ParseError> {
     let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
@@ -172,7 +172,7 @@ pub fn parse_authorization_header<Nk: ArrayLength<u8>>(
 }
 
 /// Parsing error for the `WWW-Authenticate` header values
-#[derive(Error, Debug)]
+#[derive(PartialEq, Eq, Error, Debug)]
 pub enum ParseError {
     #[error("Invalid token")]
     /// Invalid token
@@ -186,7 +186,7 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
     let (input, _) = opt_spaces(input)?;
     let (input, key) = key_name(input)?;
     let (input, _) = opt_spaces(input)?;
-    let (input, _) = tag("=")(input)?;
+    let (input, _) = tag("=").parse(input)?;
     let (input, _) = opt_spaces(input)?;
     let (input, value) = match key.to_lowercase().as_str() {
         "token" => base64_char(input)?,
@@ -194,7 +194,7 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
             return Err(nom::Err::Failure(nom::error::make_error(
                 input,
                 nom::error::ErrorKind::Tag,
-            )))
+            )));
         }
     };
     Ok((input, (key, value)))
@@ -202,9 +202,9 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
 
 fn parse_private_token(input: &str) -> IResult<&str, &str> {
     let (input, _) = opt_spaces(input)?;
-    let (input, _) = tag_no_case("PrivateToken")(input)?;
-    let (input, _) = many1(space)(input)?;
-    let (input, key_values) = separated_list1(tag(","), parse_key_value)(input)?;
+    let (input, _) = tag_no_case("PrivateToken").parse(input)?;
+    let (input, _) = many1(space).parse(input)?;
+    let (input, key_values) = separated_list1(tag(","), parse_key_value).parse(input)?;
 
     let mut token = None;
     let err = nom::Err::Failure(nom::error::make_error(input, nom::error::ErrorKind::Tag));
@@ -226,10 +226,10 @@ fn parse_private_token(input: &str) -> IResult<&str, &str> {
 }
 
 fn parse_private_tokens(input: &str) -> IResult<&str, Vec<&str>> {
-    separated_list1(tag(","), parse_private_token)(input)
+    separated_list1(tag(","), parse_private_token).parse(input)
 }
 
-fn parse_header_value<Nk: ArrayLength<u8>>(input: &str) -> Result<Vec<Token<Nk>>, ParseError> {
+fn parse_header_value<Nk: ArrayLength>(input: &str) -> Result<Vec<Token<Nk>>, ParseError> {
     let (output, tokens) = parse_private_tokens(input).map_err(|_| ParseError::InvalidInput)?;
     if !output.is_empty() {
         return Err(ParseError::InvalidInput);
@@ -258,18 +258,18 @@ fn builder_parser_test() {
     let token_key_id = [3u8; 32];
     let authenticator = [4u8; 32];
     let token = Token::<U32>::new(
-        TokenType::PrivateToken,
+        TokenType::PrivateP384,
         nonce,
         challenge_digest,
         token_key_id,
-        GenericArray::clone_from_slice(&authenticator),
+        *GenericArray::from_slice(&authenticator),
     );
     let (header_name, header_value) = build_authorization_header(&token).unwrap();
 
     assert_eq!(header_name, http::header::AUTHORIZATION);
 
     let token = parse_authorization_header::<U32>(&header_value).unwrap();
-    assert_eq!(token.token_type(), TokenType::PrivateToken);
+    assert_eq!(token.token_type(), TokenType::PrivateP384);
     assert_eq!(token.nonce(), nonce);
     assert_eq!(token.challenge_digest(), &challenge_digest);
     assert_eq!(token.token_key_id(), &token_key_id);

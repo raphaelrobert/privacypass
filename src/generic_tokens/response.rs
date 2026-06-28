@@ -1,0 +1,147 @@
+//! Response implementation of the Generic Token protocol.
+
+use p384::NistP384;
+use tls_codec::Deserialize;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use voprf::Ristretto255;
+
+use crate::{
+    TokenType,
+    common::errors::{IssueTokenError, SerializationError},
+};
+
+use super::{GenericToken, GenericTokenState, TokenStates};
+
+/// Generic TokenResponse as specified in the spec:
+///
+/// ```c
+/// struct {
+///     optional TokenResponse token_responses<V>;
+/// } BatchTokenRequest
+/// ```
+#[repr(u16)]
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub enum GenericTokenResponse {
+    /// Type VOPRF(P-384, SHA-384), RFC 9578
+    #[tls_codec(discriminant = "TokenType::PrivateP384")]
+    PrivateP384(Box<crate::private_tokens::TokenResponse<NistP384>>),
+    /// Type Blind RSA (2048-bit), RFC 9578
+    #[tls_codec(discriminant = "TokenType::Public")]
+    Public(Box<crate::public_tokens::TokenResponse>),
+    /// Type VOPRF(Ristretto255, SHA-512), RFC XXXX
+    #[tls_codec(discriminant = "TokenType::PrivateRistretto255")]
+    PrivateRistretto255(Box<crate::private_tokens::TokenResponse<Ristretto255>>),
+}
+
+/// Token response as specified in the spec:
+///
+/// ```c
+/// struct {
+///     TokenResponse token_response<V>; /* Defined by token_type */
+/// } OptionalTokenResponse;
+///```
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct OptionalTokenResponse {
+    /// Optional token response
+    pub token_response: Option<GenericTokenResponse>,
+}
+
+/// Token response as specified in the spec:
+///
+/// ```c
+/// struct {
+///     OptionalTokenResponse token_responses<V>;
+/// } GenericBatchTokenResponse
+/// ```
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct GenericBatchTokenResponse {
+    /// Token responses
+    pub token_responses: Vec<OptionalTokenResponse>,
+}
+
+impl GenericBatchTokenResponse {
+    /// Create a new `BatchTokenResponse` from a byte slice.
+    ///
+    /// # Errors
+    /// Returns `SerializationError::InvalidData` if the byte slice is not valid.
+    pub fn try_from_bytes(mut bytes: &[u8]) -> Result<Self, SerializationError> {
+        Self::tls_deserialize(&mut bytes)
+            .map_err(|source| SerializationError::InvalidData { source })
+    }
+
+    /// Returns the number of successfully issued tokens (`Some` entries).
+    ///
+    /// Callers can compare this against `token_responses.len()` to
+    /// distinguish full success (all issued) from partial success
+    /// (some `None` entries).
+    #[must_use]
+    pub fn issued_count(&self) -> usize {
+        self.token_responses
+            .iter()
+            .filter(|r| r.token_response.is_some())
+            .count()
+    }
+}
+
+impl GenericBatchTokenResponse {
+    /// Issues tokens.
+    ///
+    /// # Errors
+    /// Returns an error if the response is invalid.
+    pub fn issue_tokens(
+        self,
+        token_states: &TokenStates,
+    ) -> Result<Vec<GenericToken>, IssueTokenError> {
+        let mut tokens = Vec::new();
+
+        for (token_response, token_state) in self
+            .token_responses
+            .into_iter()
+            .map(|r| r.token_response)
+            .zip(token_states.token_states.iter())
+        {
+            if let Some(response) = token_response {
+                let expected = match token_state {
+                    GenericTokenState::PrivateP384(_) => TokenType::PrivateP384,
+                    GenericTokenState::Public(_) => TokenType::Public,
+                    GenericTokenState::PrivateRistretto255(_) => TokenType::PrivateRistretto255,
+                };
+                let found = match &response {
+                    GenericTokenResponse::PrivateP384(_) => TokenType::PrivateP384,
+                    GenericTokenResponse::Public(_) => TokenType::Public,
+                    GenericTokenResponse::PrivateRistretto255(_) => TokenType::PrivateRistretto255,
+                };
+                if expected != found {
+                    return Err(IssueTokenError::UnexpectedTokenResponseType { expected, found });
+                }
+
+                let token = match (response, token_state) {
+                    (
+                        GenericTokenResponse::PrivateP384(response),
+                        GenericTokenState::PrivateP384(state),
+                    ) => response
+                        .issue_token(state)
+                        .map(GenericToken::from_private_p384)?,
+                    (GenericTokenResponse::Public(response), GenericTokenState::Public(state)) => {
+                        response.issue_token(state).map(GenericToken::from_public)?
+                    }
+                    (
+                        GenericTokenResponse::PrivateRistretto255(response),
+                        GenericTokenState::PrivateRistretto255(state),
+                    ) => response
+                        .issue_token(state)
+                        .map(GenericToken::from_private_ristretto)?,
+                    _ => {
+                        return Err(IssueTokenError::UnexpectedTokenResponseType {
+                            expected,
+                            found,
+                        });
+                    }
+                };
+                tokens.push(token);
+            }
+        }
+
+        Ok(tokens)
+    }
+}

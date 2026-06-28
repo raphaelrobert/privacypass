@@ -1,76 +1,98 @@
 //! Server-side implementation of Publicly Verifiable Token protocol.
 
 use async_trait::async_trait;
-use blind_rsa_signatures::{KeyPair, Options, PublicKey, Signature};
+use blind_rsa_signatures::reexports::rand::CryptoRng;
+use blind_rsa_signatures::{
+    Deterministic, KeyPair as GenericKeyPair, PSS, PublicKey as GenericPublicKey, Sha384, Signature,
+};
 use generic_array::ArrayLength;
-use rand::{rngs::OsRng, CryptoRng, RngCore};
-use thiserror::Error;
+use log::{debug, warn};
 
-use crate::{auth::authorize::Token, NonceStore, TokenInput, TokenType, TruncatedTokenKeyId};
+type KeyPair = GenericKeyPair<Sha384, PSS, Deterministic>;
+type PublicKey = GenericPublicKey<Sha384, PSS, Deterministic>;
 
-use super::{public_key_to_token_key_id, truncate_token_key_id, TokenRequest, TokenResponse, NK};
+use crate::{
+    COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput, TokenType, TruncatedTokenKeyId,
+    auth::authorize::Token,
+    common::errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
+};
 
-/// Errors that can occur when creating a keypair.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum CreateKeypairError {
-    #[error("Seed is too long")]
-    /// Error when the seed is too long.
-    SeedError,
-}
+use super::{NK, TokenRequest, TokenResponse, public_key_to_token_key_id, truncate_token_key_id};
 
-/// Errors that can occur when issuing the token response.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum IssueTokenResponseError {
-    #[error("Key ID not found")]
-    /// Error when the key ID is not found.
-    KeyIdNotFound,
-    #[error("Invalid TokenRequest")]
-    /// Error when the token request is invalid.
-    InvalidTokenRequest,
-    #[error("Invalid toke type")]
-    /// Error when the token type is invalid.
-    InvalidTokenType,
-}
-
-/// Errors that can occur when redeeming the token.
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum RedeemTokenError {
-    #[error("Key ID not found")]
-    /// Error when the key ID is not found.
-    KeyIdNotFound,
-    #[error("The token has already been redeemed")]
-    /// Error when the token has already been redeemed.
-    DoubleSpending,
-    #[error("The token is invalid")]
-    /// Error when the token is invalid.
-    InvalidToken,
-}
-
-/// Minimal trait for a key store to store key material on the server-side. Note
-/// that the store requires inner mutability.
+/// Key store for RSA issuer keys (public tokens).
+///
+/// The store requires interior mutability.
+///
+/// # Truncated key ID collision space
+///
+/// RFC 9578 mandates a single-byte `truncated_token_key_id` (256 possible
+/// values). By the birthday bound, collision probability exceeds 50% at
+/// ~20 active keys. Key creation retries up to
+/// [`COLLISION_AVOIDANCE_ATTEMPTS`](crate::COLLISION_AVOIDANCE_ATTEMPTS)
+/// times, but the space is inherently small. Use [`remove`](Self::remove)
+/// to reclaim slots when rotating keys.
+///
+/// # Zeroization
+///
+/// RSA `KeyPair` does **not** implement `Zeroize` or `ZeroizeOnDrop`
+/// (upstream `blind-rsa-signatures` gap). Implementors storing private keys
+/// at rest should serialize into a `Zeroizing<Vec<u8>>` wrapper or
+/// otherwise ensure that private key bytes are zeroized on drop.
 #[async_trait]
-
 pub trait IssuerKeyStore: Send + Sync {
-    /// Inserts a keypair with a given `truncated_token_key_id` into the key store.
-    async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: KeyPair);
-    /// Returns a keypair with a given `truncated_token_key_id` from the key store.
+    /// Inserts a keypair with a given `truncated_token_key_id` into the key
+    /// store, only if it does not collide with an existing
+    /// `truncated_token_key_id`.
+    ///
+    /// Returns `true` if the key was inserted, `false` if a collision occurred.
+    async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: KeyPair) -> bool;
+    /// Returns a keypair with a given `truncated_token_key_id` from the key
+    /// store.
     async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<KeyPair>;
+    /// Removes a keypair by its `truncated_token_key_id`, reclaiming the
+    /// slot for future key creation.
+    ///
+    /// Returns `true` if a key was removed, `false` if the ID was not found.
+    async fn remove(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> bool;
 }
 
-/// Minimal trait for a key store to store key material on the server-side. Note
-/// that the store requires inner mutability.
+/// Key store for public keys used by origin servers to verify tokens.
+///
+/// The store requires interior mutability.
+///
+/// # Truncated key ID collision space
+///
+/// Multiple public keys may map to the same `truncated_token_key_id`.
+/// [`get`](Self::get) returns all matching keys; the origin server tries
+/// each during verification.
+///
+/// # Zeroization
+///
+/// `PublicKey` does not implement `Zeroize`, but public keys are not secret
+/// material, so no zeroization is required.
 #[async_trait]
 pub trait OriginKeyStore {
-    /// Inserts a keypair with a given `truncated_token_key_id` into the key store.
+    /// Inserts a public key with a given `truncated_token_key_id` into the
+    /// key store.
     async fn insert(&self, truncated_token_key_id: TruncatedTokenKeyId, server: PublicKey);
-    /// Returns a keypair with a given `truncated_token_key_id` from the key store.
-    async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Option<PublicKey>;
+    /// Returns all public keys with a given `truncated_token_key_id` from
+    /// the key store.
+    async fn get(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> Vec<PublicKey>;
+    /// Removes all public keys for a given `truncated_token_key_id`.
+    ///
+    /// Returns `true` if any keys were removed, `false` if the ID was not
+    /// found.
+    async fn remove(&self, truncated_token_key_id: &TruncatedTokenKeyId) -> bool;
 }
 
-/// Serializes a keypair into a DER-encoded PKCS#8 document.
-#[must_use]
-pub fn serialize_public_key(public_key: &PublicKey) -> Vec<u8> {
-    public_key.to_spki(Some(&Options::default())).unwrap()
+/// Serializes a public key into a DER-encoded SPKI document.
+///
+/// # Errors
+/// Returns an error if the public key cannot be serialized.
+pub fn serialize_public_key(
+    public_key: &PublicKey,
+) -> Result<Vec<u8>, blind_rsa_signatures::Error> {
+    public_key.to_spki()
 }
 
 const KEYSIZE_IN_BITS: usize = 2048;
@@ -92,19 +114,31 @@ impl IssuerServer {
     ///
     /// # Errors
     /// Returns an error if creating the keypair fails.
-    pub async fn create_keypair<IKS: IssuerKeyStore, R: RngCore + CryptoRng>(
+    pub async fn create_keypair<IKS: IssuerKeyStore, R: CryptoRng>(
         &self,
         rng: &mut R,
         key_store: &IKS,
-    ) -> Result<KeyPair, CreateKeypairError> {
-        let key_pair =
-            KeyPair::generate(rng, KEYSIZE_IN_BITS).map_err(|_| CreateKeypairError::SeedError)?;
-        let truncated_token_key_id =
-            truncate_token_key_id(&public_key_to_token_key_id(&key_pair.pk));
-        key_store
-            .insert(truncated_token_key_id, key_pair.clone())
-            .await;
-        Ok(key_pair)
+    ) -> Result<PublicKey, CreateKeypairError> {
+        for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
+            let key_pair = KeyPair::generate(rng, KEYSIZE_IN_BITS)
+                .inspect_err(|e| debug!(error:% = e; "Failed to generate RSA keypair"))
+                .map_err(|source| CreateKeypairError::KeyGenerationFailed { source })?;
+            let truncated_token_key_id = truncate_token_key_id(
+                &public_key_to_token_key_id(&key_pair.pk)
+                    .map_err(|source| CreateKeypairError::KeySerializationFailed { source })?,
+            );
+
+            if key_store.get(&truncated_token_key_id).await.is_some() {
+                continue;
+            }
+
+            let public_key = key_pair.pk.clone();
+
+            if key_store.insert(truncated_token_key_id, key_pair).await {
+                return Ok(public_key);
+            }
+        }
+        Err(CreateKeypairError::CollisionExhausted)
     }
 
     /// Issues a new token response.
@@ -116,9 +150,11 @@ impl IssuerServer {
         key_store: &IKS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
-        let rng = &mut OsRng;
-        if token_request.token_type != TokenType::PublicToken {
-            return Err(IssueTokenResponseError::InvalidTokenType);
+        if token_request.token_type != TokenType::Public {
+            return Err(IssueTokenResponseError::InvalidTokenType {
+                expected: TokenType::Public,
+                found: token_request.token_type,
+            });
         }
         let key_pair = key_store
             .get(&token_request.truncated_token_key_id)
@@ -126,11 +162,11 @@ impl IssuerServer {
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
 
         // blind_sig = rsabssa_blind_sign(skI, TokenRequest.blinded_msg)
-        let options = Options::default();
         let blind_signature = key_pair
             .sk
-            .blind_sign(rng, token_request.blinded_msg, &options)
-            .map_err(|_| IssueTokenResponseError::InvalidTokenRequest)?;
+            .blind_sign(token_request.blinded_msg)
+            .inspect_err(|e| warn!(error:% = e; "Failed to blind_sign token"))
+            .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?;
 
         debug_assert!(blind_signature.len() == NK);
         let mut blind_sig = [0u8; NK];
@@ -140,11 +176,21 @@ impl IssuerServer {
     }
 
     /// Sets the given keypair.
+    ///
+    /// # Errors
+    /// Returns an error if the public key cannot be serialized.
     #[cfg(feature = "kat")]
-    pub async fn set_keypair<IKS: IssuerKeyStore>(&self, key_store: &IKS, key_pair: KeyPair) {
-        let truncated_token_key_id =
-            truncate_token_key_id(&public_key_to_token_key_id(&key_pair.pk));
+    pub async fn set_keypair<IKS: IssuerKeyStore>(
+        &self,
+        key_store: &IKS,
+        key_pair: KeyPair,
+    ) -> Result<(), CreateKeypairError> {
+        let truncated_token_key_id = truncate_token_key_id(
+            &public_key_to_token_key_id(&key_pair.pk)
+                .map_err(|source| CreateKeypairError::KeySerializationFailed { source })?,
+        );
         key_store.insert(truncated_token_key_id, key_pair).await;
+        Ok(())
     }
 }
 
@@ -163,40 +209,71 @@ impl OriginServer {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength<u8>>(
+    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength>(
         &self,
         key_store: &OKS,
         nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
-        if token.token_type() != TokenType::PublicToken {
-            return Err(RedeemTokenError::InvalidToken);
+        let token_type = token.token_type();
+        if token_type != TokenType::Public {
+            return Err(RedeemTokenError::TokenTypeMismatch {
+                expected: TokenType::Public,
+                found: token_type,
+            });
         }
-        if token.authenticator().len() != KEYSIZE_IN_BYTES {
-            return Err(RedeemTokenError::InvalidToken);
+        let authenticator_len = token.authenticator().len();
+        if authenticator_len != KEYSIZE_IN_BYTES {
+            return Err(RedeemTokenError::InvalidAuthenticatorLength {
+                expected: KEYSIZE_IN_BYTES,
+                found: authenticator_len,
+            });
         }
-        if nonce_store.exists(&token.nonce()).await {
-            return Err(RedeemTokenError::DoubleSpending);
-        }
+        let nonce = token.nonce();
         let token_input = TokenInput::new(
-            token.token_type(),
-            token.nonce(),
+            token_type,
+            nonce,
             *token.challenge_digest(),
             *token.token_key_id(),
         );
 
-        let public_key = key_store
-            .get(&truncate_token_key_id(token.token_key_id()))
-            .await
-            .ok_or(RedeemTokenError::KeyIdNotFound)?;
+        if !nonce_store.reserve(&nonce).await {
+            return Err(RedeemTokenError::DoubleSpending);
+        }
 
-        let options = Options::default();
-        let signature = Signature(token.authenticator().to_vec());
+        let crypto_result = async {
+            let truncated_token_key_id = truncate_token_key_id(token.token_key_id());
+            let public_keys = key_store.get(&truncated_token_key_id).await;
+            if public_keys.is_empty() {
+                return Err(RedeemTokenError::KeyIdNotFound);
+            }
 
-        signature
-            .verify(&public_key, None, token_input.serialize(), &options)
-            .map_err(|_| RedeemTokenError::InvalidToken)?;
-        nonce_store.insert(token.nonce()).await;
-        Ok(())
+            let signature = Signature(token.authenticator().to_vec());
+            let token_input_bytes = token_input.serialize();
+
+            let verified = public_keys.iter().any(|public_key| {
+                public_key
+                    .verify(&signature, None, &token_input_bytes)
+                    .inspect_err(|e| warn!(error:% = e; "Verify failed"))
+                    .is_ok()
+            });
+
+            if !verified {
+                return Err(RedeemTokenError::InvalidSignature { token_type });
+            }
+            Ok(())
+        }
+        .await;
+
+        match crypto_result {
+            Ok(()) => {
+                nonce_store.commit(&nonce).await;
+                Ok(())
+            }
+            Err(e) => {
+                nonce_store.release(&nonce).await;
+                Err(e)
+            }
+        }
     }
 }
