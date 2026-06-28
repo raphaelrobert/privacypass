@@ -20,7 +20,7 @@ categories = ["cryptography", "privacy"]
 async-trait = "0.1.89"
 base64 = "0.22"
 generic-array = "1.3.5"
-rand = "0.8"
+rand = { version = "0.10", features = ["sys_rng"] }
 log = { version = "0.4", features = ["kv"] }
 serde = "1"
 sha2 = "0.10.9"
@@ -28,7 +28,7 @@ subtle = "2"
 thiserror = "2"
 tls_codec = { version = "0.4.2" }
 tls_codec_derive = "0.4.2"
-voprf = { version = "0.6.0-pre.0", features = ["serde"] }
+voprf = { package = "voprf-ng", version = "=0.6.0-pre.3", features = ["serde"] }
 p384 = { version = "0.13.0", default-features = false, features = [
   "hash2curve",
   "voprf",

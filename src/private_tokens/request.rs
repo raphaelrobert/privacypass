@@ -1,6 +1,6 @@
 //! Request implementation of the Privately Verifiable Token protocol.
 
-use rand::{Rng, rngs::OsRng};
+use rand::{TryRng, rngs::SysRng};
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
 use voprf::{Group, Result, VoprfClient};
@@ -60,7 +60,10 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
         public_key: PublicKey<CS>,
         challenge: &TokenChallenge,
     ) -> Result<(TokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
-        let nonce: Nonce = OsRng.r#gen();
+        let mut nonce = Nonce::default();
+        SysRng
+            .try_fill_bytes(&mut nonce)
+            .map_err(|source| IssueTokenRequestError::RngFailed { source })?;
 
         Self::issue_token_request_internal(public_key, challenge, nonce, None)
     }
@@ -85,7 +88,7 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
 
         let token_input = TokenInput::new(CS::token_type(), nonce, challenge_digest, token_key_id);
 
-        let blinded_element = VoprfClient::<CS>::blind(&token_input.serialize(), &mut OsRng)
+        let blinded_element = VoprfClient::<CS>::blind(&token_input.serialize(), &mut SysRng)
             .map_err(|source| IssueTokenRequestError::BlindingError {
                 source: source.into(),
             })?;

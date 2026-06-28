@@ -2,7 +2,7 @@ use std::{fs::File, io::Write};
 
 use generic_array::GenericArray;
 use p384::NistP384;
-use rand::{RngCore, rngs::OsRng};
+use rand::{Rng, rand_core::UnwrapErr, rngs::SysRng};
 use serde::{Deserialize, Serialize};
 
 use tls_codec::{Deserialize as _, Serialize as TlsSerializeTrait};
@@ -200,7 +200,7 @@ async fn generate_kat_amortized_token<CS: PrivateCipherSuite>() -> AmortizedToke
 
     // Server: Create a new keypair
     let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
-    OsRng.fill_bytes(&mut seed);
+    UnwrapErr(SysRng).fill_bytes(&mut seed);
 
     let info = b"PrivacyPass";
 
@@ -215,9 +215,9 @@ async fn generate_kat_amortized_token<CS: PrivateCipherSuite>() -> AmortizedToke
 
     let pk_s = serialize_public_key::<CS>(public_key);
 
-    let redemption_context = if OsRng.next_u32().is_multiple_of(2) {
+    let redemption_context = if UnwrapErr(SysRng).next_u32().is_multiple_of(2) {
         let mut bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut bytes);
+        UnwrapErr(SysRng).fill_bytes(&mut bytes);
         Some(bytes)
     } else {
         None
@@ -239,7 +239,7 @@ async fn generate_kat_amortized_token<CS: PrivateCipherSuite>() -> AmortizedToke
 
     for _ in 0..nr {
         let mut nonce = [0u8; 32];
-        OsRng.fill_bytes(&mut nonce);
+        UnwrapErr(SysRng).fill_bytes(&mut nonce);
         kat_nonces.push(nonce);
     }
 
@@ -249,7 +249,7 @@ async fn generate_kat_amortized_token<CS: PrivateCipherSuite>() -> AmortizedToke
         .collect();
 
     let kat_blinds = (0..nr)
-        .map(|_| <CS::Group as Group>::random_scalar(&mut OsRng))
+        .map(|_| <CS::Group as Group>::random_scalar(&mut SysRng).unwrap())
         .collect::<Vec<_>>();
 
     let blinds = kat_blinds
