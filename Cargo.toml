@@ -8,7 +8,7 @@ documentation = "https://docs.rs/privacypass"
 repository = "https://github.com/raphaelrobert/privacypass"
 readme = "README.md"
 keywords = ["privacypass", "privacy", "pass", "ietf", "rfc9578"]
-categories = ["cryptography", "privacy"]
+categories = ["cryptography", "authentication", "network-programming"]
 
 [dependencies]
 async-trait = "0.1.89"
