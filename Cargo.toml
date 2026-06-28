@@ -2,18 +2,12 @@
 name = "privacypass"
 version = "0.2.0-pre.1"
 edition = "2024"
-description = "Implementation of Privacy Pass"
+description = "Implementation of Privacy Pass (RFC 9578)"
 license = "MIT"
 documentation = "https://docs.rs/privacypass"
 repository = "https://github.com/raphaelrobert/privacypass"
 readme = "README.md"
-keywords = [
-  "privacy pass",
-  "privacypass",
-  "privacy",
-  "pass",
-  "ietf privacypass",
-]
+keywords = ["privacypass", "privacy", "pass", "ietf", "rfc9578"]
 categories = ["cryptography", "privacy"]
 
 [dependencies]
