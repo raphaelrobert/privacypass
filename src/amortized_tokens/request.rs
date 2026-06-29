@@ -1,6 +1,6 @@
 //! Request implementation of the Amortized Tokens protocol.
 
-use rand::{Rng, rngs::OsRng};
+use rand::{TryRng, rngs::SysRng};
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use typenum::Unsigned;
@@ -85,7 +85,10 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
         let mut nonces = Vec::with_capacity(nr as usize);
 
         for _ in 0..nr {
-            let nonce: Nonce = OsRng.r#gen();
+            let mut nonce = Nonce::default();
+            SysRng
+                .try_fill_bytes(&mut nonce)
+                .map_err(|source| IssueTokenRequestError::RngFailed { source })?;
             nonces.push(nonce);
         }
 
@@ -125,7 +128,7 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
                 token_key_id,
             );
 
-            let blind = VoprfClient::<CS>::blind(&token_input.serialize(), &mut OsRng).map_err(
+            let blind = VoprfClient::<CS>::blind(&token_input.serialize(), &mut SysRng).map_err(
                 |source| IssueTokenRequestError::BlindingError {
                     source: source.into(),
                 },

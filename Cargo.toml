@@ -1,26 +1,20 @@
 [package]
 name = "privacypass"
-version = "0.2.0-pre.0"
+version = "0.2.0-pre.1"
 edition = "2024"
-description = "Implementation of Privacy Pass"
+description = "Implementation of Privacy Pass (RFC 9578)"
 license = "MIT"
 documentation = "https://docs.rs/privacypass"
 repository = "https://github.com/raphaelrobert/privacypass"
 readme = "README.md"
-keywords = [
-  "privacy pass",
-  "privacypass",
-  "privacy",
-  "pass",
-  "ietf privacypass",
-]
-categories = ["cryptography", "privacy"]
+keywords = ["privacypass", "privacy", "pass", "ietf", "rfc9578"]
+categories = ["cryptography", "authentication", "network-programming"]
 
 [dependencies]
 async-trait = "0.1.89"
 base64 = "0.22"
 generic-array = "1.3.5"
-rand = "0.8"
+rand = { version = "0.10", features = ["sys_rng"] }
 log = { version = "0.4", features = ["kv"] }
 serde = "1"
 sha2 = "0.10.9"
@@ -28,7 +22,7 @@ subtle = "2"
 thiserror = "2"
 tls_codec = { version = "0.4.2" }
 tls_codec_derive = "0.4.2"
-voprf = { version = "=0.6.0-pre.0", features = ["serde"] } # version pinned to avoid incompatibility with rand_core in 0.6.0-pre.1
+voprf = { package = "voprf-ng", version = "=0.6.0-pre.3", features = ["serde"] }
 p384 = { version = "0.13.0", default-features = false, features = [
   "hash2curve",
   "voprf",

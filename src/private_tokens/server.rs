@@ -2,7 +2,7 @@
 
 use generic_array::{ArrayLength, GenericArray};
 use log::{debug, warn};
-use rand::{RngCore, rngs::OsRng};
+use rand::{TryRng, rngs::SysRng};
 use sha2::digest::OutputSizeUser;
 use subtle::ConstantTimeEq;
 use typenum::Unsigned;
@@ -52,7 +52,9 @@ impl<CS: PrivateCipherSuite> Server<CS> {
     ) -> Result<PublicKey<CS>, CreateKeypairError> {
         for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
             let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
-            OsRng.fill_bytes(&mut seed);
+            SysRng
+                .try_fill_bytes(&mut seed)
+                .map_err(|source| CreateKeypairError::RngFailed { source })?;
             let server = Self::server_from_seed(&seed, b"PrivacyPass")?;
             let public_key = server.get_public_key();
             let truncated_token_key_id =
@@ -108,7 +110,10 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         let blinded_element = BlindedElement::<CS>::deserialize(&token_request.blinded_msg)
             .inspect_err(|e| warn!(error:% = e; "Failed to deserialize blinded element"))
             .map_err(|source| IssueTokenResponseError::InvalidBlindedMessage { source })?;
-        let evaluated_result = server.blind_evaluate(&mut OsRng, &blinded_element);
+        let evaluated_result = server
+            .blind_evaluate(&mut SysRng, &blinded_element)
+            .inspect_err(|e| warn!(error:% = e; "Failed to evaluate blinded element"))
+            .map_err(|source| IssueTokenResponseError::BlindEvaluationFailed { source })?;
 
         Ok(TokenResponse {
             _marker: std::marker::PhantomData,
