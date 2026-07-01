@@ -6,6 +6,8 @@ use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size, TlsByteVecU16, TlsVecU16};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
+use crate::common::errors::CreateExtensionsError;
+
 /// Type of extension.
 ///
 /// Extension types are to be defined by the client, not by this crate
@@ -31,11 +33,17 @@ impl Extension {
     /// Create a new Extension.
     ///
     /// `data` should be byte data whose semantics are determined by `ext_type`.
-    pub fn new(ext_type: ExtensionType, data: Vec<u8>) -> Extension {
-        Extension {
+    ///
+    /// Returns an error if data is more than 65535 bytes long
+    pub fn new(ext_type: ExtensionType, data: Vec<u8>) -> Result<Extension, CreateExtensionsError> {
+        if data.len() > 65535 {
+            return Err(CreateExtensionsError::InvalidSize);
+        }
+
+        Ok(Extension {
             extension_type: ext_type,
             extension_data: TlsByteVecU16::new(data),
-        }
+        })
     }
 }
 
@@ -49,10 +57,31 @@ pub struct Extensions {
 
 impl Extensions {
     /// Create a new `Extensions`.
-    pub fn new(extensions: Vec<Extension>) -> Extensions {
-        Extensions {
-            extensions: TlsVecU16::new(extensions),
+    ///
+    /// The given extensions MUST be sorted and must not contain [`ExtensionType::RESERVED`].
+    /// Extension types MAY be repeated.
+    ///
+    /// This function will error if the above conditions are not met
+    pub fn new(extensions: Vec<Extension>) -> Result<Extensions, CreateExtensionsError> {
+        if !extensions.is_sorted_by(|a, b| a.extension_type.0 <= b.extension_type.0) {
+            return Err(CreateExtensionsError::ExtensionsUnsorted);
         }
+
+        #[cfg(not(any(test, feature = "test-utils")))]
+        if extensions
+            .iter()
+            .any(|x| x.extension_type.0 == ExtensionType::RESERVED.0)
+        {
+            return Err(CreateExtensionsError::InvalidType);
+        }
+
+        let v = TlsVecU16::new(extensions);
+        // -2 for the vec's length prefix
+        if v.tls_serialized_len() - 2 > 65535 {
+            return Err(CreateExtensionsError::InvalidSize);
+        }
+
+        Ok(Extensions { extensions: v })
     }
 }
 

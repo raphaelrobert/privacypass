@@ -251,6 +251,7 @@ impl IssuerServer {
     /// such validation is required (for example, validating that the provided extension types are
     /// allowed by this issuer), issuers are expected to perform this validation before calling
     /// this method.
+    /// Validation can be done by inspecting the extensions from the token request.
     ///
     /// # Errors
     /// Returns an error if the token request is invalid, or if token_type == PublicMetadata and the
