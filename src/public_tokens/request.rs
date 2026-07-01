@@ -55,6 +55,16 @@ pub struct TokenRequest {
     pub(crate) extensions: Option<Extensions>,
 }
 
+impl TokenRequest {
+    /// Get the extensions associated with this request, if any.
+    ///
+    /// This is useful for validating the extensions before signing, e.g. for checking an
+    /// expiration date etc.
+    pub fn extensions(&self) -> &Option<Extensions> {
+        &self.extensions
+    }
+}
+
 // We have to implement these manually in order to avoid having the Option<T> serialization byte
 impl Size for TokenRequest {
     fn tls_serialized_len(&self) -> usize {
@@ -113,6 +123,13 @@ impl TokenRequest {
         public_key: PublicKey,
         challenge: &TokenChallenge,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+        if challenge.token_type != TokenType::Public {
+            return Err(IssueTokenRequestError::InvalidTokenType {
+                expected: TokenType::Public,
+                found: challenge.token_type,
+            });
+        }
+
         Self::new_maybe_extensions(rng, public_key, challenge, None)
     }
 
@@ -126,6 +143,13 @@ impl TokenRequest {
         challenge: &TokenChallenge,
         extensions: Extensions,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
+        if challenge.token_type != TokenType::PublicMetadata {
+            return Err(IssueTokenRequestError::InvalidTokenType {
+                expected: TokenType::PublicMetadata,
+                found: challenge.token_type,
+            });
+        }
+
         Self::new_maybe_extensions(rng, public_key, challenge, Some(extensions))
     }
 

@@ -9,13 +9,13 @@ with an async API.
 
 ## Protocols
 
-| Token type                               | Spec                                                                                                                                                         | Primitive           | Cipher suites                    |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- | -------------------------------- |
-| Privately Verifiable                     | [RFC 9578 &sect;5](https://www.rfc-editor.org/rfc/rfc9578.html#section-5)                                                                                    | VOPRF               | P384-SHA384, Ristretto255-SHA512 |
-| Publicly Verifiable                      | [RFC 9578 &sect;6](https://www.rfc-editor.org/rfc/rfc9578.html#section-6)                                                                                    | Blind RSA           | RSA-2048, SHA-384, PSS           |
-| Publicly Verifiable with Public Metadata | [draft-ietf-privacypass-public-metadata-issuance &sect;6](https://www.ietf.org/archive/id/draft-ietf-privacypass-public-metadata-issuance-03.html#section-6) | Partially-Blind RSA | RSA-2048, SHA-384, PSS           |
-| Amortized (Batch VOPRF)                  | [draft-ietf-privacypass-batched-tokens &sect;5](https://www.ietf.org/archive/id/draft-ietf-privacypass-batched-tokens-04.html#section-5)                     | VOPRF               | P384-SHA384, Ristretto255-SHA512 |
-| Generic Batch                            | [draft-ietf-privacypass-batched-tokens &sect;6](https://www.ietf.org/archive/id/draft-ietf-privacypass-batched-tokens-04.html#section-6)                     | Mixed               | All of the above                 |
+| Token type                               | Spec                                                                                                                                                         | Primitive           | Cipher suites                             |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- | ----------------------------------------- |
+| Privately Verifiable                     | [RFC 9578 &sect;5](https://www.rfc-editor.org/rfc/rfc9578.html#section-5)                                                                                    | VOPRF               | P384-SHA384, Ristretto255-SHA512          |
+| Publicly Verifiable                      | [RFC 9578 &sect;6](https://www.rfc-editor.org/rfc/rfc9578.html#section-6)                                                                                    | Blind RSA           | RSA-2048, SHA-384, PSS                    |
+| Publicly Verifiable with Public Metadata | [draft-ietf-privacypass-public-metadata-issuance &sect;6](https://www.ietf.org/archive/id/draft-ietf-privacypass-public-metadata-issuance-03.html#section-6) | Partially-Blind RSA | RSA-2048, SHA-384, PSS                    |
+| Amortized (Batch VOPRF)                  | [draft-ietf-privacypass-batched-tokens &sect;5](https://www.ietf.org/archive/id/draft-ietf-privacypass-batched-tokens-04.html#section-5)                     | VOPRF               | P384-SHA384, Ristretto255-SHA512          |
+| Generic Batch                            | [draft-ietf-privacypass-batched-tokens &sect;6](https://www.ietf.org/archive/id/draft-ietf-privacypass-batched-tokens-04.html#section-6)                     | Mixed               | All of the above (except public metadata) |
 
 The `auth` module provides construction and parsing of the HTTP
 `WWW-Authenticate` / `Authorization` headers used in the Privacy Pass

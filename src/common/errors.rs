@@ -89,6 +89,14 @@ pub enum IssueTokenRequestError {
         #[source]
         source: TlsCodecError,
     },
+    #[error("Invalid token type: expected {expected:?}, found {found:?}")]
+    /// Error when the token type does not match the expected type.
+    InvalidTokenType {
+        /// Expected token type for the operation.
+        expected: TokenType,
+        /// Actual token type found in the request.
+        found: TokenType,
+    },
 }
 
 /// Source errors for blinding failures.
@@ -274,4 +282,18 @@ pub enum RedeemTokenError {
         #[source]
         source: TlsCodecError,
     },
+}
+
+/// Error when creating extensions
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum CreateExtensionsError {
+    /// Extension size is invalid
+    #[error("Extension size is invalid")]
+    InvalidSize,
+    /// Extension type is invalid
+    #[error("Extension type is invalid")]
+    InvalidType,
+    /// Extensions were not sorted
+    #[error("Extensions were not sorted")]
+    ExtensionsUnsorted,
 }

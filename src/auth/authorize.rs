@@ -362,12 +362,12 @@ fn parse_header_value<Nk: ArrayLength>(
                     let decoded = URL_SAFE
                         .decode(x)
                         .map_err(|_| ParseError::InvalidExtensions)?;
-                    Extensions::tls_deserialize(&mut decoded.as_slice())
+                    Extensions::tls_deserialize_exact(&mut decoded.as_slice())
                         .map_err(|_| ParseError::InvalidExtensions)
                 })
                 .transpose()?;
 
-            let token = Token::tls_deserialize(
+            let token = Token::tls_deserialize_exact(
                 &mut URL_SAFE
                     .decode(token_value)
                     .map_err(|_| ParseError::InvalidToken)?
@@ -432,8 +432,8 @@ mod tests {
             *GenericArray::from_slice(&authenticator),
         );
 
-        let extension = Extension::new(ExtensionType(5), b"hello world".to_vec());
-        let extensions = Extensions::new(vec![extension]);
+        let extension = Extension::new(ExtensionType(5), b"hello world".to_vec()).unwrap();
+        let extensions = Extensions::new(vec![extension]).unwrap();
         let (header_name, header_value) =
             build_authorization_header_ext(&token, &extensions).unwrap();
 
@@ -526,8 +526,8 @@ mod tests {
         ];
 
         // all vectors use extension(0x0000, uint8[01, 02, 03])
-        let extension = Extension::new(ExtensionType(0), vec![1, 2, 3]);
-        let extensions = Extensions::new(vec![extension]);
+        let extension = Extension::new(ExtensionType(0), vec![1, 2, 3]).unwrap();
+        let extensions = Extensions::new(vec![extension]).unwrap();
 
         for vector in &vectors {
             let token = Token::<U32>::new(
