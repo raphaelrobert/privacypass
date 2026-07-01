@@ -82,6 +82,21 @@ pub enum IssueTokenRequestError {
         #[source]
         source: SysError,
     },
+    #[error("Extension serialization error")]
+    /// Error when serializing Extensions fails
+    ExtensionSerializationError {
+        /// Underlying TLS error that triggered the failure
+        #[source]
+        source: TlsCodecError,
+    },
+    #[error("Invalid token type: expected {expected:?}, found {found:?}")]
+    /// Error when the token type does not match the expected type.
+    InvalidTokenType {
+        /// Expected token type for the operation.
+        expected: TokenType,
+        /// Actual token type found in the request.
+        found: TokenType,
+    },
 }
 
 /// Source errors for blinding failures.
@@ -137,6 +152,13 @@ pub enum IssueTokenResponseError {
         max: usize,
         /// Actual batch size in the request.
         size: usize,
+    },
+    #[error("Extension serialization error")]
+    /// Error when serializing Extensions fails
+    ExtensionSerializationError {
+        /// Underlying TLS error that triggered the failure
+        #[source]
+        source: TlsCodecError,
     },
 }
 
@@ -196,6 +218,15 @@ pub enum IssueTokenError {
         #[source]
         source: BlindRsaError,
     },
+    #[error("Invalid token type: {token_type:?}")]
+    /// Error when the token type is not supported (e.g. using private token in public issue_token)
+    InvalidTokenType {
+        /// Token type found in the token.
+        token_type: TokenType,
+    },
+    #[error("Expected to have a PBRSA state but there was none")]
+    /// Error when there is no PBRSA state when using `TokenType::PublicMetadata`
+    NoPbrsaState,
 }
 
 /// Errors that can occur when redeeming the token.
@@ -244,4 +275,25 @@ pub enum RedeemTokenError {
         /// Token type that was being redeemed.
         token_type: TokenType,
     },
+    #[error("Extension serialization error")]
+    /// Error when serializing Extensions fails
+    ExtensionSerializationError {
+        /// Underlying TLS error that triggered the failure
+        #[source]
+        source: TlsCodecError,
+    },
+}
+
+/// Error when creating extensions
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum CreateExtensionsError {
+    /// Extension size is invalid
+    #[error("Extension size is invalid")]
+    InvalidSize,
+    /// Extension type is invalid
+    #[error("Extension type is invalid")]
+    InvalidType,
+    /// Extensions were not sorted
+    #[error("Extensions were not sorted")]
+    ExtensionsUnsorted,
 }

@@ -34,7 +34,7 @@ pub type RedemptionContext = [u8; 32];
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, TlsSize, TlsDeserialize, TlsSerialize)]
 pub struct TokenChallenge {
-    token_type: TokenType,
+    pub(crate) token_type: TokenType,
     issuer_name: TlsByteVecU16,
     redemption_context: TlsByteVecU8,
     origin_info: TlsByteVecU16,

@@ -2,9 +2,11 @@
 
 use nom::{
     IResult, Parser,
-    bytes::complete::{is_a, take_while1},
+    branch::alt,
+    bytes::complete::{is_a, tag, take_while1},
     combinator::verify,
     multi::many0,
+    sequence::delimited,
 };
 use std::str::FromStr;
 
@@ -51,4 +53,12 @@ pub(crate) fn surrounded_by_alphanumeric(input: &str) -> bool {
     }
 
     true
+}
+
+pub(crate) fn unquote(input: &str) -> IResult<&str, &str> {
+    delimited(tag("\""), base64_char, tag("\"")).parse(input)
+}
+
+pub(crate) fn maybe_unquote(input: &str) -> IResult<&str, &str> {
+    alt((unquote, base64_char)).parse(input)
 }
