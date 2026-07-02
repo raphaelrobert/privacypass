@@ -2,7 +2,11 @@
 //!
 //! Specified in `draft-ietf-privacypass-auth-scheme-extensions-03`.
 
-use std::io::{Read, Write};
+use std::{
+    collections::HashSet,
+    io::{Read, Write},
+};
+use thiserror::Error;
 use tls_codec::{Deserialize, Serialize, Size, TlsByteVecU16, TlsVecU16};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -11,7 +15,7 @@ use crate::common::errors::CreateExtensionsError;
 /// Type of extension.
 ///
 /// Extension types are to be defined by the client, not by this crate
-#[derive(Clone, Copy, Debug, PartialEq, Eq, TlsSize, TlsSerialize, TlsDeserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, TlsSize, TlsSerialize, TlsDeserialize, Hash)]
 pub struct ExtensionType(pub u16);
 
 impl ExtensionType {
@@ -132,6 +136,16 @@ impl ExtensionEntry {
             extension_type,
         }
     }
+
+    /// Return whether this extension is required
+    pub fn is_required(&self) -> bool {
+        self.is_required
+    }
+
+    /// Return this entry's extension type
+    pub fn extension_type(&self) -> ExtensionType {
+        self.extension_type
+    }
 }
 
 /// A set of extension entries.
@@ -140,11 +154,49 @@ pub struct ExtensionSet {
     extension_types: TlsVecU16<ExtensionEntry>,
 }
 
+/// Error that occurs during extension negotiation
+#[derive(Error, Debug)]
+pub enum NegotiationError {
+    /// A required extension was missing
+    #[error("Missing required extension type: {extension_type:?}")]
+    MissingExtensionType {
+        /// Extension type that was required
+        extension_type: ExtensionType,
+    },
+}
+
 impl ExtensionSet {
     /// Creates a new `ExtensionSet`
     pub fn new(extension_types: Vec<ExtensionEntry>) -> ExtensionSet {
         ExtensionSet {
             extension_types: TlsVecU16::new(extension_types),
         }
+    }
+
+    /// Validate that the required extension types in this extension set are present in the given
+    /// extensions.
+    ///
+    /// This validation permits the behavior described in
+    /// `draft-ietf-privacypass-auth-scheme-extensions-03` &sect; 4, where "a client should expect to
+    /// be rejected if not providing required extensions".
+    ///
+    /// Errors if any required extension type is missing
+    pub fn validate(&self, extensions: &Extensions) -> Result<(), NegotiationError> {
+        let required: HashSet<ExtensionType> = self
+            .extension_types
+            .iter()
+            .filter(|e| e.is_required)
+            .map(|e| e.extension_type)
+            .collect();
+
+        for e in extensions.extensions.iter() {
+            if !required.contains(&e.extension_type) {
+                return Err(NegotiationError::MissingExtensionType {
+                    extension_type: e.extension_type,
+                });
+            }
+        }
+
+        Ok(())
     }
 }
