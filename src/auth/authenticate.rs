@@ -268,6 +268,7 @@ pub fn parse_www_authenticate_header(value: &HeaderValue) -> Result<Vec<Challeng
 ///
 /// # Errors
 /// Returns an error if the `WWW-Authenticate` header cannot be parsed.
+#[allow(clippy::type_complexity)]
 pub fn parse_www_authenticate_header_ext(
     value: &HeaderValue,
 ) -> Result<Vec<(Challenge, Option<ExtensionSet>, Option<Extensions>)>, ParseError> {
@@ -412,6 +413,7 @@ fn parse_private_token(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn parse_private_tokens(
     input: &str,
     strict_quotes: bool,

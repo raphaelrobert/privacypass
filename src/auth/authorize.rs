@@ -362,13 +362,13 @@ fn parse_header_value<Nk: ArrayLength>(
                     let decoded = URL_SAFE
                         .decode(x)
                         .map_err(|_| ParseError::InvalidExtensions)?;
-                    Extensions::tls_deserialize_exact(&mut decoded.as_slice())
+                    Extensions::tls_deserialize_exact(decoded.as_slice())
                         .map_err(|_| ParseError::InvalidExtensions)
                 })
                 .transpose()?;
 
             let token = Token::tls_deserialize_exact(
-                &mut URL_SAFE
+                URL_SAFE
                     .decode(token_value)
                     .map_err(|_| ParseError::InvalidToken)?
                     .as_slice(),
