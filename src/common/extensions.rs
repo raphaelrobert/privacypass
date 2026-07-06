@@ -12,7 +12,15 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::common::errors::CreateExtensionsError;
 
-/// Type of extension.
+/// Type of extension as specified in
+/// [`draft-ietf-privacypass-auth-scheme-extensions-03` &sect;3](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03#section-3):
+///
+/// ```c
+/// enum {
+///     reserved(0),
+///     (65535)
+/// } ExtensionType;
+/// ```
 ///
 /// Extension types are to be defined by the client, not by this crate
 #[derive(Clone, Copy, Debug, PartialEq, Eq, TlsSize, TlsSerialize, TlsDeserialize, Hash)]
@@ -24,9 +32,17 @@ impl ExtensionType {
     pub const RESERVED: ExtensionType = ExtensionType(0);
 }
 
-/// A single extension.
+/// A single extension as specified in
+/// [`draft-ietf-privacypass-auth-scheme-extensions-03` &sect;3](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03#section-3):
 ///
-/// Contains opaque byte data whose semantics are determined by the type.
+/// ```c
+/// struct {
+///     ExtensionType extension_type;
+///     opaque extension_data<0..2^16-1>;
+/// } Extension;
+/// ```
+///
+/// Contains opaque byte data whose semantics are determined by the extension type.
 #[derive(Clone, Debug, PartialEq, Eq, TlsSize, TlsSerialize, TlsDeserialize)]
 pub struct Extension {
     extension_type: ExtensionType,
@@ -49,9 +65,26 @@ impl Extension {
             extension_data: TlsByteVecU16::new(data),
         })
     }
+
+    /// Returns this extension's type
+    pub fn extension_type(&self) -> ExtensionType {
+        self.extension_type
+    }
+
+    /// Returns a slice containing this extension's data
+    pub fn extension_data(&self) -> &[u8] {
+        self.extension_data.as_slice()
+    }
 }
 
-/// A set of extensions.
+/// A set of extensions as specified in
+/// [`draft-ietf-privacypass-auth-scheme-extensions-03` &sect;3](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03#section-3):
+///
+/// ```c
+/// struct {
+///     Extension extensions<0..2^16-1>;
+/// } Extensions;
+/// ```
 ///
 /// Contains a list of Extension values.
 #[derive(Clone, Debug, PartialEq, Eq, TlsSize, TlsSerialize, TlsDeserialize)]
@@ -87,9 +120,25 @@ impl Extensions {
 
         Ok(Extensions { extensions: v })
     }
+
+    /// Returns a slice with the contained extensions
+    pub fn extensions(&self) -> &[Extension] {
+        self.extensions.as_slice()
+    }
 }
 
-/// Denotes whether a certain extension type is required or optional.
+/// An extension entry as specified in
+/// [`draft-ietf-privacypass-auth-scheme-extensions-03` &sect;4](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03#section-4):
+///
+/// ```c
+/// struct {
+///     enum { false(0), true(1) } Bool;
+///     Bool is_required;
+///     ExtensionType extension_type;
+/// } ExtensionEntry;
+/// ```
+///
+/// Denotes whether a given extension type is required or optional.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExtensionEntry {
     is_required: bool,
@@ -137,18 +186,25 @@ impl ExtensionEntry {
         }
     }
 
-    /// Return whether this extension is required
+    /// Returns whether this extension is required
     pub fn is_required(&self) -> bool {
         self.is_required
     }
 
-    /// Return this entry's extension type
+    /// Returns this entry's extension type
     pub fn extension_type(&self) -> ExtensionType {
         self.extension_type
     }
 }
 
-/// A set of extension entries.
+/// A set of extension entries as specified in
+/// [`draft-ietf-privacypass-auth-scheme-extensions-03` &sect;4](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03#section-4):
+///
+/// ```c
+/// struct {
+///     ExtensionEntry extension_types<0..2^16-1>;
+/// } ExtensionSet;
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq, TlsSize, TlsSerialize, TlsDeserialize)]
 pub struct ExtensionSet {
     extension_types: TlsVecU16<ExtensionEntry>,
@@ -198,5 +254,10 @@ impl ExtensionSet {
         }
 
         Ok(())
+    }
+
+    /// Returns a slice with the contained extension entries
+    pub fn extension_types(&self) -> &[ExtensionEntry] {
+        self.extension_types.as_slice()
     }
 }
