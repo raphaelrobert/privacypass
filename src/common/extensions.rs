@@ -232,23 +232,27 @@ impl ExtensionSet {
     /// Validate that the required extension types in this extension set are present in the given
     /// extensions.
     ///
-    /// This validation permits the behavior described in
+    /// This validation enables the behavior described in
     /// `draft-ietf-privacypass-auth-scheme-extensions-03` &sect; 4, where "a client should expect to
     /// be rejected if not providing required extensions".
     ///
-    /// Errors if any required extension type is missing
+    /// Returns an error if any required extension type is missing
     pub fn validate(&self, extensions: &Extensions) -> Result<(), NegotiationError> {
-        let required: HashSet<ExtensionType> = self
+        let types: HashSet<ExtensionType> = extensions
+            .extensions
+            .iter()
+            .map(|e| e.extension_type)
+            .collect();
+        let required = self
             .extension_types
             .iter()
             .filter(|e| e.is_required)
-            .map(|e| e.extension_type)
-            .collect();
+            .map(|e| e.extension_type);
 
-        for e in extensions.extensions.iter() {
-            if !required.contains(&e.extension_type) {
+        for required_type in required {
+            if !types.contains(&required_type) {
                 return Err(NegotiationError::MissingExtensionType {
-                    extension_type: e.extension_type,
+                    extension_type: required_type,
                 });
             }
         }
