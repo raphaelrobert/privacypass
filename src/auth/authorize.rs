@@ -10,6 +10,7 @@ use hybrid_array::{Array, ArraySize};
 use nom::{
     IResult, Parser,
     bytes::complete::{tag, tag_no_case},
+    combinator::opt,
     multi::{many1, separated_list1},
 };
 use std::io::Write;
@@ -21,7 +22,7 @@ use crate::{
     common::extensions::Extensions,
 };
 
-use super::{key_name, opt_spaces, space, unquote};
+use super::{comma_sep, key_name, opt_spaces, space, unquote};
 
 /// A Token as defined in The Privacy Pass HTTP Authentication Scheme:
 ///
@@ -310,8 +311,9 @@ fn parse_private_token(input: &str, strict_quotes: bool) -> IResult<&str, (&str,
     let (input, _) = opt_spaces(input)?;
     let (input, _) = tag_no_case("PrivateToken").parse(input)?;
     let (input, _) = many1(space).parse(input)?;
+    let (input, _) = opt(comma_sep).parse(input)?;
     let (input, key_values) =
-        separated_list1(tag(","), |i| parse_key_value(i, strict_quotes)).parse(input)?;
+        separated_list1(comma_sep, |i| parse_key_value(i, strict_quotes)).parse(input)?;
 
     let mut token = None;
     let mut extensions = None;
@@ -344,7 +346,12 @@ fn parse_private_tokens(
     input: &str,
     strict_quotes: bool,
 ) -> IResult<&str, Vec<(&str, Option<&str>)>> {
-    separated_list1(tag(","), |i| parse_private_token(i, strict_quotes)).parse(input)
+    let (input, _) = opt(comma_sep).parse(input)?;
+    let (input, tokens) =
+        separated_list1(comma_sep, |i| parse_private_token(i, strict_quotes)).parse(input)?;
+    let (input, _) = opt(comma_sep).parse(input)?;
+    let (input, _) = opt_spaces(input)?;
+    Ok((input, tokens))
 }
 
 #[allow(clippy::type_complexity)]
