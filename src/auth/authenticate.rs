@@ -12,6 +12,7 @@ use nom::{
     IResult, Parser,
     bytes::complete::{tag, tag_no_case},
     character::complete::digit1,
+    combinator::opt,
     multi::{many1, separated_list1},
 };
 
@@ -20,7 +21,7 @@ use crate::{
     common::extensions::{ExtensionSet, Extensions},
 };
 
-use super::{key_name, maybe_unquote, opt_spaces, parse_u32, space, unquote};
+use super::{comma_sep, key_name, maybe_unquote, opt_spaces, parse_u32, space, unquote};
 
 /// Redemption context filed of a ``TokenChallenge
 pub type RedemptionContext = [u8; 32];
@@ -354,8 +355,9 @@ fn parse_private_token(
     let (input, _) = opt_spaces(input)?;
     let (input, _) = tag_no_case("PrivateToken")(input)?;
     let (input, _) = many1(space).parse(input)?;
+    let (input, _) = opt(comma_sep).parse(input)?;
     let (input, key_values) =
-        separated_list1(tag(","), |i| parse_key_value(i, strict_quotes)).parse(input)?;
+        separated_list1(comma_sep, |i| parse_key_value(i, strict_quotes)).parse(input)?;
 
     let mut challenge = None;
     let mut token_key = None;
@@ -418,7 +420,12 @@ fn parse_private_tokens(
     input: &str,
     strict_quotes: bool,
 ) -> IResult<&str, Vec<(Challenge, Option<ExtensionSet>, Option<Extensions>)>> {
-    separated_list1(tag(","), |i| parse_private_token(i, strict_quotes)).parse(input)
+    let (input, _) = opt(comma_sep).parse(input)?;
+    let (input, tokens) =
+        separated_list1(comma_sep, |i| parse_private_token(i, strict_quotes)).parse(input)?;
+    let (input, _) = opt(comma_sep).parse(input)?;
+    let (input, _) = opt_spaces(input)?;
+    Ok((input, tokens))
 }
 
 #[cfg(test)]
