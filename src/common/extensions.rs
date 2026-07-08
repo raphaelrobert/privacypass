@@ -10,7 +10,7 @@ use thiserror::Error;
 use tls_codec::{Deserialize, Serialize, Size, TlsByteVecU16, TlsVecU16};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::common::errors::CreateExtensionsError;
+use crate::common::errors::{CreateExtensionsError, ExpirationExtensionError};
 
 /// Type of extension as specified in
 /// [`draft-ietf-privacypass-auth-scheme-extensions-03` &sect;3](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03#section-3):
@@ -30,6 +30,99 @@ impl ExtensionType {
     /// Defined in
     /// [`draft-ietf-privacypass-auth-scheme-extensions-03` &sect;3](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03#section-3)
     pub const RESERVED: ExtensionType = ExtensionType(0);
+
+    /// Expiration extension, registered by
+    /// [`draft-ietf-privacypass-expiration-extension-00` &sect;6](https://www.ietf.org/archive/id/draft-ietf-privacypass-expiration-extension-00.html#section-6).
+    pub const EXPIRATION: ExtensionType = ExtensionType(0x0001);
+}
+
+/// Expiration timestamp value as specified in
+/// [`draft-ietf-privacypass-expiration-extension-00` &sect;3](https://www.ietf.org/archive/id/draft-ietf-privacypass-expiration-extension-00.html#section-3):
+///
+/// ```c
+/// struct {
+///    uint64 timestamp_precision;
+///    uint64 timestamp;
+/// } ExpirationTimestamp;
+/// ```
+///
+/// The library preserves the draft wire format literally. It does not round,
+/// validate, or compare timestamps. Callers are responsible for choosing coarse,
+/// shared values and for applying their own expiration policy.
+///
+/// ```rust
+/// use privacypass::common::extensions::{ExpirationTimestamp, Extensions};
+///
+/// let expiration = ExpirationTimestamp::new(3600, 1688583600);
+/// let extensions = Extensions::new(vec![expiration.to_extension().unwrap()]).unwrap();
+///
+/// // Pass `extensions` to `TokenRequest::new_with_extensions(...)`, and send
+/// // the same extension set with the Authorization header when redeeming.
+/// assert_eq!(extensions.expiration().unwrap(), Some(expiration));
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExpirationTimestamp {
+    timestamp_precision: u64,
+    timestamp: u64,
+}
+
+impl ExpirationTimestamp {
+    /// Creates a new expiration timestamp value.
+    #[must_use]
+    pub const fn new(timestamp_precision: u64, timestamp: u64) -> Self {
+        Self {
+            timestamp_precision,
+            timestamp,
+        }
+    }
+
+    /// Returns the timestamp precision in seconds.
+    #[must_use]
+    pub const fn timestamp_precision(&self) -> u64 {
+        self.timestamp_precision
+    }
+
+    /// Returns the UNIX expiration timestamp in seconds.
+    #[must_use]
+    pub const fn timestamp(&self) -> u64 {
+        self.timestamp
+    }
+
+    /// Converts this value into an Expiration extension.
+    ///
+    /// # Errors
+    /// Returns an error if the extension cannot be created.
+    pub fn to_extension(&self) -> Result<Extension, CreateExtensionsError> {
+        let mut data = Vec::with_capacity(16);
+        data.extend_from_slice(&self.timestamp_precision.to_be_bytes());
+        data.extend_from_slice(&self.timestamp.to_be_bytes());
+        Extension::new(ExtensionType::EXPIRATION, data)
+    }
+
+    /// Parses an ExpirationTimestamp from an Expiration extension.
+    ///
+    /// # Errors
+    /// Returns an error if the extension has the wrong type or invalid data.
+    pub fn from_extension(extension: &Extension) -> Result<Self, ExpirationExtensionError> {
+        if extension.extension_type() != ExtensionType::EXPIRATION {
+            return Err(ExpirationExtensionError::InvalidType);
+        }
+
+        let data = extension.extension_data();
+        if data.len() != 16 {
+            return Err(ExpirationExtensionError::InvalidData);
+        }
+
+        let mut timestamp_precision = [0u8; 8];
+        timestamp_precision.copy_from_slice(&data[..8]);
+        let mut timestamp = [0u8; 8];
+        timestamp.copy_from_slice(&data[8..]);
+
+        Ok(Self {
+            timestamp_precision: u64::from_be_bytes(timestamp_precision),
+            timestamp: u64::from_be_bytes(timestamp),
+        })
+    }
 }
 
 /// A single extension as specified in
@@ -124,6 +217,31 @@ impl Extensions {
     /// Returns a slice with the contained extensions
     pub fn extensions(&self) -> &[Extension] {
         self.extensions.as_slice()
+    }
+
+    /// Returns the Expiration extension if present.
+    ///
+    /// Generic extensions may repeat extension types, but the typed Expiration helper treats
+    /// duplicates as invalid because a single token cannot have two unambiguous expiration values.
+    ///
+    /// # Errors
+    /// Returns an error if an Expiration extension has invalid data or if more than one Expiration
+    /// extension is present.
+    pub fn expiration(&self) -> Result<Option<ExpirationTimestamp>, ExpirationExtensionError> {
+        let mut expiration = None;
+
+        for extension in self
+            .extensions
+            .iter()
+            .filter(|extension| extension.extension_type() == ExtensionType::EXPIRATION)
+        {
+            if expiration.is_some() {
+                return Err(ExpirationExtensionError::DuplicateExpiration);
+            }
+            expiration = Some(ExpirationTimestamp::from_extension(extension)?);
+        }
+
+        Ok(expiration)
     }
 }
 
@@ -263,5 +381,80 @@ impl ExtensionSet {
     /// Returns a slice with the contained extension entries
     pub fn extension_types(&self) -> &[ExtensionEntry] {
         self.extension_types.as_slice()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ExpirationTimestamp, Extension, ExtensionType, Extensions};
+    use crate::common::errors::ExpirationExtensionError;
+
+    #[test]
+    fn expiration_timestamp_serializes_draft_example() {
+        // Example from draft-ietf-privacypass-expiration-extension-00 Section 3:
+        // https://www.ietf.org/archive/id/draft-ietf-privacypass-expiration-extension-00.html#section-3
+        let expiration = ExpirationTimestamp::new(3600, 1688583600);
+        let extension = expiration.to_extension().unwrap();
+
+        let mut expected = Vec::new();
+        expected.extend_from_slice(&3600u64.to_be_bytes());
+        expected.extend_from_slice(&1688583600u64.to_be_bytes());
+
+        assert_eq!(extension.extension_type(), ExtensionType::EXPIRATION);
+        assert_eq!(extension.extension_data(), expected.as_slice());
+    }
+
+    #[test]
+    fn expiration_timestamp_round_trips_through_extension() {
+        let expiration = ExpirationTimestamp::new(3600, 1688583600);
+        let extension = expiration.to_extension().unwrap();
+
+        assert_eq!(
+            ExpirationTimestamp::from_extension(&extension).unwrap(),
+            expiration
+        );
+    }
+
+    #[test]
+    fn expiration_timestamp_rejects_wrong_extension_type() {
+        let extension = Extension::new(ExtensionType(10), vec![0u8; 16]).unwrap();
+
+        assert_eq!(
+            ExpirationTimestamp::from_extension(&extension),
+            Err(ExpirationExtensionError::InvalidType)
+        );
+    }
+
+    #[test]
+    fn expiration_timestamp_rejects_invalid_data_length() {
+        let extension = Extension::new(ExtensionType::EXPIRATION, vec![0u8; 15]).unwrap();
+
+        assert_eq!(
+            ExpirationTimestamp::from_extension(&extension),
+            Err(ExpirationExtensionError::InvalidData)
+        );
+    }
+
+    #[test]
+    fn extensions_returns_no_expiration_when_absent() {
+        let extension = Extension::new(ExtensionType(10), b"metadata".to_vec()).unwrap();
+        let extensions = Extensions::new(vec![extension]).unwrap();
+
+        assert_eq!(extensions.expiration().unwrap(), None);
+    }
+
+    #[test]
+    fn extensions_rejects_duplicate_expiration() {
+        let expiration = ExpirationTimestamp::new(3600, 1688583600);
+        let extensions = Extensions::new(vec![
+            expiration.to_extension().unwrap(),
+            expiration.to_extension().unwrap(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            extensions.expiration(),
+            Err(ExpirationExtensionError::DuplicateExpiration)
+        );
     }
 }
