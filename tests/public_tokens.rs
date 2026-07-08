@@ -240,7 +240,7 @@ async fn public_metadata_tokens() {
         &["example.com".to_string()],
     );
     let challenge_digest = token_challenge.digest().unwrap();
-    let extension = Extension::new(ExtensionType(0), b"Hello world".to_vec()).unwrap();
+    let extension = Extension::new(ExtensionType(10), b"Hello world".to_vec()).unwrap();
     let extensions = Extensions::new(vec![extension]).unwrap();
 
     // Client: Prepare a TokenRequest after having received a challenge

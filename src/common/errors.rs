@@ -297,3 +297,17 @@ pub enum CreateExtensionsError {
     #[error("Extensions were not sorted")]
     ExtensionsUnsorted,
 }
+
+/// Error when parsing the expiration extension.
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum ExpirationExtensionError {
+    /// Extension type is not the registered Expiration type.
+    #[error("Extension type is not Expiration")]
+    InvalidType,
+    /// Extension data is not exactly one ExpirationTimestamp value.
+    #[error("Expiration extension data is invalid")]
+    InvalidData,
+    /// More than one Expiration extension is present.
+    #[error("Duplicate Expiration extension")]
+    DuplicateExpiration,
+}

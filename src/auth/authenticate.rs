@@ -564,12 +564,12 @@ mod tests {
         let max_age = 100u32;
 
         let extension_set = ExtensionSet::new(vec![
-            ExtensionEntry::new(true, ExtensionType(1)),
-            ExtensionEntry::new(false, ExtensionType(2)),
+            ExtensionEntry::new(true, ExtensionType(10)),
+            ExtensionEntry::new(false, ExtensionType(11)),
         ]);
         let extensions = Extensions::new(vec![
-            Extension::new(ExtensionType(1), b"hello".to_vec()).unwrap(),
-            Extension::new(ExtensionType(2), b"world".to_vec()).unwrap(),
+            Extension::new(ExtensionType(10), b"hello".to_vec()).unwrap(),
+            Extension::new(ExtensionType(11), b"world".to_vec()).unwrap(),
         ])
         .unwrap();
 
@@ -606,11 +606,11 @@ mod tests {
         );
 
         let extension_set = ExtensionSet::new(vec![
-            ExtensionEntry::new(true, ExtensionType(1)),
-            ExtensionEntry::new(false, ExtensionType(2)),
+            ExtensionEntry::new(true, ExtensionType(10)),
+            ExtensionEntry::new(false, ExtensionType(11)),
         ]);
         let extensions = Extensions::new(vec![
-            Extension::new(ExtensionType(1), b"hello world".to_vec()).unwrap(),
+            Extension::new(ExtensionType(10), b"hello world".to_vec()).unwrap(),
         ])
         .unwrap();
 
@@ -652,12 +652,12 @@ mod tests {
         let max_age = 100u32;
 
         let extension_set = ExtensionSet::new(vec![
-            ExtensionEntry::new(true, ExtensionType(1)),
-            ExtensionEntry::new(false, ExtensionType(2)),
+            ExtensionEntry::new(true, ExtensionType(10)),
+            ExtensionEntry::new(false, ExtensionType(11)),
         ]);
         let extensions = Extensions::new(vec![
-            Extension::new(ExtensionType(1), b"hello".to_vec()).unwrap(),
-            Extension::new(ExtensionType(2), b"world".to_vec()).unwrap(),
+            Extension::new(ExtensionType(10), b"hello".to_vec()).unwrap(),
+            Extension::new(ExtensionType(11), b"world".to_vec()).unwrap(),
         ])
         .unwrap();
 
