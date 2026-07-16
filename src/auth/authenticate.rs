@@ -5,8 +5,9 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use http::{HeaderValue, header::HeaderName};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize, TlsByteVecU8, TlsByteVecU16};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec::{
+    Deserialize, Serialize, TlsByteVecU8, TlsByteVecU16, TlsDeserialize, TlsSerialize, TlsSize,
+};
 
 use nom::{
     IResult, Parser,
@@ -341,7 +342,7 @@ fn parser_test() {
     );
 
     let input = HeaderValue::from_str(&format!(
-            "PrivateToken challenge={}, token-key={}, max-age=10, PrivateToken challenge={}, token-key={}", 
+            "PrivateToken challenge={}, token-key={}, max-age=10, PrivateToken challenge={}, token-key={}",
             challenge1.to_base64().unwrap(),
             URL_SAFE.encode(&token_key1),
             challenge2.to_base64().unwrap(),

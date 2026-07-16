@@ -2,8 +2,7 @@
 
 use p384::NistP384;
 use std::io::Read;
-use tls_codec::{Deserialize, Serialize, Size};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec::{Deserialize, Serialize, Size, TlsDeserialize, TlsSerialize, TlsSize};
 use voprf::Ristretto255;
 
 use crate::{TokenType, common::errors::SerializationError};

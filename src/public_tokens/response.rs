@@ -3,7 +3,7 @@
 use blind_rsa_signatures::BlindSignature;
 use generic_array::{GenericArray, typenum::U256};
 use log::warn;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{TokenType, auth::authorize::Token, common::errors::IssueTokenError};
 

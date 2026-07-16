@@ -3,16 +3,14 @@
 use blind_rsa_signatures::BlindingResult;
 use blind_rsa_signatures::reexports::rand::CryptoRng;
 use log::warn;
-
-use super::PublicKey;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     ChallengeDigest, Nonce, TokenInput, TokenType, auth::authenticate::TokenChallenge,
     common::errors::IssueTokenRequestError, truncate_token_key_id,
 };
 
-use super::{NK, public_key_to_token_key_id};
+use super::{NK, PublicKey, public_key_to_token_key_id};
 
 /// State that is kept between the token requests and token responses.
 #[derive(Debug)]

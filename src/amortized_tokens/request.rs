@@ -1,8 +1,7 @@
 //! Request implementation of the Amortized Tokens protocol.
 
 use rand::{TryRng, rngs::SysRng};
-use tls_codec::{Deserialize, Serialize, Size};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec::{Deserialize, Serialize, Size, TlsDeserialize, TlsSerialize, TlsSize};
 use typenum::Unsigned;
 use voprf::{Group, Result, VoprfClient};
 
