@@ -5,9 +5,8 @@ use std::io::{Read, Write};
 use blind_rsa_signatures::reexports::rand::CryptoRng;
 use blind_rsa_signatures::{BlindingResult, pbrsa::PartiallyBlindPublicKey};
 use log::warn;
-use tls_codec::{Deserialize, Serialize, Size};
 
-use super::PublicKey;
+use tls_codec::{Deserialize, Serialize, Size};
 
 use crate::common::extensions::Extensions;
 use crate::public_tokens::server::PbrsaPublicKey;
@@ -16,7 +15,7 @@ use crate::{
     common::errors::IssueTokenRequestError, truncate_token_key_id,
 };
 
-use super::{NK, public_key_to_token_key_id};
+use super::{NK, PublicKey, public_key_to_token_key_id};
 
 /// State that is kept between the token requests and token responses.
 #[derive(Debug)]

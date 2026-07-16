@@ -28,7 +28,7 @@ pub mod test_utils;
 
 use async_trait::async_trait;
 use std::fmt::Debug;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec::{TlsDeserialize, TlsSerialize, TlsSize};
 
 pub use tls_codec::{Deserialize, Serialize};
 pub use voprf::{Group, VoprfServer};

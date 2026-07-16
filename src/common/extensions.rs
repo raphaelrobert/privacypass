@@ -7,8 +7,9 @@ use std::{
     io::{Read, Write},
 };
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize, Size, TlsByteVecU16, TlsVecU16};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec::{
+    Deserialize, Serialize, Size, TlsByteVecU16, TlsDeserialize, TlsSerialize, TlsSize, TlsVecU16,
+};
 
 use crate::common::errors::{CreateExtensionsError, ExpirationExtensionError};
 
