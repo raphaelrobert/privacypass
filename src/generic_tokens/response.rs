@@ -1,8 +1,7 @@
 //! Response implementation of the Generic Token protocol.
 
 use p384::NistP384;
-use tls_codec::Deserialize;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec::{Deserialize, TlsDeserialize, TlsSerialize, TlsSize};
 use voprf::Ristretto255;
 
 use crate::{
