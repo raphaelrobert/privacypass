@@ -199,6 +199,10 @@ impl Deserialize for GenericTokenRequest {
                     token_request,
                 )))
             }
+            _ => Err(tls_codec::Error::DecodingError(format!(
+                "Unsupported token type: {:?}",
+                token_type
+            ))),
         }
     }
 }

@@ -2,9 +2,11 @@
 
 use nom::{
     IResult, Parser,
-    bytes::complete::{is_a, take_while1},
+    branch::alt,
+    bytes::complete::{is_a, tag, take_while1},
     combinator::verify,
-    multi::many0,
+    multi::{many0, many1},
+    sequence::delimited,
 };
 use std::str::FromStr;
 
@@ -17,6 +19,13 @@ pub(crate) fn space(input: &str) -> IResult<&str, &str> {
 
 pub(crate) fn opt_spaces(input: &str) -> IResult<&str, Vec<&str>> {
     many0(space).parse(input)
+}
+
+// parses comma separation between header list elements and handles empty elements by collapsing multiple commas into one.
+// required by RFC 9110 section 5.6.1.2
+pub(crate) fn comma_sep(input: &str) -> IResult<&str, ()> {
+    let (input, _) = many1((opt_spaces, tag(","))).parse(input)?;
+    Ok((input, ()))
 }
 
 pub(crate) fn parse_u32(input: &str) -> Result<u32, std::num::ParseIntError> {
@@ -51,4 +60,12 @@ pub(crate) fn surrounded_by_alphanumeric(input: &str) -> bool {
     }
 
     true
+}
+
+pub(crate) fn unquote(input: &str) -> IResult<&str, &str> {
+    delimited(tag("\""), base64_char, tag("\"")).parse(input)
+}
+
+pub(crate) fn maybe_unquote(input: &str) -> IResult<&str, &str> {
+    alt((unquote, base64_char)).parse(input)
 }

@@ -1,21 +1,34 @@
 //! Server-side implementation of Publicly Verifiable Token protocol.
 
+use std::collections::HashMap;
+use std::sync::{PoisonError, RwLock};
+
 use async_trait::async_trait;
+use blind_rsa_signatures::pbrsa::{
+    PartiallyBlindKeyPair, PartiallyBlindPublicKey, PartiallyBlindSecretKey,
+};
 use blind_rsa_signatures::reexports::rand::CryptoRng;
 use blind_rsa_signatures::{
-    Deterministic, KeyPair as GenericKeyPair, PSS, PublicKey as GenericPublicKey, Sha384, Signature,
+    Deterministic, KeyPair as GenericKeyPair, PSS, PublicKey as GenericPublicKey, SecretKey,
+    Sha384, Signature,
 };
 use generic_array::ArrayLength;
 use log::{debug, warn};
+use tls_codec::Serialize;
 
 type KeyPair = GenericKeyPair<Sha384, PSS, Deterministic>;
 type PublicKey = GenericPublicKey<Sha384, PSS, Deterministic>;
 
+pub(crate) type PbrsaKeyPair = PartiallyBlindKeyPair<Sha384, PSS, Deterministic>;
+pub(crate) type PbrsaPublicKey = PartiallyBlindPublicKey<Sha384, PSS, Deterministic>;
+
+use crate::common::extensions::Extensions;
 use crate::{
-    COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput, TokenType, TruncatedTokenKeyId,
+    COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput, TruncatedTokenKeyId,
     auth::authorize::Token,
     common::errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
 };
+use crate::{TokenKeyId, TokenType};
 
 use super::{NK, TokenRequest, TokenResponse, public_key_to_token_key_id, truncate_token_key_id};
 
@@ -95,19 +108,69 @@ pub fn serialize_public_key(
     public_key.to_spki()
 }
 
+fn pbrsa_to_keypair(pbrsa: &PbrsaKeyPair) -> Result<KeyPair, blind_rsa_signatures::Error> {
+    let sk_der = pbrsa.sk.to_der()?;
+    let sk = SecretKey::from_der(&sk_der)?;
+    let pk = sk.public_key()?;
+
+    Ok(KeyPair { sk, pk })
+}
+
+fn keypair_to_pbrsa(keypair: &KeyPair) -> Result<PbrsaKeyPair, blind_rsa_signatures::Error> {
+    let sk_der = keypair.sk.to_der()?;
+    // validates that the keypair has safe primes, e.g. was generated as a PBRSA keypair
+    let sk = PartiallyBlindSecretKey::from_der(&sk_der)?;
+    let pk = sk.public_key()?;
+
+    Ok(PbrsaKeyPair { sk, pk })
+}
+
 const KEYSIZE_IN_BITS: usize = 2048;
 const KEYSIZE_IN_BYTES: usize = KEYSIZE_IN_BITS / 8;
 
 /// Server-side implementation of Publicly Verifiable Token protocol for
 /// issuers.
 #[derive(Default, Debug)]
-pub struct IssuerServer {}
+pub struct IssuerServer {
+    /// Caches the validated PBRSA conversion so we don't re-validate on every token response.
+    /// Keyed by the full key id so the map stays stable across rotation
+    pbrsa_cache: RwLock<HashMap<TokenKeyId, PbrsaKeyPair>>,
+}
 
 impl IssuerServer {
     /// Creates a new server.
     #[must_use]
-    pub const fn new() -> Self {
-        Self {}
+    pub fn new() -> Self {
+        Self {
+            pbrsa_cache: RwLock::new(HashMap::new()),
+        }
+    }
+
+    /// Gets the PBRSA keypair associated with the given Blind-RSA keypair.
+    ///
+    /// The given keypair MUST have been generated as a PBRSA keypair,
+    /// i.e. using safe primes (p and q where (p-1)/2 and (q-1)/2 are also prime)
+    fn get_pbrsa_pair(
+        &self,
+        key_pair: &KeyPair,
+    ) -> Result<PbrsaKeyPair, blind_rsa_signatures::Error> {
+        let key_id = public_key_to_token_key_id(&key_pair.pk)?;
+
+        if let Some(pbrsa) = self
+            .pbrsa_cache
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&key_id)
+        {
+            Ok(pbrsa.clone())
+        } else {
+            let pbrsa = keypair_to_pbrsa(key_pair)?;
+            self.pbrsa_cache
+                .write()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(key_id, pbrsa.clone());
+            Ok(pbrsa)
+        }
     }
 
     /// Creates a new keypair and inserts it into the key store.
@@ -141,32 +204,116 @@ impl IssuerServer {
         Err(CreateKeypairError::CollisionExhausted)
     }
 
-    /// Issues a new token response.
+    /// Creates a new partially-blinded keypair and inserts it into the key store.
     ///
     /// # Errors
-    /// Returns an error if the token request is invalid.
+    /// Returns an error if creating the keypair or converting it to plain RSA fails.
+    pub async fn create_keypair_pbrsa<IKS: IssuerKeyStore, R: CryptoRng>(
+        &self,
+        rng: &mut R,
+        key_store: &IKS,
+    ) -> Result<PublicKey, CreateKeypairError> {
+        for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
+            let pbrsa_key_pair = PbrsaKeyPair::generate(rng, KEYSIZE_IN_BITS)
+                .inspect_err(|e| debug!(error:% = e; "Failed to generate RSA keypair"))
+                .map_err(|source| CreateKeypairError::KeyGenerationFailed { source })?;
+
+            let key_pair = pbrsa_to_keypair(&pbrsa_key_pair)
+                .inspect_err(|e| debug!(error:% = e; "Key Conversion Failed"))
+                .map_err(|source| CreateKeypairError::KeyGenerationFailed { source })?;
+
+            let token_key_id = public_key_to_token_key_id(&key_pair.pk)
+                .map_err(|source| CreateKeypairError::KeySerializationFailed { source })?;
+
+            let truncated_token_key_id = truncate_token_key_id(&token_key_id);
+
+            if key_store.get(&truncated_token_key_id).await.is_some() {
+                continue;
+            }
+
+            let public_key = key_pair.pk.clone();
+
+            if key_store.insert(truncated_token_key_id, key_pair).await {
+                self.pbrsa_cache
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .insert(token_key_id, pbrsa_key_pair);
+
+                return Ok(public_key);
+            }
+        }
+        Err(CreateKeypairError::CollisionExhausted)
+    }
+
+    /// Issues a new token response.
+    ///
+    /// Note that this method does not validate the extensions provided in the token request. If
+    /// such validation is required (for example, validating that the provided extension types are
+    /// allowed by this issuer), issuers are expected to perform this validation before calling
+    /// this method.
+    /// Validation can be done by inspecting the extensions from the token request.
+    ///
+    /// # Errors
+    /// Returns an error if the token request is invalid, or if token_type == PublicMetadata and the
+    /// key is not PBRSA compatible.
     pub async fn issue_token_response<IKS: IssuerKeyStore>(
         &self,
         key_store: &IKS,
         token_request: TokenRequest,
     ) -> Result<TokenResponse, IssueTokenResponseError> {
-        if token_request.token_type != TokenType::Public {
+        if token_request.extensions.is_some() {
+            if token_request.token_type != TokenType::PublicMetadata {
+                return Err(IssueTokenResponseError::InvalidTokenType {
+                    expected: TokenType::PublicMetadata,
+                    found: token_request.token_type,
+                });
+            }
+        } else if token_request.token_type != TokenType::Public {
             return Err(IssueTokenResponseError::InvalidTokenType {
                 expected: TokenType::Public,
                 found: token_request.token_type,
             });
         }
+
         let key_pair = key_store
             .get(&token_request.truncated_token_key_id)
             .await
             .ok_or(IssueTokenResponseError::KeyIdNotFound)?;
 
         // blind_sig = rsabssa_blind_sign(skI, TokenRequest.blinded_msg)
-        let blind_signature = key_pair
-            .sk
-            .blind_sign(token_request.blinded_msg)
-            .inspect_err(|e| warn!(error:% = e; "Failed to blind_sign token"))
-            .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?;
+
+        let blind_signature = match token_request.extensions {
+            Some(extensions) => {
+                let metadata = extensions
+                    .tls_serialize_detached()
+                    .inspect_err(|e| warn!(error:% = e; "Failed to serialize extensions"))
+                    .map_err(
+                        |source| IssueTokenResponseError::ExtensionSerializationError { source },
+                    )?;
+
+                let pbrsa = self
+                    .get_pbrsa_pair(&key_pair)
+                    .inspect_err(
+                        |e| warn!(error:% = e; "Stored key not PBRSA compatible (no safe primes)"),
+                    )
+                    .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?;
+
+                let derived_sk = pbrsa
+                    .derive_secret_key_for_metadata(&metadata)
+                    .inspect_err(|e| warn!(error:% = e; "Failed to derive augmented secret key"))
+                    .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?;
+
+                derived_sk
+                    .blind_sign(token_request.blinded_msg)
+                    .inspect_err(|e| warn!(error:% = e; "Failed to blind_sign token"))
+                    .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?
+            }
+            None => key_pair
+                .sk
+                .blind_sign(token_request.blinded_msg)
+                .inspect_err(|e| warn!(error:% = e; "Failed to blind_sign token"))
+                .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?,
+        };
 
         debug_assert!(blind_signature.len() == NK);
         let mut blind_sig = [0u8; NK];
@@ -194,6 +341,82 @@ impl IssuerServer {
     }
 }
 
+/// Verifies a token without performing nonce validation
+///
+/// Useful for debug CLIs and configurations where nonce validation is separate from validating the
+/// tokens themselves.
+///
+/// # Errors
+/// Returns an error if the token is invalid.
+pub fn verify_token<Nk: ArrayLength>(
+    public_key: &PublicKey,
+    token: &Token<Nk>,
+    extensions: Option<&Extensions>,
+) -> Result<(), RedeemTokenError> {
+    if extensions.is_some() {
+        if token.token_type() != TokenType::PublicMetadata {
+            return Err(RedeemTokenError::TokenTypeMismatch {
+                expected: TokenType::PublicMetadata,
+                found: token.token_type(),
+            });
+        }
+    } else if token.token_type() != TokenType::Public {
+        return Err(RedeemTokenError::TokenTypeMismatch {
+            expected: TokenType::Public,
+            found: token.token_type(),
+        });
+    }
+
+    let authenticator_len = token.authenticator().len();
+    if authenticator_len != KEYSIZE_IN_BYTES {
+        return Err(RedeemTokenError::InvalidAuthenticatorLength {
+            expected: KEYSIZE_IN_BYTES,
+            found: authenticator_len,
+        });
+    }
+
+    let token_input = TokenInput::new(
+        token.token_type(),
+        token.nonce(),
+        *token.challenge_digest(),
+        *token.token_key_id(),
+    );
+
+    let signature = Signature(token.authenticator().to_vec());
+    let token_input_bytes = token_input.serialize();
+
+    let verified = match extensions {
+        Some(extensions) => {
+            let metadata = extensions
+                .tls_serialize_detached()
+                .inspect_err(|e| warn!(error:% = e; "Extension serialization failed"))
+                .map_err(|source| RedeemTokenError::ExtensionSerializationError { source })?;
+
+            let pbrsa_pk = PbrsaPublicKey::new(public_key.as_ref().clone());
+            match pbrsa_pk.derive_public_key_for_metadata(&metadata) {
+                Ok(derived) => derived
+                    .verify(&signature, None, &token_input_bytes, Some(&metadata))
+                    .inspect_err(|e| warn!(error:% = e; "Verify failed"))
+                    .is_ok(),
+                Err(e) => {
+                    warn!(error:% = e; "Key derivation failed");
+                    false
+                }
+            }
+        }
+        None => public_key
+            .verify(&signature, None, &token_input_bytes)
+            .inspect_err(|e| warn!(error:% = e; "Verify failed"))
+            .is_ok(),
+    };
+    if !verified {
+        return Err(RedeemTokenError::InvalidSignature {
+            token_type: token.token_type(),
+        });
+    }
+    Ok(())
+}
+
 /// Server-side implementation of Publicly Verifiable Token protocol for
 /// origins.
 #[derive(Default, Debug)]
@@ -205,37 +428,22 @@ impl OriginServer {
         Self {}
     }
 
-    /// Redeems a token.
+    /// Redeems a token using the given extensions.
     ///
     /// # Errors
-    /// Returns an error if the token is invalid.
-    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength>(
+    /// Returns an error if the token is invalid or deriving the key for the metadata fails.
+    pub async fn redeem_token_with_extensions<
+        OKS: OriginKeyStore,
+        NS: NonceStore,
+        Nk: ArrayLength,
+    >(
         &self,
         key_store: &OKS,
         nonce_store: &NS,
         token: Token<Nk>,
+        extensions: &Extensions,
     ) -> Result<(), RedeemTokenError> {
-        let token_type = token.token_type();
-        if token_type != TokenType::Public {
-            return Err(RedeemTokenError::TokenTypeMismatch {
-                expected: TokenType::Public,
-                found: token_type,
-            });
-        }
-        let authenticator_len = token.authenticator().len();
-        if authenticator_len != KEYSIZE_IN_BYTES {
-            return Err(RedeemTokenError::InvalidAuthenticatorLength {
-                expected: KEYSIZE_IN_BYTES,
-                found: authenticator_len,
-            });
-        }
         let nonce = token.nonce();
-        let token_input = TokenInput::new(
-            token_type,
-            nonce,
-            *token.challenge_digest(),
-            *token.token_key_id(),
-        );
 
         if !nonce_store.reserve(&nonce).await {
             return Err(RedeemTokenError::DoubleSpending);
@@ -248,18 +456,62 @@ impl OriginServer {
                 return Err(RedeemTokenError::KeyIdNotFound);
             }
 
-            let signature = Signature(token.authenticator().to_vec());
-            let token_input_bytes = token_input.serialize();
-
-            let verified = public_keys.iter().any(|public_key| {
-                public_key
-                    .verify(&signature, None, &token_input_bytes)
-                    .inspect_err(|e| warn!(error:% = e; "Verify failed"))
-                    .is_ok()
-            });
+            let verified = public_keys
+                .iter()
+                .any(|public_key| verify_token(public_key, &token, Some(extensions)).is_ok());
 
             if !verified {
-                return Err(RedeemTokenError::InvalidSignature { token_type });
+                return Err(RedeemTokenError::InvalidSignature {
+                    token_type: token.token_type(),
+                });
+            }
+            Ok(())
+        }
+        .await;
+
+        match crypto_result {
+            Ok(()) => {
+                nonce_store.commit(&nonce).await;
+                Ok(())
+            }
+            Err(e) => {
+                nonce_store.release(&nonce).await;
+                Err(e)
+            }
+        }
+    }
+
+    /// Redeems a token.
+    ///
+    /// # Errors
+    /// Returns an error if the token is invalid.
+    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength>(
+        &self,
+        key_store: &OKS,
+        nonce_store: &NS,
+        token: Token<Nk>,
+    ) -> Result<(), RedeemTokenError> {
+        let nonce = token.nonce();
+
+        if !nonce_store.reserve(&nonce).await {
+            return Err(RedeemTokenError::DoubleSpending);
+        }
+
+        let crypto_result = async {
+            let truncated_token_key_id = truncate_token_key_id(token.token_key_id());
+            let public_keys = key_store.get(&truncated_token_key_id).await;
+            if public_keys.is_empty() {
+                return Err(RedeemTokenError::KeyIdNotFound);
+            }
+
+            let verified = public_keys
+                .iter()
+                .any(|public_key| verify_token(public_key, &token, None).is_ok());
+
+            if !verified {
+                return Err(RedeemTokenError::InvalidSignature {
+                    token_type: token.token_type(),
+                });
             }
             Ok(())
         }
