@@ -102,6 +102,15 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
 
     /// Issue a token request from a caller-supplied blinding scalar.
     ///
+    /// # Security
+    ///
+    /// The blind must be kept secret and must be pseudorandom, uniformly
+    /// distributed over the nonzero scalars of the group, and independent of
+    /// all other blinds. The nonce must likewise be unique and pseudorandom.
+    /// Beyond the zero-blind check, none of this can be verified here.
+    /// Predictable or reused values break the unlinkability and
+    /// one-time-redemption guarantees of the issued token.
+    ///
     /// # Errors
     /// Returns [`DeterministicIssuanceError::ZeroBlind`] if the blinding scalar
     /// is zero. Challenge and blinding failures are wrapped transparently as

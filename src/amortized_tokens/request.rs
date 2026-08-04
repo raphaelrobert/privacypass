@@ -151,6 +151,15 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
 
     /// Issue a token request from caller-supplied blinding scalars.
     ///
+    /// # Security
+    ///
+    /// Each blind must be kept secret and must be independently pseudorandom,
+    /// uniformly distributed over the nonzero scalars of the group. The
+    /// nonces must likewise be unique and pseudorandom. Beyond the zero-blind
+    /// check, none of this can be verified here. Predictable or reused values
+    /// break the unlinkability and one-time-redemption guarantees of the
+    /// issued tokens.
+    ///
     /// # Errors
     /// Returns [`DeterministicIssuanceError::BlindCountMismatch`] if the number
     /// of blinds differs from the number of nonces and

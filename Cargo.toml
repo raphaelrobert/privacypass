@@ -11,7 +11,7 @@ keywords = ["privacypass", "privacy", "pass", "ietf", "rfc9578"]
 categories = ["cryptography", "authentication", "network-programming"]
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["deterministic-issuance"]
 
 [dependencies]
 async-trait = "0.1.89"
