@@ -10,6 +10,9 @@ readme = "README.md"
 keywords = ["privacypass", "privacy", "pass", "ietf", "rfc9578"]
 categories = ["cryptography", "authentication", "network-programming"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [dependencies]
 async-trait = "0.1.89"
 base64 = "0.22"
@@ -35,7 +38,8 @@ trait-variant = "0.1.2"
 
 [features]
 default = []
-kat = ["voprf/danger"]
+deterministic-issuance = ["voprf/danger"]
+kat = ["deterministic-issuance"]
 test-utils = ["tokio"]
 
 [dev-dependencies]

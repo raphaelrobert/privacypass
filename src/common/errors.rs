@@ -84,6 +84,29 @@ pub enum IssueTokenRequestError {
     },
 }
 
+/// Errors that can occur when issuing a deterministic token request.
+#[cfg(feature = "deterministic-issuance")]
+#[derive(PartialEq, Eq, Error, Debug)]
+pub enum DeterministicIssuanceError {
+    #[error("Number of blinds does not match number of nonces")]
+    /// Error when the number of blinds does not match the number of nonces.
+    BlindCountMismatch {
+        /// Number of nonces that were supplied.
+        nonces: usize,
+        /// Number of blinds that were supplied.
+        blinds: usize,
+    },
+    #[error("Blinding scalar at index {index} is zero")]
+    /// Error when a supplied blinding scalar is zero.
+    ZeroBlind {
+        /// Zero-based index of the offending blind.
+        index: usize,
+    },
+    #[error(transparent)]
+    /// Error when constructing the underlying token request.
+    IssueTokenRequest(#[from] IssueTokenRequestError),
+}
+
 /// Source errors for blinding failures.
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum BlindingErrorSource {

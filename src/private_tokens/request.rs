@@ -5,6 +5,8 @@ use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
 use voprf::{Group, Result, VoprfClient};
 
+#[cfg(feature = "deterministic-issuance")]
+use crate::common::{errors::DeterministicIssuanceError, private::Scalar};
 use crate::{
     ChallengeDigest, Nonce, TokenInput, TokenType, TruncatedTokenKeyId,
     auth::authenticate::TokenChallenge,
@@ -65,16 +67,6 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
             .try_fill_bytes(&mut nonce)
             .map_err(|source| IssueTokenRequestError::RngFailed { source })?;
 
-        Self::issue_token_request_internal(public_key, challenge, nonce, None)
-    }
-
-    /// Issue a token request.
-    fn issue_token_request_internal(
-        public_key: PublicKey<CS>,
-        challenge: &TokenChallenge,
-        nonce: Nonce,
-        _blind: Option<<CS::Group as Group>::Scalar>,
-    ) -> Result<(TokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
         let challenge_digest = challenge
             .digest()
             .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
@@ -93,16 +85,6 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
                 source: source.into(),
             })?;
 
-        #[cfg(feature = "kat")]
-        let blinded_element = if let Some(blind) = _blind {
-            VoprfClient::<CS>::deterministic_blind_unchecked(&token_input.serialize(), blind)
-                .map_err(|source| IssueTokenRequestError::BlindingError {
-                    source: source.into(),
-                })?
-        } else {
-            blinded_element
-        };
-
         let token_request = TokenRequest {
             _marker: std::marker::PhantomData,
             token_type: CS::token_type(),
@@ -118,15 +100,50 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
         Ok((token_request, token_state))
     }
 
-    #[cfg(feature = "kat")]
-    /// Issue a token request.
+    /// Issue a token request from a caller-supplied blinding scalar.
+    ///
+    /// # Errors
+    /// Returns [`DeterministicIssuanceError::ZeroBlind`] if the blinding scalar
+    /// is zero. Challenge and blinding failures are wrapped transparently as
+    /// [`IssueTokenRequestError`].
+    #[cfg(feature = "deterministic-issuance")]
     pub fn issue_token_request_with_params(
         public_key: PublicKey<CS>,
         challenge: &TokenChallenge,
         nonce: Nonce,
-        blind: <CS::Group as Group>::Scalar,
-    ) -> Result<(TokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
-        Self::issue_token_request_internal(public_key, challenge, nonce, Some(blind))
+        blind: Scalar<CS>,
+    ) -> Result<(TokenRequest<CS>, TokenState<CS>), DeterministicIssuanceError> {
+        if bool::from(CS::Group::is_zero_scalar(blind)) {
+            return Err(DeterministicIssuanceError::ZeroBlind { index: 0 });
+        }
+
+        let challenge_digest = challenge
+            .digest()
+            .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
+
+        let token_key_id = public_key_to_token_key_id::<CS>(&public_key);
+
+        let token_input = TokenInput::new(CS::token_type(), nonce, challenge_digest, token_key_id);
+
+        let blinded_element =
+            VoprfClient::<CS>::deterministic_blind_unchecked(&token_input.serialize(), blind)
+                .map_err(|source| IssueTokenRequestError::BlindingError {
+                    source: source.into(),
+                })?;
+
+        let token_request = TokenRequest {
+            _marker: std::marker::PhantomData,
+            token_type: CS::token_type(),
+            truncated_token_key_id: truncate_token_key_id(&token_key_id),
+            blinded_msg: blinded_element.message.serialize().to_vec(),
+        };
+        let token_state = TokenState {
+            client: blinded_element.state,
+            token_input,
+            challenge_digest,
+            public_key,
+        };
+        Ok((token_request, token_state))
     }
 }
 

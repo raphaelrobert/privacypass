@@ -34,6 +34,11 @@ impl PrivateCipherSuite for voprf::Ristretto255 {
 /// Public key alias
 pub type PublicKey<CS> = <<CS as CipherSuite>::Group as Group>::Elem;
 
+/// Scalar alias. For Ristretto255 this is the dalek scalar and can be built
+/// from 64 uniformly random bytes via its inherent `from_bytes_mod_order_wide`.
+#[cfg(feature = "deterministic-issuance")]
+pub type Scalar<CS> = <<CS as CipherSuite>::Group as Group>::Scalar;
+
 /// Convert a public key to a token key ID.
 pub fn public_key_to_truncated_token_key_id<CS: PrivateCipherSuite>(
     public_key: &<CS::Group as Group>::Elem,
