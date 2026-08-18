@@ -5,6 +5,8 @@ use tls_codec::{Deserialize, Serialize, Size, TlsDeserialize, TlsSerialize, TlsS
 use typenum::Unsigned;
 use voprf::{Group, Result, VoprfClient};
 
+#[cfg(feature = "deterministic-issuance")]
+use crate::common::{errors::DeterministicIssuanceError, private::Scalar};
 use crate::{
     ChallengeDigest, Nonce, TokenInput, TokenType, TruncatedTokenKeyId,
     auth::authenticate::TokenChallenge,
@@ -69,6 +71,12 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
     pub fn nr(&self) -> usize {
         self.blinded_elements.len()
     }
+
+    /// Returns the truncated token key ID
+    #[must_use]
+    pub fn truncated_token_key_id(&self) -> TruncatedTokenKeyId {
+        self.truncated_token_key_id
+    }
 }
 
 impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
@@ -81,44 +89,26 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
         challenge: &TokenChallenge,
         nr: u16,
     ) -> Result<(AmortizedBatchTokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
-        let mut nonces = Vec::with_capacity(nr as usize);
-
-        for _ in 0..nr {
-            let mut nonce = Nonce::default();
-            SysRng
-                .try_fill_bytes(&mut nonce)
-                .map_err(|source| IssueTokenRequestError::RngFailed { source })?;
-            nonces.push(nonce);
-        }
-
-        Self::issue_token_request_internal(public_key, challenge, nonces, None)
-    }
-
-    /// Issue a token request.
-    fn issue_token_request_internal(
-        public_key: PublicKey<CS>,
-        challenge: &TokenChallenge,
-        nonces: Vec<Nonce>,
-        _blinds: Option<Vec<<CS::Group as Group>::Scalar>>,
-    ) -> Result<(AmortizedBatchTokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
         let challenge_digest = challenge
             .digest()
             .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
 
         let token_key_id = public_key_to_token_key_id::<CS>(&public_key);
 
-        let mut clients = Vec::with_capacity(nonces.len());
-        let mut token_inputs = Vec::with_capacity(nonces.len());
-        let mut blinded_elements = Vec::with_capacity(nonces.len());
+        let mut clients = Vec::with_capacity(nr as usize);
+        let mut token_inputs = Vec::with_capacity(nr as usize);
+        let mut blinded_elements = Vec::with_capacity(nr as usize);
 
-        #[cfg(feature = "kat")]
-        let mut blinds_iter = _blinds.iter().flatten();
-
-        for nonce in nonces {
+        for _ in 0..nr {
             // nonce = random(32)
             // challenge_digest = SHA256(challenge)
             // token_input = concat(0xXXXX, nonce, challenge_digest, token_key_id)
             // blind, blinded_element = client_context.Blind(token_input)
+
+            let mut nonce = Nonce::default();
+            SysRng
+                .try_fill_bytes(&mut nonce)
+                .map_err(|source| IssueTokenRequestError::RngFailed { source })?;
 
             let token_input = TokenInput::new(
                 challenge.token_type(),
@@ -127,32 +117,18 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
                 token_key_id,
             );
 
-            let blind = VoprfClient::<CS>::blind(&token_input.serialize(), &mut SysRng).map_err(
-                |source| IssueTokenRequestError::BlindingError {
-                    source: source.into(),
-                },
-            )?;
-
-            #[cfg(feature = "kat")]
-            let blind = if _blinds.is_some() {
-                VoprfClient::<CS>::deterministic_blind_unchecked(
-                    &token_input.serialize(),
-                    *blinds_iter.next().unwrap(),
-                )
+            let blind_result = VoprfClient::<CS>::blind(&token_input.serialize(), &mut SysRng)
                 .map_err(|source| IssueTokenRequestError::BlindingError {
                     source: source.into(),
-                })?
-            } else {
-                blind
-            };
+                })?;
 
-            let serialized_blinded_element = blind.message.serialize().to_vec();
+            let serialized_blinded_element = blind_result.message.serialize().to_vec();
             let blinded_element = BlindedElement {
                 _marker: std::marker::PhantomData,
                 blinded_element: serialized_blinded_element,
             };
 
-            clients.push(blind.state);
+            clients.push(blind_result.state);
             token_inputs.push(token_input);
             blinded_elements.push(blinded_element);
         }
@@ -173,15 +149,92 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
         Ok((token_request, token_state))
     }
 
-    #[cfg(feature = "kat")]
-    /// Issue a token request.
+    /// Issue a token request from caller-supplied blinding scalars.
+    ///
+    /// # Security
+    ///
+    /// Each blind must be kept secret and must be independently pseudorandom,
+    /// uniformly distributed over the nonzero scalars of the group. The
+    /// nonces must likewise be unique and pseudorandom. Beyond the zero-blind
+    /// check, none of this can be verified here. Predictable or reused values
+    /// break the unlinkability and one-time-redemption guarantees of the
+    /// issued tokens.
+    ///
+    /// # Errors
+    /// Returns [`DeterministicIssuanceError::BlindCountMismatch`] if the number
+    /// of blinds differs from the number of nonces and
+    /// [`DeterministicIssuanceError::ZeroBlind`] if a blinding scalar is zero.
+    /// Challenge and blinding failures are wrapped transparently as
+    /// [`IssueTokenRequestError`].
+    #[cfg(feature = "deterministic-issuance")]
     pub fn issue_token_request_with_params(
         public_key: PublicKey<CS>,
         challenge: &TokenChallenge,
         nonces: Vec<Nonce>,
-        blind: Vec<<CS::Group as Group>::Scalar>,
-    ) -> Result<(AmortizedBatchTokenRequest<CS>, TokenState<CS>), IssueTokenRequestError> {
-        Self::issue_token_request_internal(public_key, challenge, nonces, Some(blind))
+        blinds: Vec<Scalar<CS>>,
+    ) -> Result<(AmortizedBatchTokenRequest<CS>, TokenState<CS>), DeterministicIssuanceError> {
+        if nonces.len() != blinds.len() {
+            return Err(DeterministicIssuanceError::BlindCountMismatch {
+                nonces: nonces.len(),
+                blinds: blinds.len(),
+            });
+        }
+
+        for (index, blind) in blinds.iter().enumerate() {
+            if bool::from(CS::Group::is_zero_scalar(*blind)) {
+                return Err(DeterministicIssuanceError::ZeroBlind { index });
+            }
+        }
+
+        let challenge_digest = challenge
+            .digest()
+            .map_err(|source| IssueTokenRequestError::InvalidTokenChallenge { source })?;
+
+        let token_key_id = public_key_to_token_key_id::<CS>(&public_key);
+
+        let mut clients = Vec::with_capacity(nonces.len());
+        let mut token_inputs = Vec::with_capacity(nonces.len());
+        let mut blinded_elements = Vec::with_capacity(nonces.len());
+
+        for (nonce, blind) in nonces.into_iter().zip(blinds) {
+            let token_input = TokenInput::new(
+                challenge.token_type(),
+                nonce,
+                challenge_digest,
+                token_key_id,
+            );
+
+            let blind_result =
+                VoprfClient::<CS>::deterministic_blind_unchecked(&token_input.serialize(), blind)
+                    .map_err(|source| IssueTokenRequestError::BlindingError {
+                    source: source.into(),
+                })?;
+
+            let serialized_blinded_element = blind_result.message.serialize().to_vec();
+            let blinded_element = BlindedElement {
+                _marker: std::marker::PhantomData,
+                blinded_element: serialized_blinded_element,
+            };
+
+            clients.push(blind_result.state);
+            token_inputs.push(token_input);
+            blinded_elements.push(blinded_element);
+        }
+
+        let token_request = AmortizedBatchTokenRequest {
+            token_type: challenge.token_type(),
+            truncated_token_key_id: truncate_token_key_id(&token_key_id),
+            blinded_elements,
+        };
+
+        let token_state = TokenState {
+            clients,
+            token_inputs,
+            challenge_digest,
+            public_key,
+        };
+
+        Ok((token_request, token_state))
     }
 }
 
