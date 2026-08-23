@@ -43,6 +43,8 @@ pub enum TokenType {
     Public = 2,
     /// Private ristretto255 token
     PrivateRistretto255 = 5,
+    /// Publicly verifiable token with public metadata
+    PublicMetadata = 0xDA7A,
 }
 
 /// Token key ID
