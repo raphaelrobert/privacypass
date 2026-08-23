@@ -1,6 +1,6 @@
 [package]
 name = "privacypass"
-version = "0.2.0-pre.2"
+version = "0.2.0-pre.3"
 edition = "2024"
 description = "Implementation of Privacy Pass (RFC 9578)"
 license = "MIT"
@@ -9,6 +9,9 @@ repository = "https://github.com/raphaelrobert/privacypass"
 readme = "README.md"
 keywords = ["privacypass", "privacy", "pass", "ietf", "rfc9578"]
 categories = ["cryptography", "authentication", "network-programming"]
+
+[package.metadata.docs.rs]
+features = ["deterministic-issuance"]
 
 [dependencies]
 async-trait = "0.1.89"
@@ -35,7 +38,8 @@ trait-variant = "0.1.2"
 
 [features]
 default = []
-kat = ["voprf/danger"]
+deterministic-issuance = ["voprf/danger"]
+kat = ["deterministic-issuance"]
 test-utils = ["tokio"]
 
 [dev-dependencies]
