@@ -6,11 +6,11 @@ use std::{
     collections::HashSet,
     io::{Read, Write},
 };
-use thiserror::Error;
-use tls_codec::{Deserialize, Serialize, Size, TlsByteVecU16, TlsVecU16};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec::{
+    Deserialize, Serialize, Size, TlsByteVecU16, TlsDeserialize, TlsSerialize, TlsSize, TlsVecU16,
+};
 
-use crate::common::errors::{CreateExtensionsError, ExpirationExtensionError};
+use crate::common::errors::{CreateExtensionsError, ExpirationExtensionError, NegotiationError};
 
 /// Type of extension as specified in
 /// [`draft-ietf-privacypass-auth-scheme-extensions-03` &sect;3](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03#section-3):
@@ -22,7 +22,8 @@ use crate::common::errors::{CreateExtensionsError, ExpirationExtensionError};
 /// } ExtensionType;
 /// ```
 ///
-/// Extension types are to be defined by the client, not by this crate
+/// Extension types are registered by extension specifications. This crate exposes constants for
+/// known types and allows callers to construct other registered values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, TlsSize, TlsSerialize, TlsDeserialize, Hash)]
 pub struct ExtensionType(pub u16);
 
@@ -180,9 +181,16 @@ impl Extension {
 /// ```
 ///
 /// Contains a list of Extension values.
-#[derive(Clone, Debug, PartialEq, Eq, TlsSize, TlsSerialize, TlsDeserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsSize, TlsSerialize)]
 pub struct Extensions {
     extensions: TlsVecU16<Extension>,
+}
+
+impl Deserialize for Extensions {
+    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
+        let extensions = TlsVecU16::<Extension>::tls_deserialize(bytes)?;
+        Self::new(extensions.as_slice().to_vec()).map_err(|_| tls_codec::Error::InvalidInput)
+    }
 }
 
 impl Extensions {
@@ -197,7 +205,6 @@ impl Extensions {
             return Err(CreateExtensionsError::ExtensionsUnsorted);
         }
 
-        #[cfg(not(any(test, feature = "test-utils")))]
         if extensions
             .iter()
             .any(|x| x.extension_type.0 == ExtensionType::RESERVED.0)
@@ -328,17 +335,6 @@ pub struct ExtensionSet {
     extension_types: TlsVecU16<ExtensionEntry>,
 }
 
-/// Error that occurs during extension negotiation
-#[derive(Error, Debug)]
-pub enum NegotiationError {
-    /// A required extension was missing
-    #[error("Missing required extension type: {extension_type:?}")]
-    MissingExtensionType {
-        /// Extension type that was required
-        extension_type: ExtensionType,
-    },
-}
-
 impl ExtensionSet {
     /// Creates a new `ExtensionSet`
     pub fn new(extension_types: Vec<ExtensionEntry>) -> ExtensionSet {
@@ -386,8 +382,46 @@ impl ExtensionSet {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExpirationTimestamp, Extension, ExtensionType, Extensions};
-    use crate::common::errors::ExpirationExtensionError;
+    use super::{
+        ExpirationTimestamp, Extension, ExtensionEntry, ExtensionSet, ExtensionType, Extensions,
+    };
+    use crate::common::errors::{
+        CreateExtensionsError, ExpirationExtensionError, NegotiationError,
+    };
+    use tls_codec::Deserialize;
+
+    #[test]
+    fn extensions_rejects_reserved_type() {
+        let extension = Extension::new(ExtensionType::RESERVED, vec![]).unwrap();
+
+        assert_eq!(
+            Extensions::new(vec![extension]),
+            Err(CreateExtensionsError::InvalidType)
+        );
+
+        assert!(Extensions::tls_deserialize_exact(vec![0, 4, 0, 0, 0, 0]).is_err());
+    }
+
+    #[test]
+    fn extension_set_validates_required_types() {
+        let required_type = ExtensionType(10);
+        let extension_set = ExtensionSet::new(vec![
+            ExtensionEntry::new(true, required_type),
+            ExtensionEntry::new(false, ExtensionType(11)),
+        ]);
+        let extensions = Extensions::new(vec![]).unwrap();
+
+        assert_eq!(
+            extension_set.validate(&extensions),
+            Err(NegotiationError::MissingExtensionType {
+                extension_type: required_type,
+            })
+        );
+
+        let extensions =
+            Extensions::new(vec![Extension::new(required_type, vec![]).unwrap()]).unwrap();
+        assert_eq!(extension_set.validate(&extensions), Ok(()));
+    }
 
     #[test]
     fn expiration_timestamp_serializes_draft_example() {

@@ -10,7 +10,7 @@ use tls_codec::{Deserialize, Serialize, Size};
 use crate::common::extensions::Extensions;
 use crate::public_tokens::server::PbrsaPublicKey;
 use crate::{
-    ChallengeDigest, Nonce, TokenInput, TokenType, auth::authenticate::TokenChallenge,
+    Nonce, TokenInput, TokenType, auth::authenticate::TokenChallenge,
     common::errors::IssueTokenRequestError, truncate_token_key_id,
 };
 
@@ -19,11 +19,22 @@ use super::{NK, PublicKey, public_key_to_token_key_id};
 /// State that is kept between the token requests and token responses.
 #[derive(Debug)]
 pub struct TokenState {
-    pub(crate) token_input: TokenInput,
-    pub(crate) challenge_digest: ChallengeDigest,
-    pub(crate) blinding_result: BlindingResult,
-    pub(crate) public_key: PublicKey,
-    pub(crate) pbrsa_state: Option<(Vec<u8>, PbrsaPublicKey)>,
+    pub(super) inner: TokenStateInner,
+}
+
+#[derive(Debug)]
+pub(super) enum TokenStateInner {
+    Public {
+        token_input: TokenInput,
+        blinding_result: BlindingResult,
+        public_key: PublicKey,
+    },
+    PublicMetadata {
+        token_input: TokenInput,
+        blinding_result: BlindingResult,
+        metadata: Vec<u8>,
+        public_key: PbrsaPublicKey,
+    },
 }
 
 /// Token request as specified in the spec:
@@ -58,8 +69,8 @@ impl TokenRequest {
     ///
     /// This is useful for validating the extensions before signing, e.g. for checking an
     /// expiration date etc.
-    pub fn extensions(&self) -> &Option<Extensions> {
-        &self.extensions
+    pub fn extensions(&self) -> Option<&Extensions> {
+        self.extensions.as_ref()
     }
 }
 
@@ -121,10 +132,10 @@ impl TokenRequest {
         public_key: PublicKey,
         challenge: &TokenChallenge,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
-        if challenge.token_type != TokenType::Public {
+        if challenge.token_type() != TokenType::Public {
             return Err(IssueTokenRequestError::InvalidTokenType {
                 expected: TokenType::Public,
-                found: challenge.token_type,
+                found: challenge.token_type(),
             });
         }
 
@@ -141,10 +152,10 @@ impl TokenRequest {
         challenge: &TokenChallenge,
         extensions: Extensions,
     ) -> Result<(TokenRequest, TokenState), IssueTokenRequestError> {
-        if challenge.token_type != TokenType::PublicMetadata {
+        if challenge.token_type() != TokenType::PublicMetadata {
             return Err(IssueTokenRequestError::InvalidTokenType {
                 expected: TokenType::PublicMetadata,
-                found: challenge.token_type,
+                found: challenge.token_type(),
             });
         }
 
@@ -184,7 +195,7 @@ impl TokenRequest {
         // token_input = concat(0x0002, nonce, challenge_digest, token_key_id)
         // blinded_msg, blind_inv = rsabssa_blind(pkI, token_input)
 
-        let (blinding_result, pbrsa_state) = if let Some(ref extensions) = extensions {
+        let (blinded_msg, token_state) = if let Some(ref extensions) = extensions {
             let metadata = extensions
                 .tls_serialize_detached()
                 .inspect_err(|e| warn!(error:% = e; "Failed to serialize extensions"))
@@ -206,9 +217,20 @@ impl TokenRequest {
                     source: source.into(),
                 })?;
 
-            let pbrsa_state = Some((metadata, derived_pk));
+            debug_assert!(blinding_result.blind_message.len() == NK);
+            let mut blinded_msg = [0u8; NK];
+            blinded_msg.copy_from_slice(blinding_result.blind_message.as_slice());
 
-            (blinding_result, pbrsa_state)
+            let token_state = TokenState {
+                inner: TokenStateInner::PublicMetadata {
+                    token_input,
+                    blinding_result,
+                    metadata,
+                    public_key: derived_pk,
+                },
+            };
+
+            (blinded_msg, token_state)
         } else {
             let blinding_result = public_key
                 .blind(rng, token_input.serialize())
@@ -217,26 +239,26 @@ impl TokenRequest {
                     source: source.into(),
                 })?;
 
-            (blinding_result, None)
-        };
+            debug_assert!(blinding_result.blind_message.len() == NK);
+            let mut blinded_msg = [0u8; NK];
+            blinded_msg.copy_from_slice(blinding_result.blind_message.as_slice());
 
-        debug_assert!(blinding_result.blind_message.len() == NK);
-        let mut blinded_msg = [0u8; NK];
-        blinded_msg.copy_from_slice(blinding_result.blind_message.as_slice());
+            let token_state = TokenState {
+                inner: TokenStateInner::Public {
+                    token_input,
+                    blinding_result,
+                    public_key,
+                },
+            };
+
+            (blinded_msg, token_state)
+        };
 
         let token_request = TokenRequest {
             token_type,
             truncated_token_key_id: truncate_token_key_id(&token_key_id),
             blinded_msg,
             extensions,
-        };
-
-        let token_state = TokenState {
-            blinding_result,
-            token_input,
-            challenge_digest,
-            public_key,
-            pbrsa_state,
         };
 
         Ok((token_request, token_state))

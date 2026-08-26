@@ -296,7 +296,7 @@ impl IssuerServer {
                     .inspect_err(
                         |e| warn!(error:% = e; "Stored key not PBRSA compatible (no safe primes)"),
                     )
-                    .map_err(|source| IssueTokenResponseError::BlindSignatureFailed { source })?;
+                    .map_err(|source| IssueTokenResponseError::KeyNotMetadataCapable { source })?;
 
                 let derived_sk = pbrsa
                     .derive_secret_key_for_metadata(&metadata)
@@ -353,27 +353,12 @@ pub fn verify_token<Nk: ArraySize>(
     token: &Token<Nk>,
     extensions: Option<&Extensions>,
 ) -> Result<(), RedeemTokenError> {
-    if extensions.is_some() {
-        if token.token_type() != TokenType::PublicMetadata {
-            return Err(RedeemTokenError::TokenTypeMismatch {
-                expected: TokenType::PublicMetadata,
-                found: token.token_type(),
-            });
-        }
-    } else if token.token_type() != TokenType::Public {
-        return Err(RedeemTokenError::TokenTypeMismatch {
-            expected: TokenType::Public,
-            found: token.token_type(),
-        });
-    }
-
-    let authenticator_len = token.authenticator().len();
-    if authenticator_len != KEYSIZE_IN_BYTES {
-        return Err(RedeemTokenError::InvalidAuthenticatorLength {
-            expected: KEYSIZE_IN_BYTES,
-            found: authenticator_len,
-        });
-    }
+    let expected_token_type = if extensions.is_some() {
+        TokenType::PublicMetadata
+    } else {
+        TokenType::Public
+    };
+    validate_token_structure(token, expected_token_type)?;
 
     let token_input = TokenInput::new(
         token.token_type(),
@@ -417,6 +402,28 @@ pub fn verify_token<Nk: ArraySize>(
     Ok(())
 }
 
+fn validate_token_structure<Nk: ArraySize>(
+    token: &Token<Nk>,
+    expected_token_type: TokenType,
+) -> Result<(), RedeemTokenError> {
+    if token.token_type() != expected_token_type {
+        return Err(RedeemTokenError::TokenTypeMismatch {
+            expected: expected_token_type,
+            found: token.token_type(),
+        });
+    }
+
+    let authenticator_len = token.authenticator().len();
+    if authenticator_len != KEYSIZE_IN_BYTES {
+        return Err(RedeemTokenError::InvalidAuthenticatorLength {
+            expected: KEYSIZE_IN_BYTES,
+            found: authenticator_len,
+        });
+    }
+
+    Ok(())
+}
+
 /// Server-side implementation of Publicly Verifiable Token protocol for
 /// origins.
 #[derive(Default, Debug)]
@@ -432,13 +439,18 @@ impl OriginServer {
     ///
     /// # Errors
     /// Returns an error if the token is invalid or deriving the key for the metadata fails.
-    pub async fn redeem_token_with_extensions<OKS: OriginKeyStore, NS: NonceStore, Nk: ArraySize>(
+    pub async fn redeem_token_with_extensions<
+        OKS: OriginKeyStore,
+        NS: NonceStore,
+        Nk: ArraySize,
+    >(
         &self,
         key_store: &OKS,
         nonce_store: &NS,
         token: Token<Nk>,
         extensions: &Extensions,
     ) -> Result<(), RedeemTokenError> {
+        validate_token_structure(&token, TokenType::PublicMetadata)?;
         let nonce = token.nonce();
 
         if !nonce_store.reserve(&nonce).await {
@@ -487,6 +499,7 @@ impl OriginServer {
         nonce_store: &NS,
         token: Token<Nk>,
     ) -> Result<(), RedeemTokenError> {
+        validate_token_structure(&token, TokenType::Public)?;
         let nonce = token.nonce();
 
         if !nonce_store.reserve(&nonce).await {

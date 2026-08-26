@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::{
     TokenType, auth::authenticate::SerializationError as TokenChallengeSerializationError,
+    common::extensions::ExtensionType,
 };
 use tls_codec::Error as TlsCodecError;
 use voprf::Error as VoprfError;
@@ -82,6 +83,21 @@ pub enum IssueTokenRequestError {
         #[source]
         source: SysError,
     },
+    #[error("Extension serialization error")]
+    /// Error when serializing Extensions fails
+    ExtensionSerializationError {
+        /// Underlying TLS error that triggered the failure
+        #[source]
+        source: TlsCodecError,
+    },
+    #[error("Invalid token type: expected {expected:?}, found {found:?}")]
+    /// Error when the token type does not match the expected type.
+    InvalidTokenType {
+        /// Expected token type for the operation.
+        expected: TokenType,
+        /// Actual token type found in the request.
+        found: TokenType,
+    },
 }
 
 /// Errors that can occur when issuing a deterministic token request.
@@ -105,21 +121,6 @@ pub enum DeterministicIssuanceError {
     #[error(transparent)]
     /// Error when constructing the underlying token request.
     IssueTokenRequest(#[from] IssueTokenRequestError),
-    #[error("Extension serialization error")]
-    /// Error when serializing Extensions fails
-    ExtensionSerializationError {
-        /// Underlying TLS error that triggered the failure
-        #[source]
-        source: TlsCodecError,
-    },
-    #[error("Invalid token type: expected {expected:?}, found {found:?}")]
-    /// Error when the token type does not match the expected type.
-    InvalidTokenType {
-        /// Expected token type for the operation.
-        expected: TokenType,
-        /// Actual token type found in the request.
-        found: TokenType,
-    },
 }
 
 /// Source errors for blinding failures.
@@ -156,6 +157,13 @@ pub enum IssueTokenResponseError {
     #[error("Blind signature failed")]
     /// Error when the server fails to compute a blind signature.
     BlindSignatureFailed {
+        /// Underlying RSA error that triggered the failure.
+        #[source]
+        source: BlindRsaError,
+    },
+    #[error("Key is not metadata capable")]
+    /// Error when the issuer key cannot be used for public metadata issuance.
+    KeyNotMetadataCapable {
         /// Underlying RSA error that triggered the failure.
         #[source]
         source: BlindRsaError,
@@ -241,15 +249,6 @@ pub enum IssueTokenError {
         #[source]
         source: BlindRsaError,
     },
-    #[error("Invalid token type: {token_type:?}")]
-    /// Error when the token type is not supported (e.g. using private token in public issue_token)
-    InvalidTokenType {
-        /// Token type found in the token.
-        token_type: TokenType,
-    },
-    #[error("Expected to have a PBRSA state but there was none")]
-    /// Error when there is no PBRSA state when using `TokenType::PublicMetadata`
-    NoPbrsaState,
 }
 
 /// Errors that can occur when redeeming the token.
@@ -333,4 +332,15 @@ pub enum ExpirationExtensionError {
     /// More than one Expiration extension is present.
     #[error("Duplicate Expiration extension")]
     DuplicateExpiration,
+}
+
+/// Error that occurs during extension negotiation.
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum NegotiationError {
+    /// A required extension was missing.
+    #[error("Missing required extension type: {extension_type:?}")]
+    MissingExtensionType {
+        /// Extension type that was required.
+        extension_type: ExtensionType,
+    },
 }

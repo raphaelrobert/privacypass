@@ -1,10 +1,7 @@
 //! This module contains the authorization logic for redemption phase of the
 //! protocol.
 
-use base64::{
-    Engine as _, alphabet,
-    engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig, general_purpose::URL_SAFE},
-};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use http::{HeaderValue, header::HeaderName};
 use hybrid_array::{Array, ArraySize};
 use nom::{
@@ -400,7 +397,6 @@ mod tests {
     };
     use crate::common::extensions::{Extension, ExtensionType, Extensions};
     use hybrid_array::{Array, typenum::U32};
-    use http::HeaderValue;
 
     #[test]
     fn builder_parser_test() {
@@ -535,8 +531,9 @@ mod tests {
             },
         ];
 
-        // all vectors use extension(0x0000, uint8[01, 02, 03])
-        let extension = Extension::new(ExtensionType(0), vec![1, 2, 3]).unwrap();
+        // The source vectors use reserved extension type 0 as a placeholder. Use a valid private
+        // type for this local builder/parser round trip.
+        let extension = Extension::new(ExtensionType(10), vec![1, 2, 3]).unwrap();
         let extensions = Extensions::new(vec![extension]).unwrap();
 
         for vector in &vectors {
@@ -562,5 +559,4 @@ mod tests {
             assert_eq!(maybe_extensions, Some(extensions.clone()));
         }
     }
-
 }

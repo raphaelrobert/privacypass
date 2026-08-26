@@ -2,11 +2,15 @@ use blind_rsa_signatures::reexports::crypto_bigint::BoxedUint;
 use blind_rsa_signatures::reexports::rand::rng;
 use blind_rsa_signatures::reexports::rsa::RsaPrivateKey;
 use blind_rsa_signatures::{Deterministic, KeyPair, PSS, PublicKey, SecretKey, Sha384};
+use hybrid_array::{
+    Array,
+    typenum::{U32, U256},
+};
 use privacypass::common::extensions::{Extension, ExtensionType, Extensions};
 use privacypass::{
-    TokenType,
-    auth::authenticate::TokenChallenge,
-    common::errors::RedeemTokenError,
+    Nonce, NonceStore, TokenType,
+    auth::{authenticate::TokenChallenge, authorize::Token},
+    common::errors::{IssueTokenResponseError, RedeemTokenError},
     public_tokens::{
         TokenRequest, public_key_to_truncated_token_key_id,
         server::{IssuerKeyStore, IssuerServer, OriginKeyStore, OriginServer},
@@ -16,6 +20,38 @@ use privacypass::{
         public_memory_store::{IssuerMemoryKeyStore, OriginMemoryKeyStore},
     },
 };
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[derive(Default)]
+struct CountingNonceStore {
+    reserves: AtomicUsize,
+    commits: AtomicUsize,
+    releases: AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl NonceStore for CountingNonceStore {
+    async fn reserve(&self, _nonce: &Nonce) -> bool {
+        self.reserves.fetch_add(1, Ordering::Relaxed);
+        true
+    }
+
+    async fn commit(&self, _nonce: &Nonce) {
+        self.commits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    async fn release(&self, _nonce: &Nonce) {
+        self.releases.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl CountingNonceStore {
+    fn assert_untouched(&self) {
+        assert_eq!(self.reserves.load(Ordering::Relaxed), 0);
+        assert_eq!(self.commits.load(Ordering::Relaxed), 0);
+        assert_eq!(self.releases.load(Ordering::Relaxed), 0);
+    }
+}
 
 #[tokio::test]
 async fn public_tokens_cycle() {
@@ -54,7 +90,8 @@ async fn public_tokens_cycle() {
 
     // Client: Prepare a TokenRequest after having received a challenge
     let (token_request, token_state) =
-        TokenRequest::new(rng, public_key, &token_challenge).unwrap();
+        TokenRequest::new(rng, public_key.clone(), &token_challenge).unwrap();
+    assert!(token_request.extensions().is_none());
 
     // Issuer server: Issue a TokenResponse
     let token_response = issuer_server
@@ -83,6 +120,93 @@ async fn public_tokens_cycle() {
             .await,
         Err(RedeemTokenError::DoubleSpending)
     );
+
+    let metadata_challenge = TokenChallenge::new(
+        TokenType::PublicMetadata,
+        "example.com",
+        None,
+        &["example.com".to_string()],
+    );
+    let extensions = Extensions::new(vec![]).unwrap();
+    let (token_request, _) =
+        TokenRequest::new_with_extensions(rng, public_key, &metadata_challenge, extensions)
+            .unwrap();
+    assert!(matches!(
+        issuer_server
+            .issue_token_response(&issuer_key_store, token_request)
+            .await,
+        Err(IssueTokenResponseError::KeyNotMetadataCapable { .. })
+    ));
+}
+
+#[tokio::test]
+async fn malformed_tokens_do_not_reserve_nonces() {
+    let origin_server = OriginServer::new();
+    let key_store = OriginMemoryKeyStore::default();
+    let nonce_store = CountingNonceStore::default();
+    let extensions = Extensions::new(vec![]).unwrap();
+
+    let wrong_type = Token::<U256>::new(
+        TokenType::PrivateP384,
+        [0; 32],
+        [0; 32],
+        [0; 32],
+        Array::default(),
+    );
+    assert_eq!(
+        origin_server
+            .redeem_token(&key_store, &nonce_store, wrong_type.clone())
+            .await,
+        Err(RedeemTokenError::TokenTypeMismatch {
+            expected: TokenType::Public,
+            found: TokenType::PrivateP384,
+        })
+    );
+    assert_eq!(
+        origin_server
+            .redeem_token_with_extensions(&key_store, &nonce_store, wrong_type, &extensions,)
+            .await,
+        Err(RedeemTokenError::TokenTypeMismatch {
+            expected: TokenType::PublicMetadata,
+            found: TokenType::PrivateP384,
+        })
+    );
+
+    let short_public = Token::<U32>::new(
+        TokenType::Public,
+        [1; 32],
+        [0; 32],
+        [0; 32],
+        Array::default(),
+    );
+    assert_eq!(
+        origin_server
+            .redeem_token(&key_store, &nonce_store, short_public)
+            .await,
+        Err(RedeemTokenError::InvalidAuthenticatorLength {
+            expected: 256,
+            found: 32,
+        })
+    );
+
+    let short_metadata = Token::<U32>::new(
+        TokenType::PublicMetadata,
+        [2; 32],
+        [0; 32],
+        [0; 32],
+        Array::default(),
+    );
+    assert_eq!(
+        origin_server
+            .redeem_token_with_extensions(&key_store, &nonce_store, short_metadata, &extensions,)
+            .await,
+        Err(RedeemTokenError::InvalidAuthenticatorLength {
+            expected: 256,
+            found: 32,
+        })
+    );
+
+    nonce_store.assert_untouched();
 }
 
 #[tokio::test]
@@ -247,6 +371,7 @@ async fn public_metadata_tokens() {
     let (token_request, token_state) =
         TokenRequest::new_with_extensions(rng, public_key, &token_challenge, extensions.clone())
             .unwrap();
+    assert_eq!(token_request.extensions(), Some(&extensions));
 
     // Issuer server: Issue a TokenResponse
     let token_response = issuer_server

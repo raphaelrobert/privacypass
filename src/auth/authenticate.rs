@@ -39,7 +39,7 @@ pub type RedemptionContext = [u8; 32];
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, TlsSize, TlsDeserialize, TlsSerialize)]
 pub struct TokenChallenge {
-    pub(crate) token_type: TokenType,
+    token_type: TokenType,
     issuer_name: TlsByteVecU16,
     redemption_context: TlsByteVecU8,
     origin_info: TlsByteVecU16,
@@ -251,15 +251,9 @@ pub enum BuildError {
 /// Returns an error if the `WWW-Authenticate` header cannot be parsed.
 pub fn parse_www_authenticate_header(value: &HeaderValue) -> Result<Vec<Challenge>, ParseError> {
     let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
-    // in RFC 9577 section 2.2.2, it says the token field might be a quoted string, so when
-    // parsing without extensions, we need to accept values that are not quoted as well.
-    let (_, challenges) =
-        parse_private_tokens(s, false).map_err(|_| ParseError::InvalidChallenge)?;
+    let (_, challenges) = parse_private_tokens(s).map_err(|_| ParseError::InvalidChallenge)?;
 
-    Ok(challenges
-        .into_iter()
-        .map(|(challenge, _, _)| challenge)
-        .collect())
+    Ok(challenges)
 }
 
 /// Parses a `WWW-Authenticate` header according to the following scheme
@@ -270,16 +264,11 @@ pub fn parse_www_authenticate_header(value: &HeaderValue) -> Result<Vec<Challeng
 ///
 /// # Errors
 /// Returns an error if the `WWW-Authenticate` header cannot be parsed.
-#[allow(clippy::type_complexity)]
 pub fn parse_www_authenticate_header_ext(
     value: &HeaderValue,
-) -> Result<Vec<(Challenge, Option<ExtensionSet>, Option<Extensions>)>, ParseError> {
+) -> Result<Vec<Challenge>, ParseError> {
     let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
-    // In draft-ietf-privacypass-auth-scheme-extensions-03, it says token and extensions MUST be
-    // enclosed in double-quotes. Thus, when parsing both tokens and extensions, we should
-    // strictly accept only quoted values.
-    let (_, challenges) =
-        parse_private_tokens(s, true).map_err(|_| ParseError::InvalidChallenge)?;
+    let (_, challenges) = parse_private_tokens(s).map_err(|_| ParseError::InvalidChallenge)?;
 
     Ok(challenges)
 }
@@ -290,6 +279,8 @@ pub struct Challenge {
     challenge: TokenChallenge,
     token_key: Vec<u8>,
     max_age: Option<u32>,
+    extension_set: Option<ExtensionSet>,
+    extensions: Option<Extensions>,
 }
 
 impl Challenge {
@@ -310,6 +301,18 @@ impl Challenge {
     pub const fn max_age(&self) -> Option<u32> {
         self.max_age
     }
+
+    /// Returns the optional extension set.
+    #[must_use]
+    pub const fn extension_set(&self) -> Option<&ExtensionSet> {
+        self.extension_set.as_ref()
+    }
+
+    /// Returns the optional extensions.
+    #[must_use]
+    pub const fn extensions(&self) -> Option<&Extensions> {
+        self.extensions.as_ref()
+    }
 }
 
 /// Parsing error for the `WWW-Authenticate` header values
@@ -323,20 +326,14 @@ pub enum ParseError {
     InvalidInput,
 }
 
-fn parse_key_value(input: &str, strict_quotes: bool) -> IResult<&str, (&str, &str)> {
+fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
     let (input, _) = opt_spaces(input)?;
     let (input, key) = key_name(input)?;
     let (input, _) = opt_spaces(input)?;
     let (input, _) = tag("=")(input)?;
     let (input, _) = opt_spaces(input)?;
     let (input, value) = match key.to_lowercase().as_str() {
-        "challenge" | "token-key" => {
-            if strict_quotes {
-                unquote(input)?
-            } else {
-                maybe_unquote(input)?
-            }
-        }
+        "challenge" | "token-key" => maybe_unquote(input)?,
         "extension-set" | "extensions" => unquote(input)?,
         "max-age" => digit1(input)?,
         _ => {
@@ -349,16 +346,12 @@ fn parse_key_value(input: &str, strict_quotes: bool) -> IResult<&str, (&str, &st
     Ok((input, (key, value)))
 }
 
-fn parse_private_token(
-    input: &str,
-    strict_quotes: bool,
-) -> IResult<&str, (Challenge, Option<ExtensionSet>, Option<Extensions>)> {
+fn parse_private_token(input: &str) -> IResult<&str, Challenge> {
     let (input, _) = opt_spaces(input)?;
     let (input, _) = tag_no_case("PrivateToken")(input)?;
     let (input, _) = many1(space).parse(input)?;
     let (input, _) = opt(comma_sep).parse(input)?;
-    let (input, key_values) =
-        separated_list1(comma_sep, |i| parse_key_value(i, strict_quotes)).parse(input)?;
+    let (input, key_values) = separated_list1(comma_sep, parse_key_value).parse(input)?;
 
     let mut challenge = None;
     let mut token_key = None;
@@ -398,15 +391,13 @@ fn parse_private_token(
     if let (Some(challenge), Some(token_key)) = (challenge, token_key) {
         Ok((
             input,
-            (
-                Challenge {
-                    challenge,
-                    token_key,
-                    max_age,
-                },
+            Challenge {
+                challenge,
+                token_key,
+                max_age,
                 extension_set,
                 extensions,
-            ),
+            },
         ))
     } else {
         Err(nom::Err::Failure(nom::error::make_error(
@@ -416,14 +407,9 @@ fn parse_private_token(
     }
 }
 
-#[allow(clippy::type_complexity)]
-fn parse_private_tokens(
-    input: &str,
-    strict_quotes: bool,
-) -> IResult<&str, Vec<(Challenge, Option<ExtensionSet>, Option<Extensions>)>> {
+fn parse_private_tokens(input: &str) -> IResult<&str, Vec<Challenge>> {
     let (input, _) = opt(comma_sep).parse(input)?;
-    let (input, tokens) =
-        separated_list1(comma_sep, |i| parse_private_token(i, strict_quotes)).parse(input)?;
+    let (input, tokens) = separated_list1(comma_sep, parse_private_token).parse(input)?;
     let (input, _) = opt(comma_sep).parse(input)?;
     let (input, _) = opt_spaces(input)?;
     Ok((input, tokens))
@@ -491,18 +477,14 @@ mod tests {
         );
 
         let input = HeaderValue::from_str(&format!(
-            "PrivateToken challenge={}, token-key={}, max-age=10, PrivateToken challenge={}, token-key={}", 
+            "PrivateToken challenge={}, token-key={}, max-age=10, PrivateToken challenge={}, token-key={}",
             challenge1.to_base64().unwrap(),
             URL_SAFE.encode(&token_key1),
             challenge2.to_base64().unwrap(),
             URL_SAFE.encode(&token_key2)))
         .unwrap();
 
-        let (_, challenge_list) = parse_private_tokens(input.to_str().unwrap(), false).unwrap();
-        let challenge_list: Vec<_> = challenge_list
-            .into_iter()
-            .map(|(challenge, _, _)| challenge)
-            .collect();
+        let (_, challenge_list) = parse_private_tokens(input.to_str().unwrap()).unwrap();
 
         assert_eq!(
             challenge_list,
@@ -511,11 +493,15 @@ mod tests {
                     challenge: challenge1,
                     token_key: token_key1,
                     max_age: Some(10),
+                    extension_set: None,
+                    extensions: None,
                 },
                 Challenge {
                     challenge: challenge2,
                     token_key: token_key2,
                     max_age: None,
+                    extension_set: None,
+                    extensions: None,
                 }
             ]
         );
@@ -543,7 +529,14 @@ mod tests {
                 challenge: token_challenge,
                 token_key,
                 max_age: Some(max_age),
+                extension_set: None,
+                extensions: None,
             }]
+        );
+
+        assert_eq!(
+            parse_www_authenticate_header_ext(&header_value).unwrap(),
+            challenges
         );
 
         assert_eq!(challenges.len(), 1);
@@ -625,19 +618,17 @@ mod tests {
         ))
         .unwrap();
 
-        let (_, challenge_list) = parse_private_tokens(input.to_str().unwrap(), true).unwrap();
+        let (_, challenge_list) = parse_private_tokens(input.to_str().unwrap()).unwrap();
 
         assert_eq!(
             challenge_list,
-            vec![(
-                Challenge {
-                    challenge: token_challenge,
-                    token_key,
-                    max_age: Some(42),
-                },
-                Some(extension_set),
-                Some(extensions),
-            )]
+            vec![Challenge {
+                challenge: token_challenge,
+                token_key,
+                max_age: Some(42),
+                extension_set: Some(extension_set),
+                extensions: Some(extensions),
+            }]
         );
     }
 
@@ -673,17 +664,18 @@ mod tests {
 
         let parsed = parse_www_authenticate_header_ext(&header_value).unwrap();
 
+        assert_eq!(parsed[0].extension_set(), Some(&extension_set));
+        assert_eq!(parsed[0].extensions(), Some(&extensions));
+
         assert_eq!(
             parsed,
-            vec![(
-                Challenge {
-                    challenge: token_challenge,
-                    token_key,
-                    max_age: Some(max_age),
-                },
-                Some(extension_set),
-                Some(extensions),
-            )]
+            vec![Challenge {
+                challenge: token_challenge,
+                token_key,
+                max_age: Some(max_age),
+                extension_set: Some(extension_set),
+                extensions: Some(extensions),
+            }]
         );
     }
 }
