@@ -52,9 +52,10 @@ pub fn criterion_amortized_ristretto255_benchmark(c: &mut Criterion) {
 
 pub fn flow<CS: PrivateCipherSuite>(c: &mut Criterion) {
     const NR: u16 = 100;
+    let id = CS::ID.escape_ascii();
     // Key pair generation
     c.bench_function(
-        &format!("AMORTIZED SERVER ({}): Generate key pair", CS::ID),
+        &format!("AMORTIZED SERVER ({id}): Generate key pair"),
         move |b| {
             b.to_async(FuturesExecutor).iter_with_setup(
                 || {
@@ -69,10 +70,7 @@ pub fn flow<CS: PrivateCipherSuite>(c: &mut Criterion) {
 
     // Issue token request
     c.bench_function(
-        &format!(
-            "AMORTIZED CLIENT ({}): Issue token request for {NR} tokens",
-            CS::ID
-        ),
+        &format!("AMORTIZED CLIENT ({id}): Issue token request for {NR} tokens"),
         move |b| {
             b.iter_with_setup(
                 || {
@@ -98,10 +96,7 @@ pub fn flow<CS: PrivateCipherSuite>(c: &mut Criterion) {
 
     // Issue token response
     c.bench_function(
-        &format!(
-            "AMORTIZED SERVER ({}): Issue token response for {NR} tokens",
-            CS::ID
-        ),
+        &format!("AMORTIZED SERVER ({id}): Issue token response for {NR} tokens"),
         move |b| {
             b.to_async(FuturesExecutor).iter_with_setup(
                 || {
@@ -129,7 +124,7 @@ pub fn flow<CS: PrivateCipherSuite>(c: &mut Criterion) {
 
     // Issue token
     c.bench_function(
-        &format!("AMORTIZED CLIENT ({}): Issue {NR} tokens", CS::ID),
+        &format!("AMORTIZED CLIENT ({id}): Issue {NR} tokens"),
         move |b| {
             b.iter_with_setup(
                 || {
@@ -163,7 +158,7 @@ pub fn flow<CS: PrivateCipherSuite>(c: &mut Criterion) {
 
     // Redeem token
     c.bench_function(
-        &format!("AMORTIZED SERVER ({}): Redeem token", CS::ID),
+        &format!("AMORTIZED SERVER ({id}): Redeem token"),
         move |b| {
             b.to_async(FuturesExecutor).iter_with_setup(
                 || {

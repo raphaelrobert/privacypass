@@ -2,8 +2,8 @@
 //! protocol.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE};
-use generic_array::{ArrayLength, GenericArray};
 use http::{HeaderValue, header::HeaderName};
+use hybrid_array::{Array, ArraySize};
 use nom::{
     IResult, Parser,
     bytes::complete::{tag, tag_no_case},
@@ -30,15 +30,15 @@ use super::{base64_char, key_name, opt_spaces, space};
 /// ```
 
 #[derive(Clone, Debug)]
-pub struct Token<Nk: ArrayLength> {
+pub struct Token<Nk: ArraySize> {
     token_type: TokenType,
     nonce: Nonce,
     challenge_digest: ChallengeDigest,
     token_key_id: TokenKeyId,
-    authenticator: GenericArray<u8, Nk>,
+    authenticator: Array<u8, Nk>,
 }
 
-impl<Nk: ArrayLength> Size for Token<Nk> {
+impl<Nk: ArraySize> Size for Token<Nk> {
     fn tls_serialized_len(&self) -> usize {
         self.token_type.tls_serialized_len()
             + self.nonce.tls_serialized_len()
@@ -48,7 +48,7 @@ impl<Nk: ArrayLength> Size for Token<Nk> {
     }
 }
 
-impl<Nk: ArrayLength> Serialize for Token<Nk> {
+impl<Nk: ArraySize> Serialize for Token<Nk> {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, Error> {
         Ok(self.token_type.tls_serialize(writer)?
             + self.nonce.tls_serialize(writer)?
@@ -58,7 +58,7 @@ impl<Nk: ArrayLength> Serialize for Token<Nk> {
     }
 }
 
-impl<Nk: ArrayLength> Deserialize for Token<Nk> {
+impl<Nk: ArraySize> Deserialize for Token<Nk> {
     fn tls_deserialize<R: std::io::Read>(bytes: &mut R) -> Result<Self, Error>
     where
         Self: Sized,
@@ -67,7 +67,7 @@ impl<Nk: ArrayLength> Deserialize for Token<Nk> {
         let nonce = Nonce::tls_deserialize(bytes)?;
         let challenge_digest = ChallengeDigest::tls_deserialize(bytes)?;
         let token_key_id = TokenKeyId::tls_deserialize(bytes)?;
-        let mut authenticator = vec![0u8; Nk::to_usize()];
+        let mut authenticator = Array::<u8, Nk>::default();
         let len = bytes.read(authenticator.as_mut_slice())?;
         if len != Nk::to_usize() {
             return Err(Error::InvalidVectorLength);
@@ -77,19 +77,19 @@ impl<Nk: ArrayLength> Deserialize for Token<Nk> {
             nonce,
             challenge_digest,
             token_key_id,
-            authenticator: GenericArray::from_slice(&authenticator).clone(),
+            authenticator,
         })
     }
 }
 
-impl<Nk: ArrayLength> Token<Nk> {
+impl<Nk: ArraySize> Token<Nk> {
     /// Creates a new Token.
     pub const fn new(
         token_type: TokenType,
         nonce: Nonce,
         challenge_digest: ChallengeDigest,
         token_key_id: TokenKeyId,
-        authenticator: GenericArray<u8, Nk>,
+        authenticator: Array<u8, Nk>,
     ) -> Self {
         Self {
             token_type,
@@ -132,7 +132,7 @@ impl<Nk: ArrayLength> Token<Nk> {
 ///
 /// # Errors
 /// Returns an error if the token is not valid.
-pub fn build_authorization_header<Nk: ArrayLength>(
+pub fn build_authorization_header<Nk: ArraySize>(
     token: &Token<Nk>,
 ) -> Result<(HeaderName, HeaderValue), BuildError> {
     let value = format!(
@@ -162,7 +162,7 @@ pub enum BuildError {
 ///
 /// # Errors
 /// Returns an error if the header value is not valid.
-pub fn parse_authorization_header<Nk: ArrayLength>(
+pub fn parse_authorization_header<Nk: ArraySize>(
     value: &HeaderValue,
 ) -> Result<Token<Nk>, ParseError> {
     let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
@@ -229,7 +229,7 @@ fn parse_private_tokens(input: &str) -> IResult<&str, Vec<&str>> {
     separated_list1(tag(","), parse_private_token).parse(input)
 }
 
-fn parse_header_value<Nk: ArrayLength>(input: &str) -> Result<Vec<Token<Nk>>, ParseError> {
+fn parse_header_value<Nk: ArraySize>(input: &str) -> Result<Vec<Token<Nk>>, ParseError> {
     let (output, tokens) = parse_private_tokens(input).map_err(|_| ParseError::InvalidInput)?;
     if !output.is_empty() {
         return Err(ParseError::InvalidInput);
@@ -251,7 +251,7 @@ fn parse_header_value<Nk: ArrayLength>(input: &str) -> Result<Vec<Token<Nk>>, Pa
 
 #[test]
 fn builder_parser_test() {
-    use generic_array::typenum::U32;
+    use hybrid_array::typenum::U32;
 
     let nonce = [1u8; 32];
     let challenge_digest = [2u8; 32];
@@ -262,7 +262,7 @@ fn builder_parser_test() {
         nonce,
         challenge_digest,
         token_key_id,
-        *GenericArray::from_slice(&authenticator),
+        Array::from(authenticator),
     );
     let (header_name, header_value) = build_authorization_header(&token).unwrap();
 

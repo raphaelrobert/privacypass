@@ -1,6 +1,6 @@
 use std::{fs::File, io::Write};
 
-use generic_array::GenericArray;
+use hybrid_array::Array;
 use rand::{Rng, rand_core::UnwrapErr, rngs::SysRng};
 use serde::{Deserialize, Serialize};
 
@@ -173,7 +173,7 @@ pub(crate) async fn generate_kat_private_token<CS: PrivateCipherSuite>() -> Priv
     let server = Server::new();
 
     // Server: Create a new keypair
-    let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
+    let mut seed = Array::<_, <CS::Group as Group>::ScalarLen>::default();
     UnwrapErr(SysRng).fill_bytes(&mut seed);
 
     let info = b"PrivacyPass";

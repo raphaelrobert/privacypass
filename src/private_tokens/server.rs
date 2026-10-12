@@ -1,6 +1,6 @@
 //! Server-side implementation of Privately Verifiable Token protocol.
 
-use generic_array::{ArrayLength, GenericArray};
+use hybrid_array::{Array, ArraySize};
 use log::{debug, warn};
 use rand::{TryRng, rngs::SysRng};
 use sha2::digest::OutputSizeUser;
@@ -51,7 +51,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         key_store: &PKS,
     ) -> Result<PublicKey<CS>, CreateKeypairError> {
         for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
-            let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
+            let mut seed = Array::<_, <CS::Group as Group>::ScalarLen>::default();
             SysRng
                 .try_fill_bytes(&mut seed)
                 .map_err(|source| CreateKeypairError::RngFailed { source })?;
@@ -126,7 +126,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<PKS: PrivateKeyStore, NS: NonceStore, Nk: ArrayLength>(
+    pub async fn redeem_token<PKS: PrivateKeyStore, NS: NonceStore, Nk: ArraySize>(
         &self,
         key_store: &PKS,
         nonce_store: &NS,

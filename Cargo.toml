@@ -14,27 +14,24 @@ categories = ["cryptography", "authentication", "network-programming"]
 features = ["deterministic-issuance"]
 
 [dependencies]
-async-trait = "0.1.89"
-base64 = "0.22"
-generic-array = "1.3.5"
+async-trait = "0.1.92"
+base64 = "0.23"
+hybrid-array = "0.4.15"
 rand = { version = "0.10", features = ["sys_rng"] }
 log = { version = "0.4", features = ["kv"] }
 serde = "1"
-sha2 = "0.10.9"
+sha2 = "0.11.0"
 subtle = "2"
 thiserror = "2"
 tls_codec = { version = "0.5.0", features = ["std", "derive"] }
-voprf = { package = "voprf-ng", version = "=0.6.0-pre.3", features = ["serde"] }
-p384 = { version = "0.13.0", default-features = false, features = [
-  "hash2curve",
-  "voprf",
-] }
-blind-rsa-signatures = "0.17"
+voprf = { package = "voprf-ng", version = "=0.6.0-pre.4", features = ["serde"] }
+p384 = { version = "0.14.0", default-features = false, features = ["oprf"] }
+blind-rsa-signatures = "0.18"
 http = "1"
 typenum = "1"
 nom = "8"
 tokio = { version = "1", features = ["full"], optional = true }
-trait-variant = "0.1.2"
+trait-variant = "0.1.3"
 
 [features]
 default = []
@@ -45,7 +42,7 @@ test-utils = ["tokio"]
 [dev-dependencies]
 privacypass = { path = ".", features = ["kat", "test-utils"] }
 futures = "0.3"
-criterion = { version = "0.8.0", features = ["async_futures", "async_tokio"] }
+criterion = { version = "0.8.2", features = ["async_futures", "async_tokio"] }
 hex = { version = "0.4.3", features = ["serde"] }
 serde_json = "1.0"
 

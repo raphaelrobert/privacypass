@@ -5,7 +5,7 @@ use blind_rsa_signatures::reexports::rand::CryptoRng;
 use blind_rsa_signatures::{
     Deterministic, KeyPair as GenericKeyPair, PSS, PublicKey as GenericPublicKey, Sha384, Signature,
 };
-use generic_array::ArrayLength;
+use hybrid_array::ArraySize;
 use log::{debug, warn};
 
 type KeyPair = GenericKeyPair<Sha384, PSS, Deterministic>;
@@ -209,7 +209,7 @@ impl OriginServer {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArrayLength>(
+    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArraySize>(
         &self,
         key_store: &OKS,
         nonce_store: &NS,

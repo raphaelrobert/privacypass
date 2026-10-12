@@ -1,6 +1,6 @@
 //! Server-side implementation of the Amortized Tokens protocol.
 
-use generic_array::GenericArray;
+use hybrid_array::Array;
 use log::{debug, warn};
 use rand::{TryRng, rngs::SysRng};
 use sha2::digest::OutputSizeUser;
@@ -76,7 +76,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
         <CS::Group as Group>::Elem: Send + Sync,
     {
         for _ in 0..COLLISION_AVOIDANCE_ATTEMPTS {
-            let mut seed = GenericArray::<_, <CS::Group as Group>::ScalarLen>::default();
+            let mut seed = Array::<_, <CS::Group as Group>::ScalarLen>::default();
             SysRng
                 .try_fill_bytes(&mut seed)
                 .map_err(|source| CreateKeypairError::RngFailed { source })?;
