@@ -1,6 +1,5 @@
 //! Response implementation of the Amortized Tokens protocol.
 
-use generic_array::GenericArray;
 use log::warn;
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
@@ -122,10 +121,9 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
         let mut tokens = Vec::new();
 
         for (authenticator, token_input) in client_batch_finalize_result
-            .iter()
+            .into_iter()
             .zip(token_state.token_inputs.iter())
         {
-            let authenticator = GenericArray::from_slice(authenticator.as_ref()).clone();
             let token = Token::new(
                 token_input.token_type,
                 token_input.nonce,

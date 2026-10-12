@@ -1,7 +1,7 @@
 //! Response implementation of the Publicly Verifiable Token protocol.
 
 use blind_rsa_signatures::BlindSignature;
-use generic_array::{GenericArray, typenum::U256};
+use hybrid_array::{Array, typenum::U256};
 use log::warn;
 use tls_codec::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -39,7 +39,8 @@ impl TokenResponse {
                 token_type,
                 source,
             })?;
-        let authenticator: GenericArray<u8, U256> = *GenericArray::from_slice(&signature[0..256]);
+        let mut authenticator = Array::<u8, U256>::default();
+        authenticator.copy_from_slice(&signature[0..256]);
         Ok(Token::new(
             TokenType::Public,
             token_state.token_input.nonce,

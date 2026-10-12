@@ -1,6 +1,5 @@
 //! Response implementation of the Privately Verifiable Token protocol.
 
-use generic_array::GenericArray;
 use log::warn;
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
@@ -116,7 +115,6 @@ impl<CS: PrivateCipherSuite> TokenResponse<CS> {
             )
             .inspect_err(|e| warn!(error:% = e; "Failed to finalize token"))
             .map_err(|source| IssueTokenError::FinalizationFailed { token_type, source })?;
-        let authenticator = GenericArray::from_slice(authenticator.as_ref()).clone();
 
         Ok(Token::new(
             CS::token_type(),
