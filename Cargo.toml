@@ -1,6 +1,6 @@
 [package]
 name = "privacypass"
-version = "0.2.0-pre.3"
+version = "0.2.0-pre.4"
 edition = "2024"
 description = "Implementation of Privacy Pass (RFC 9578)"
 license = "MIT"
@@ -24,7 +24,7 @@ sha2 = "0.11.0"
 subtle = "2"
 thiserror = "2"
 tls_codec = { version = "0.5.0", features = ["std", "derive"] }
-voprf = { package = "voprf-ng", version = "=0.6.0-pre.4", features = ["serde"] }
+voprf = { package = "voprf-ng", version = "=0.6.0", features = ["serde"] }
 p384 = { version = "0.14.0", default-features = false, features = ["oprf"] }
 blind-rsa-signatures = "0.18"
 http = "1"
