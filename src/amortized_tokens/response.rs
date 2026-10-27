@@ -1,9 +1,10 @@
 //! Response implementation of the Amortized Tokens protocol.
 
+use hybrid_array::Array;
 use log::warn;
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
-use voprf::{EvaluationElement, Group, Proof, Result, VoprfClient};
+use voprf::{EvaluationElement, EvaluationElementLen, Proof, ProofLen, Result, VoprfClient};
 
 use crate::{
     auth::authorize::Token,
@@ -25,8 +26,7 @@ use super::{AmortizedToken, TokenState};
 
 #[derive(Debug, PartialEq)]
 pub struct EvaluatedElement<CS: PrivateCipherSuite> {
-    pub(crate) _marker: std::marker::PhantomData<CS>,
-    pub(crate) evaluated_element: Vec<u8>,
+    pub(crate) evaluated_element: Array<u8, EvaluationElementLen<CS>>,
 }
 
 /// Token response as specified in the spec:
@@ -39,9 +39,8 @@ pub struct EvaluatedElement<CS: PrivateCipherSuite> {
 /// ```
 #[derive(Debug)]
 pub struct AmortizedBatchTokenResponse<CS: PrivateCipherSuite> {
-    pub(crate) _marker: std::marker::PhantomData<CS>,
     pub(crate) evaluated_elements: Vec<EvaluatedElement<CS>>,
-    pub(crate) evaluated_proof: Vec<u8>,
+    pub(crate) evaluated_proof: Array<u8, ProofLen<CS>>,
 }
 
 impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
@@ -101,7 +100,7 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
                 .iter()
                 .map(|token_input| token_input.serialize())
                 .collect::<Vec<_>>(),
-            &token_state.clients.to_vec(),
+            &token_state.clients,
             &evaluated_elements,
             &proof,
             token_state.public_key,
@@ -147,7 +146,7 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenResponse<CS> {
 
 impl<CS: PrivateCipherSuite> Size for EvaluatedElement<CS> {
     fn tls_serialized_len(&self) -> usize {
-        <<CS::Group as Group>::ElemLen as Unsigned>::USIZE
+        EvaluationElementLen::<CS>::USIZE
     }
 }
 
@@ -168,19 +167,15 @@ impl<CS: PrivateCipherSuite> Deserialize for EvaluatedElement<CS> {
     where
         Self: Sized,
     {
-        let mut evaluated_element = vec![0u8; <<CS::Group as Group>::ElemLen as Unsigned>::USIZE];
+        let mut evaluated_element = Array::default();
         bytes.read_exact(&mut evaluated_element)?;
-        Ok(EvaluatedElement {
-            _marker: std::marker::PhantomData,
-            evaluated_element,
-        })
+        Ok(EvaluatedElement { evaluated_element })
     }
 }
 
 impl<CS: PrivateCipherSuite> Size for AmortizedBatchTokenResponse<CS> {
     fn tls_serialized_len(&self) -> usize {
-        let len = 2 * <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE;
-        self.evaluated_elements.tls_serialized_len() + len
+        self.evaluated_elements.tls_serialized_len() + ProofLen::<CS>::USIZE
     }
 }
 
@@ -192,12 +187,9 @@ impl<CS: PrivateCipherSuite> Deserialize for AmortizedBatchTokenResponse<CS> {
         Self: Sized,
     {
         let evaluated_elements = Vec::<EvaluatedElement<CS>>::tls_deserialize(bytes)?;
-        let len = 2 * <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE;
-        // read len bytes
-        let mut evaluated_proof = vec![0u8; len];
+        let mut evaluated_proof = Array::default();
         bytes.read_exact(&mut evaluated_proof)?;
         Ok(AmortizedBatchTokenResponse {
-            _marker: std::marker::PhantomData,
             evaluated_elements,
             evaluated_proof,
         })

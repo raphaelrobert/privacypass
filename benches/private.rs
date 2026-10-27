@@ -1,12 +1,11 @@
 use criterion::{Criterion, async_executor::FuturesExecutor};
-use hybrid_array::ArraySize;
 use p384::NistP384;
 use tokio::runtime::Runtime;
 
 use privacypass::{
-    auth::{authenticate::TokenChallenge, authorize::Token},
+    auth::authenticate::TokenChallenge,
     common::private::PrivateCipherSuite,
-    private_tokens::{TokenRequest, TokenResponse, server::Server},
+    private_tokens::{PrivateToken, TokenRequest, TokenResponse, server::Server},
     test_utils::{nonce_store::MemoryNonceStore, private_memory_store::MemoryKeyStoreVoprf},
 };
 use voprf::Ristretto255;
@@ -29,10 +28,10 @@ async fn issue_private_token_response<CS: PrivateCipherSuite>(
         .unwrap()
 }
 
-async fn redeem_private_token<Nk: ArraySize, CS: PrivateCipherSuite>(
+async fn redeem_private_token<CS: PrivateCipherSuite>(
     key_store: MemoryKeyStoreVoprf<CS>,
     nonce_store: MemoryNonceStore,
-    token: Token<Nk>,
+    token: PrivateToken<CS>,
     server: Server<CS>,
 ) {
     server

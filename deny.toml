@@ -12,7 +12,6 @@ ignore = [
 allow = [
     "MIT",
     "Apache-2.0",
-    "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "Unicode-3.0",
@@ -21,6 +20,10 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards = "allow"
+skip = [
+    # cargo-deny reports this entry as unmatched once all dependencies use syn 3.
+    { crate = "syn:2", reason = "several proc-macro dependencies still use syn 2 in their latest release" },
+]
 
 [sources]
 unknown-registry = "deny"

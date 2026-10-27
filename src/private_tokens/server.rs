@@ -1,16 +1,13 @@
 //! Server-side implementation of Privately Verifiable Token protocol.
 
-use hybrid_array::{Array, ArraySize};
+use hybrid_array::Array;
 use log::{debug, warn};
 use rand::{TryRng, rngs::SysRng};
-use sha2::digest::OutputSizeUser;
 use subtle::ConstantTimeEq;
-use typenum::Unsigned;
 use voprf::{BlindedElement, Group, Result, VoprfServer};
 
 use crate::{
     COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput,
-    auth::authorize::Token,
     common::{
         errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
         private::{PrivateCipherSuite, PublicKey, public_key_to_token_key_id},
@@ -19,7 +16,7 @@ use crate::{
     truncate_token_key_id,
 };
 
-use super::{TokenRequest, TokenResponse};
+use super::{PrivateToken, TokenRequest, TokenResponse};
 
 /// Server side implementation of Privately Verifiable Token protocol.
 #[derive(Default, Debug)]
@@ -116,9 +113,8 @@ impl<CS: PrivateCipherSuite> Server<CS> {
             .map_err(|source| IssueTokenResponseError::BlindEvaluationFailed { source })?;
 
         Ok(TokenResponse {
-            _marker: std::marker::PhantomData,
-            evaluate_msg: evaluated_result.message.serialize().to_vec(),
-            evaluate_proof: evaluated_result.proof.serialize().to_vec(),
+            evaluate_msg: evaluated_result.message.serialize(),
+            evaluate_proof: evaluated_result.proof.serialize(),
         })
     }
 
@@ -126,25 +122,17 @@ impl<CS: PrivateCipherSuite> Server<CS> {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<PKS: PrivateKeyStore, NS: NonceStore, Nk: ArraySize>(
+    pub async fn redeem_token<PKS: PrivateKeyStore<CS = CS>, NS: NonceStore>(
         &self,
         key_store: &PKS,
         nonce_store: &NS,
-        token: Token<Nk>,
+        token: PrivateToken<CS>,
     ) -> Result<(), RedeemTokenError> {
         let token_type = token.token_type();
         if token_type != CS::token_type() {
             return Err(RedeemTokenError::TokenTypeMismatch {
                 expected: CS::token_type(),
                 found: token_type,
-            });
-        }
-        let auth_len = <<CS::Hash as OutputSizeUser>::OutputSize as Unsigned>::USIZE;
-        let authenticator_len = token.authenticator().len();
-        if authenticator_len != auth_len {
-            return Err(RedeemTokenError::InvalidAuthenticatorLength {
-                expected: auth_len,
-                found: authenticator_len,
             });
         }
         let nonce = token.nonce();
@@ -172,8 +160,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
                 .map_err(|source| RedeemTokenError::AuthenticatorDerivationFailed {
                     token_type,
                     source,
-                })?
-                .to_vec();
+                })?;
             let verified: bool = token.authenticator().ct_eq(&token_authenticator).into();
             if !verified {
                 return Err(RedeemTokenError::AuthenticatorMismatch { token_type });

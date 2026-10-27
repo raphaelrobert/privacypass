@@ -11,7 +11,6 @@ use privacypass::{
 
 use blind_rsa_signatures::reexports::rand::CryptoRng;
 use criterion::{Criterion, async_executor::FuturesExecutor};
-use hybrid_array::ArraySize;
 use tokio::runtime::Runtime;
 
 use privacypass::{TokenType, auth::authenticate::TokenChallenge};
@@ -35,10 +34,10 @@ async fn issue_public_token_response(
         .unwrap()
 }
 
-async fn redeem_public_token<Nk: ArraySize>(
+async fn redeem_public_token(
     origin_key_store: public_memory_store::OriginMemoryKeyStore,
     nonce_store: MemoryNonceStore,
-    token: privacypass::auth::authorize::Token<Nk>,
+    token: privacypass::public_tokens::PublicToken,
     origin_server: privacypass::public_tokens::server::OriginServer,
 ) {
     origin_server

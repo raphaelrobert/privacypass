@@ -1,9 +1,10 @@
 //! Request implementation of the Amortized Tokens protocol.
 
+use hybrid_array::Array;
 use rand::{TryRng, rngs::SysRng};
 use tls_codec::{Deserialize, Serialize, Size, TlsDeserialize, TlsSerialize, TlsSize};
 use typenum::Unsigned;
-use voprf::{Group, Result, VoprfClient};
+use voprf::{BlindedElementLen, Result, VoprfClient};
 
 #[cfg(feature = "deterministic-issuance")]
 use crate::common::{errors::DeterministicIssuanceError, private::Scalar};
@@ -16,6 +17,8 @@ use crate::{
     },
     truncate_token_key_id,
 };
+#[cfg(feature = "deterministic-issuance")]
+use voprf::Group;
 
 /// State that is kept between the token requests and token responses.
 pub struct TokenState<CS: PrivateCipherSuite> {
@@ -45,8 +48,7 @@ impl<CS: PrivateCipherSuite> std::fmt::Debug for TokenState<CS> {
 /// ```
 #[derive(Debug)]
 pub struct BlindedElement<CS: PrivateCipherSuite> {
-    pub(crate) _marker: std::marker::PhantomData<CS>,
-    pub(crate) blinded_element: Vec<u8>,
+    pub(crate) blinded_element: Array<u8, BlindedElementLen<CS>>,
 }
 
 /// Token request as specified in the spec:
@@ -122,10 +124,8 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
                     source: source.into(),
                 })?;
 
-            let serialized_blinded_element = blind_result.message.serialize().to_vec();
             let blinded_element = BlindedElement {
-                _marker: std::marker::PhantomData,
-                blinded_element: serialized_blinded_element,
+                blinded_element: blind_result.message.serialize(),
             };
 
             clients.push(blind_result.state);
@@ -210,10 +210,8 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
                     source: source.into(),
                 })?;
 
-            let serialized_blinded_element = blind_result.message.serialize().to_vec();
             let blinded_element = BlindedElement {
-                _marker: std::marker::PhantomData,
-                blinded_element: serialized_blinded_element,
+                blinded_element: blind_result.message.serialize(),
             };
 
             clients.push(blind_result.state);
@@ -240,7 +238,7 @@ impl<CS: PrivateCipherSuite> AmortizedBatchTokenRequest<CS> {
 
 impl<CS: PrivateCipherSuite> Size for BlindedElement<CS> {
     fn tls_serialized_len(&self) -> usize {
-        <<CS::Group as Group>::ElemLen as Unsigned>::USIZE
+        BlindedElementLen::<CS>::USIZE
     }
 }
 
@@ -261,11 +259,8 @@ impl<CS: PrivateCipherSuite> Deserialize for BlindedElement<CS> {
     where
         Self: Sized,
     {
-        let mut blinded_element = vec![0u8; <<CS::Group as Group>::ElemLen as Unsigned>::USIZE];
+        let mut blinded_element = Array::default();
         bytes.read_exact(&mut blinded_element)?;
-        Ok(BlindedElement {
-            _marker: std::marker::PhantomData,
-            blinded_element,
-        })
+        Ok(BlindedElement { blinded_element })
     }
 }

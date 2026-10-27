@@ -1,5 +1,6 @@
 //! Response implementation of the Privately Verifiable Token protocol.
 
+use hybrid_array::Array;
 use log::warn;
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
@@ -25,9 +26,8 @@ use super::{PrivateToken, request::TokenState};
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct TokenResponse<CS: PrivateCipherSuite> {
-    pub(crate) _marker: std::marker::PhantomData<CS>,
-    pub(crate) evaluate_msg: Vec<u8>,
-    pub(crate) evaluate_proof: Vec<u8>,
+    pub(crate) evaluate_msg: Array<u8, EvaluationElementLen<CS>>,
+    pub(crate) evaluate_proof: Array<u8, ProofLen<CS>>,
 }
 
 impl<CS: PrivateCipherSuite> TokenResponse<CS> {
@@ -50,9 +50,7 @@ impl<CS: PrivateCipherSuite> TokenResponse<CS> {
 
 impl<CS: PrivateCipherSuite> Size for TokenResponse<CS> {
     fn tls_serialized_len(&self) -> usize {
-        let len = <<CS::Group as Group>::ElemLen as Unsigned>::USIZE;
-        let proof_len = <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE;
-        len + 2 * proof_len
+        EvaluationElementLen::<CS>::USIZE + ProofLen::<CS>::USIZE
     }
 }
 
@@ -74,13 +72,11 @@ impl<CS: PrivateCipherSuite> Deserialize for TokenResponse<CS> {
     where
         Self: Sized,
     {
-        let mut evaluate_msg = vec![0u8; <<CS::Group as Group>::ElemLen as Unsigned>::USIZE];
+        let mut evaluate_msg = Array::default();
         bytes.read_exact(&mut evaluate_msg)?;
-        let mut evaluate_proof =
-            vec![0u8; 2 * <<CS::Group as Group>::ScalarLen as Unsigned>::USIZE];
+        let mut evaluate_proof = Array::default();
         bytes.read_exact(&mut evaluate_proof)?;
         Ok(TokenResponse {
-            _marker: std::marker::PhantomData,
             evaluate_msg,
             evaluate_proof,
         })

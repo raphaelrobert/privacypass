@@ -1,9 +1,10 @@
 //! Request implementation of the Privately Verifiable Token protocol.
 
+use hybrid_array::Array;
 use rand::{TryRng, rngs::SysRng};
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
-use voprf::{Group, Result, VoprfClient};
+use voprf::{BlindedElementLen, Result, VoprfClient};
 
 #[cfg(feature = "deterministic-issuance")]
 use crate::common::{errors::DeterministicIssuanceError, private::Scalar};
@@ -16,6 +17,8 @@ use crate::{
     },
     truncate_token_key_id,
 };
+#[cfg(feature = "deterministic-issuance")]
+use voprf::Group;
 
 /// Token request as specified in the spec:
 ///
@@ -28,10 +31,9 @@ use crate::{
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct TokenRequest<CS: PrivateCipherSuite> {
-    pub(crate) _marker: std::marker::PhantomData<CS>,
     pub(crate) token_type: TokenType,
     pub(crate) truncated_token_key_id: u8,
-    pub(crate) blinded_msg: Vec<u8>,
+    pub(crate) blinded_msg: Array<u8, BlindedElementLen<CS>>,
 }
 
 /// State that is kept between the token requests and token responses.
@@ -86,10 +88,9 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
             })?;
 
         let token_request = TokenRequest {
-            _marker: std::marker::PhantomData,
             token_type: CS::token_type(),
             truncated_token_key_id: truncate_token_key_id(&token_key_id),
-            blinded_msg: blinded_element.message.serialize().to_vec(),
+            blinded_msg: blinded_element.message.serialize(),
         };
         let token_state = TokenState {
             client: blinded_element.state,
@@ -141,10 +142,9 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
                 })?;
 
         let token_request = TokenRequest {
-            _marker: std::marker::PhantomData,
             token_type: CS::token_type(),
             truncated_token_key_id: truncate_token_key_id(&token_key_id),
-            blinded_msg: blinded_element.message.serialize().to_vec(),
+            blinded_msg: blinded_element.message.serialize(),
         };
         let token_state = TokenState {
             client: blinded_element.state,
@@ -158,10 +158,9 @@ impl<CS: PrivateCipherSuite> TokenRequest<CS> {
 
 impl<CS: PrivateCipherSuite> Size for TokenRequest<CS> {
     fn tls_serialized_len(&self) -> usize {
-        let len = <<CS::Group as Group>::ElemLen as Unsigned>::USIZE;
         self.token_type.tls_serialized_len()
             + self.truncated_token_key_id.tls_serialized_len()
-            + len
+            + BlindedElementLen::<CS>::USIZE
     }
 }
 
@@ -188,10 +187,9 @@ impl<CS: PrivateCipherSuite> Deserialize for TokenRequest<CS> {
     {
         let token_type = TokenType::tls_deserialize(bytes)?;
         let truncated_token_key_id = TruncatedTokenKeyId::tls_deserialize(bytes)?;
-        let mut blinded_msg = vec![0u8; <<CS::Group as Group>::ElemLen as Unsigned>::USIZE];
+        let mut blinded_msg = Array::default();
         bytes.read_exact(&mut blinded_msg)?;
         Ok(TokenRequest {
-            _marker: std::marker::PhantomData,
             token_type,
             truncated_token_key_id,
             blinded_msg,

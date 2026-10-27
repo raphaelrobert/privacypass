@@ -5,7 +5,6 @@ use blind_rsa_signatures::reexports::rand::CryptoRng;
 use blind_rsa_signatures::{
     Deterministic, KeyPair as GenericKeyPair, PSS, PublicKey as GenericPublicKey, Sha384, Signature,
 };
-use hybrid_array::ArraySize;
 use log::{debug, warn};
 
 type KeyPair = GenericKeyPair<Sha384, PSS, Deterministic>;
@@ -13,11 +12,12 @@ type PublicKey = GenericPublicKey<Sha384, PSS, Deterministic>;
 
 use crate::{
     COLLISION_AVOIDANCE_ATTEMPTS, NonceStore, TokenInput, TokenType, TruncatedTokenKeyId,
-    auth::authorize::Token,
     common::errors::{CreateKeypairError, IssueTokenResponseError, RedeemTokenError},
 };
 
-use super::{NK, TokenRequest, TokenResponse, public_key_to_token_key_id, truncate_token_key_id};
+use super::{
+    NK, PublicToken, TokenRequest, TokenResponse, public_key_to_token_key_id, truncate_token_key_id,
+};
 
 /// Key store for RSA issuer keys (public tokens).
 ///
@@ -96,7 +96,6 @@ pub fn serialize_public_key(
 }
 
 const KEYSIZE_IN_BITS: usize = 2048;
-const KEYSIZE_IN_BYTES: usize = KEYSIZE_IN_BITS / 8;
 
 /// Server-side implementation of Publicly Verifiable Token protocol for
 /// issuers.
@@ -209,24 +208,17 @@ impl OriginServer {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore, Nk: ArraySize>(
+    pub async fn redeem_token<OKS: OriginKeyStore, NS: NonceStore>(
         &self,
         key_store: &OKS,
         nonce_store: &NS,
-        token: Token<Nk>,
+        token: PublicToken,
     ) -> Result<(), RedeemTokenError> {
         let token_type = token.token_type();
         if token_type != TokenType::Public {
             return Err(RedeemTokenError::TokenTypeMismatch {
                 expected: TokenType::Public,
                 found: token_type,
-            });
-        }
-        let authenticator_len = token.authenticator().len();
-        if authenticator_len != KEYSIZE_IN_BYTES {
-            return Err(RedeemTokenError::InvalidAuthenticatorLength {
-                expected: KEYSIZE_IN_BYTES,
-                found: authenticator_len,
             });
         }
         let nonce = token.nonce();

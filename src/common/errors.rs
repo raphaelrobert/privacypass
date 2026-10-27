@@ -238,14 +238,6 @@ pub enum RedeemTokenError {
         /// Token type found in the token.
         found: TokenType,
     },
-    #[error("Invalid authenticator length: expected {expected}, found {found}")]
-    /// Error when the authenticator length does not match the expected size.
-    InvalidAuthenticatorLength {
-        /// Expected authenticator length.
-        expected: usize,
-        /// Actual authenticator length found in the token.
-        found: usize,
-    },
     #[error("Failed to derive authenticator for {token_type:?} token")]
     /// Error when deriving the expected authenticator fails.
     AuthenticatorDerivationFailed {

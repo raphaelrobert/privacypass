@@ -3,9 +3,7 @@
 use hybrid_array::Array;
 use log::{debug, warn};
 use rand::{TryRng, rngs::SysRng};
-use sha2::digest::OutputSizeUser;
 use subtle::ConstantTimeEq;
-use typenum::Unsigned;
 use voprf::{BlindedElement, Group, Result, VoprfServer, VoprfServerBatchEvaluateFinishResult};
 
 use crate::{
@@ -164,16 +162,12 @@ impl<CS: PrivateCipherSuite> Server<CS> {
 
         let evaluated_elements = messages
             .map(|m| super::EvaluatedElement {
-                _marker: std::marker::PhantomData,
-                evaluated_element: m.serialize().to_vec(),
+                evaluated_element: m.serialize(),
             })
             .collect();
-        let evaluated_proof = proof.serialize().to_vec();
-
         Ok(AmortizedBatchTokenResponse {
-            _marker: std::marker::PhantomData,
             evaluated_elements,
-            evaluated_proof,
+            evaluated_proof: proof.serialize(),
         })
     }
 
@@ -181,7 +175,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
     ///
     /// # Errors
     /// Returns an error if the token is invalid.
-    pub async fn redeem_token<BKS: PrivateKeyStore, NS: NonceStore>(
+    pub async fn redeem_token<BKS: PrivateKeyStore<CS = CS>, NS: NonceStore>(
         &self,
         key_store: &BKS,
         nonce_store: &NS,
@@ -192,14 +186,6 @@ impl<CS: PrivateCipherSuite> Server<CS> {
             return Err(RedeemTokenError::TokenTypeMismatch {
                 expected: CS::token_type(),
                 found: token_type,
-            });
-        }
-        let auth_len = <<CS::Hash as OutputSizeUser>::OutputSize as Unsigned>::USIZE;
-        let authenticator_len = token.authenticator().len();
-        if authenticator_len != auth_len {
-            return Err(RedeemTokenError::InvalidAuthenticatorLength {
-                expected: auth_len,
-                found: authenticator_len,
             });
         }
         let nonce = token.nonce();
@@ -227,8 +213,7 @@ impl<CS: PrivateCipherSuite> Server<CS> {
                 .map_err(|source| RedeemTokenError::AuthenticatorDerivationFailed {
                     token_type,
                     source,
-                })?
-                .to_vec();
+                })?;
             let verified: bool = token.authenticator().ct_eq(&token_authenticator).into();
             if !verified {
                 return Err(RedeemTokenError::AuthenticatorMismatch { token_type });

@@ -50,11 +50,12 @@ impl<Nk: ArraySize> Size for Token<Nk> {
 
 impl<Nk: ArraySize> Serialize for Token<Nk> {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, Error> {
-        Ok(self.token_type.tls_serialize(writer)?
+        let written = self.token_type.tls_serialize(writer)?
             + self.nonce.tls_serialize(writer)?
             + self.challenge_digest.tls_serialize(writer)?
-            + self.token_key_id.tls_serialize(writer)?
-            + writer.write(&self.authenticator[..])?)
+            + self.token_key_id.tls_serialize(writer)?;
+        writer.write_all(&self.authenticator)?;
+        Ok(written + self.authenticator.len())
     }
 }
 
@@ -67,11 +68,8 @@ impl<Nk: ArraySize> Deserialize for Token<Nk> {
         let nonce = Nonce::tls_deserialize(bytes)?;
         let challenge_digest = ChallengeDigest::tls_deserialize(bytes)?;
         let token_key_id = TokenKeyId::tls_deserialize(bytes)?;
-        let mut authenticator = Array::<u8, Nk>::default();
-        let len = bytes.read(authenticator.as_mut_slice())?;
-        if len != Nk::to_usize() {
-            return Err(Error::InvalidVectorLength);
-        }
+        let mut authenticator = Array::default();
+        bytes.read_exact(&mut authenticator)?;
         Ok(Self {
             token_type,
             nonce,
@@ -274,4 +272,23 @@ fn builder_parser_test() {
     assert_eq!(token.challenge_digest(), &challenge_digest);
     assert_eq!(token.token_key_id(), &token_key_id);
     assert_eq!(token.authenticator(), &authenticator);
+}
+
+#[test]
+fn parser_rejects_short_authenticator() {
+    use hybrid_array::typenum::{U32, U64};
+
+    let token = Token::<U32>::new(
+        TokenType::PrivateP384,
+        [1u8; 32],
+        [2u8; 32],
+        [3u8; 32],
+        Array::from([4u8; 32]),
+    );
+    let (_, header_value) = build_authorization_header(&token).unwrap();
+
+    assert_eq!(
+        parse_authorization_header::<U64>(&header_value).unwrap_err(),
+        ParseError::InvalidToken
+    );
 }
