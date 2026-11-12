@@ -13,12 +13,16 @@ use nom::{
     IResult, Parser,
     bytes::complete::{tag, tag_no_case},
     character::complete::digit1,
+    combinator::opt,
     multi::{many1, separated_list1},
 };
 
-use crate::{ChallengeDigest, TokenType};
+use crate::{
+    ChallengeDigest, TokenType,
+    common::extensions::{ExtensionSet, Extensions},
+};
 
-use super::{base64_char, key_name, opt_spaces, parse_u32, space};
+use super::{comma_sep, key_name, maybe_unquote, opt_spaces, parse_u32, space, unquote};
 
 /// Redemption context filed of a ``TokenChallenge
 pub type RedemptionContext = [u8; 32];
@@ -174,12 +178,69 @@ pub fn build_www_authenticate_header(
     Ok((header_name, header_value))
 }
 
+/// Builds a `WWW-Authenticate` header according to the following scheme
+/// specified in
+/// [`draft-ietf-privacypass-auth-scheme-extensions-03`](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03):
+///
+/// `PrivateToken challenge="...", token-key="..." [, extension-set="..."] [, extensions="..."] [, max-age=...]`
+///
+/// # Errors
+/// Returns an error if the `TokenChallenge` cannot be serialized.
+pub fn build_www_authenticate_header_ext(
+    token_challenge: &TokenChallenge,
+    token_key: &[u8],
+    max_age: Option<u32>,
+    extension_set: Option<&ExtensionSet>,
+    extensions: Option<&Extensions>,
+) -> Result<(HeaderName, HeaderValue), BuildError> {
+    let challenge_value = token_challenge
+        .to_base64()
+        .map_err(|_| BuildError::InvalidTokenChallenge)?;
+    let token_key_value = URL_SAFE.encode(token_key);
+    let max_age_string =
+        max_age.map_or_else(|| "".to_string(), |max_age| format!(", max-age={max_age}"));
+
+    let extension_set_kv = if let Some(extension_set) = extension_set {
+        let extension_set_str = URL_SAFE.encode(
+            extension_set
+                .tls_serialize_detached()
+                .map_err(|_| BuildError::InvalidExtensions)?,
+        );
+        format!(", extension-set=\"{extension_set_str}\"")
+    } else {
+        String::new()
+    };
+
+    let extension_kv = if let Some(extensions) = extensions {
+        let ext_str = URL_SAFE.encode(
+            extensions
+                .tls_serialize_detached()
+                .map_err(|_| BuildError::InvalidExtensions)?,
+        );
+
+        format!(", extensions=\"{ext_str}\"")
+    } else {
+        String::new()
+    };
+
+    let value = format!(
+        "PrivateToken challenge=\"{challenge_value}\", token-key=\"{token_key_value}\"{extension_set_kv}{extension_kv}{max_age_string}"
+    );
+    let header_name = http::header::WWW_AUTHENTICATE;
+    let header_value =
+        HeaderValue::from_str(&value).map_err(|_| BuildError::InvalidTokenChallenge)?;
+    Ok((header_name, header_value))
+}
+
 /// Building error for the `Authorization` header values
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum BuildError {
     #[error("Invalid TokenChallenge")]
     /// Invalid TokenChallenge
     InvalidTokenChallenge,
+    #[error("Invalid extensions")]
+    /// Invalid extensions
+    InvalidExtensions,
 }
 
 /// Parses a `WWW-Authenticate` header according to the following scheme:
@@ -195,12 +256,31 @@ pub fn parse_www_authenticate_header(value: &HeaderValue) -> Result<Vec<Challeng
     Ok(challenges)
 }
 
+/// Parses a `WWW-Authenticate` header according to the following scheme
+/// specified in
+/// [`draft-ietf-privacypass-auth-scheme-extensions-03`](https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-auth-scheme-extensions-03):
+///
+/// `PrivateToken challenge="...", token-key="...", extension-set="..." [, extensions="..."] [, max-age=...]`
+///
+/// # Errors
+/// Returns an error if the `WWW-Authenticate` header cannot be parsed.
+pub fn parse_www_authenticate_header_ext(
+    value: &HeaderValue,
+) -> Result<Vec<Challenge>, ParseError> {
+    let s = value.to_str().map_err(|_| ParseError::InvalidInput)?;
+    let (_, challenges) = parse_private_tokens(s).map_err(|_| ParseError::InvalidChallenge)?;
+
+    Ok(challenges)
+}
+
 /// Decoded challenge from a `WWW-Authenicate` header
 #[derive(Debug, PartialEq, Eq)]
 pub struct Challenge {
     challenge: TokenChallenge,
     token_key: Vec<u8>,
     max_age: Option<u32>,
+    extension_set: Option<ExtensionSet>,
+    extensions: Option<Extensions>,
 }
 
 impl Challenge {
@@ -220,6 +300,18 @@ impl Challenge {
     #[must_use]
     pub const fn max_age(&self) -> Option<u32> {
         self.max_age
+    }
+
+    /// Returns the optional extension set.
+    #[must_use]
+    pub const fn extension_set(&self) -> Option<&ExtensionSet> {
+        self.extension_set.as_ref()
+    }
+
+    /// Returns the optional extensions.
+    #[must_use]
+    pub const fn extensions(&self) -> Option<&Extensions> {
+        self.extensions.as_ref()
     }
 }
 
@@ -241,7 +333,8 @@ fn parse_key_value(input: &str) -> IResult<&str, (&str, &str)> {
     let (input, _) = tag("=")(input)?;
     let (input, _) = opt_spaces(input)?;
     let (input, value) = match key.to_lowercase().as_str() {
-        "challenge" | "token-key" => base64_char(input)?,
+        "challenge" | "token-key" => maybe_unquote(input)?,
+        "extension-set" | "extensions" => unquote(input)?,
         "max-age" => digit1(input)?,
         _ => {
             return Err(nom::Err::Failure(nom::error::make_error(
@@ -257,11 +350,14 @@ fn parse_private_token(input: &str) -> IResult<&str, Challenge> {
     let (input, _) = opt_spaces(input)?;
     let (input, _) = tag_no_case("PrivateToken")(input)?;
     let (input, _) = many1(space).parse(input)?;
-    let (input, key_values) = separated_list1(tag(","), parse_key_value).parse(input)?;
+    let (input, _) = opt(comma_sep).parse(input)?;
+    let (input, key_values) = separated_list1(comma_sep, parse_key_value).parse(input)?;
 
     let mut challenge = None;
     let mut token_key = None;
     let mut max_age = None;
+    let mut extension_set = None;
+    let mut extensions = None;
 
     for (key, value) in key_values {
         let err = nom::Err::Failure(nom::error::make_error(input, nom::error::ErrorKind::Tag));
@@ -271,6 +367,22 @@ fn parse_private_token(input: &str) -> IResult<&str, Challenge> {
             "max-age" => {
                 let parsed_max_age = parse_u32(value).map_err(|_| err)?;
                 max_age = Some(parsed_max_age);
+            }
+            "extension-set" => {
+                extension_set = Some(
+                    ExtensionSet::tls_deserialize_exact(
+                        URL_SAFE.decode(value).map_err(|_| err.clone())?,
+                    )
+                    .map_err(|_| err)?,
+                )
+            }
+            "extensions" => {
+                extensions = Some(
+                    Extensions::tls_deserialize_exact(
+                        URL_SAFE.decode(value).map_err(|_| err.clone())?,
+                    )
+                    .map_err(|_| err)?,
+                )
             }
             _ => return Err(err),
         }
@@ -283,6 +395,8 @@ fn parse_private_token(input: &str) -> IResult<&str, Challenge> {
                 challenge,
                 token_key,
                 max_age,
+                extension_set,
+                extensions,
             },
         ))
     } else {
@@ -294,54 +408,75 @@ fn parse_private_token(input: &str) -> IResult<&str, Challenge> {
 }
 
 fn parse_private_tokens(input: &str) -> IResult<&str, Vec<Challenge>> {
-    separated_list1(tag(","), parse_private_token).parse(input)
+    let (input, _) = opt(comma_sep).parse(input)?;
+    let (input, tokens) = separated_list1(comma_sep, parse_private_token).parse(input)?;
+    let (input, _) = opt(comma_sep).parse(input)?;
+    let (input, _) = opt_spaces(input)?;
+    Ok((input, tokens))
 }
 
-#[test]
-fn builder_test() {
-    let token_key = b"sample token key".to_vec();
-    let token_challenge = TokenChallenge::new(
-        TokenType::PrivateP384,
-        "issuer",
-        None,
-        &["origin".to_string()],
-    );
-    let serialized_token_challenge = token_challenge.to_base64().unwrap();
-    let max_age = 100;
+#[cfg(test)]
+mod tests {
+    use crate::{
+        TokenType,
+        auth::authenticate::{
+            Challenge, TokenChallenge, build_www_authenticate_header,
+            build_www_authenticate_header_ext, parse_private_tokens, parse_www_authenticate_header,
+            parse_www_authenticate_header_ext,
+        },
+        common::extensions::{Extension, ExtensionEntry, ExtensionSet, ExtensionType, Extensions},
+        common::private::{deserialize_public_key, serialize_public_key},
+    };
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE};
+    use http::HeaderValue;
+    use tls_codec::Serialize;
+    use voprf::{Group, Ristretto255};
 
-    let (header_name, header_value) =
-        build_www_authenticate_header(&token_challenge, &token_key, Some(max_age)).unwrap();
+    #[test]
+    fn builder_test() {
+        let token_key = b"sample token key".to_vec();
+        let token_challenge = TokenChallenge::new(
+            TokenType::PrivateP384,
+            "issuer",
+            None,
+            &["origin".to_string()],
+        );
+        let serialized_token_challenge = token_challenge.to_base64().unwrap();
+        let max_age = 100;
 
-    let expected_value = format!(
-        "PrivateToken challenge={}, token-key={}, max-age={}",
-        serialized_token_challenge,
-        URL_SAFE.encode(&token_key),
-        max_age
-    );
-    assert_eq!(header_name, http::header::WWW_AUTHENTICATE);
-    assert_eq!(header_value.as_bytes(), expected_value.as_bytes());
-}
+        let (header_name, header_value) =
+            build_www_authenticate_header(&token_challenge, &token_key, Some(max_age)).unwrap();
 
-#[test]
-fn parser_test() {
-    let token_key1 = b"sample token key 1".to_vec();
-    let token_key2 = b"sample token key 2".to_vec();
+        let expected_value = format!(
+            "PrivateToken challenge={}, token-key={}, max-age={}",
+            serialized_token_challenge,
+            URL_SAFE.encode(&token_key),
+            max_age
+        );
+        assert_eq!(header_name, http::header::WWW_AUTHENTICATE);
+        assert_eq!(header_value.as_bytes(), expected_value.as_bytes());
+    }
 
-    let challenge1 = TokenChallenge::new(
-        TokenType::PrivateP384,
-        "issuer1",
-        None,
-        &["origin1".to_string()],
-    );
+    #[test]
+    fn parser_test() {
+        let token_key1 = b"sample token key 1".to_vec();
+        let token_key2 = b"sample token key 2".to_vec();
 
-    let challenge2 = TokenChallenge::new(
-        TokenType::PrivateP384,
-        "issuer2",
-        None,
-        &["origin2".to_string()],
-    );
+        let challenge1 = TokenChallenge::new(
+            TokenType::PrivateP384,
+            "issuer1",
+            None,
+            &["origin1".to_string()],
+        );
 
-    let input = HeaderValue::from_str(&format!(
+        let challenge2 = TokenChallenge::new(
+            TokenType::PrivateP384,
+            "issuer2",
+            None,
+            &["origin2".to_string()],
+        );
+
+        let input = HeaderValue::from_str(&format!(
             "PrivateToken challenge={}, token-key={}, max-age=10, PrivateToken challenge={}, token-key={}",
             challenge1.to_base64().unwrap(),
             URL_SAFE.encode(&token_key1),
@@ -349,56 +484,198 @@ fn parser_test() {
             URL_SAFE.encode(&token_key2)))
         .unwrap();
 
-    let (_, challenge_list) = parse_private_tokens(input.to_str().unwrap()).unwrap();
+        let (_, challenge_list) = parse_private_tokens(input.to_str().unwrap()).unwrap();
 
-    assert_eq!(
-        challenge_list,
-        vec![
-            Challenge {
-                challenge: challenge1,
-                token_key: token_key1,
-                max_age: Some(10),
-            },
-            Challenge {
-                challenge: challenge2,
-                token_key: token_key2,
-                max_age: None,
-            }
-        ]
-    );
-}
+        assert_eq!(
+            challenge_list,
+            vec![
+                Challenge {
+                    challenge: challenge1,
+                    token_key: token_key1,
+                    max_age: Some(10),
+                    extension_set: None,
+                    extensions: None,
+                },
+                Challenge {
+                    challenge: challenge2,
+                    token_key: token_key2,
+                    max_age: None,
+                    extension_set: None,
+                    extensions: None,
+                }
+            ]
+        );
+    }
 
-#[test]
-fn builder_parser_test() {
-    use crate::common::private::{deserialize_public_key, serialize_public_key};
-    use voprf::{Group, Ristretto255};
+    #[test]
+    fn builder_parser_test() {
+        let public_key = Ristretto255::base_elem();
+        let token_key = serialize_public_key::<Ristretto255>(public_key);
+        let token_challenge = TokenChallenge::new(
+            TokenType::PrivateP384,
+            "issuer",
+            None,
+            &["origin".to_string()],
+        );
+        let max_age = 100u32;
+        let (_header_name, header_value) =
+            build_www_authenticate_header(&token_challenge, &token_key, Some(max_age)).unwrap();
 
-    let public_key = Ristretto255::base_elem();
-    let token_key = serialize_public_key::<Ristretto255>(public_key);
-    let token_challenge = TokenChallenge::new(
-        TokenType::PrivateP384,
-        "issuer",
-        None,
-        &["origin".to_string()],
-    );
-    let max_age = 100u32;
-    let (_header_name, header_value) =
-        build_www_authenticate_header(&token_challenge, &token_key, Some(max_age)).unwrap();
+        let challenges = parse_www_authenticate_header(&header_value).unwrap();
 
-    let challenges = parse_www_authenticate_header(&header_value).unwrap();
+        assert_eq!(
+            challenges,
+            vec![Challenge {
+                challenge: token_challenge,
+                token_key,
+                max_age: Some(max_age),
+                extension_set: None,
+                extensions: None,
+            }]
+        );
 
-    assert_eq!(
-        challenges,
-        vec![Challenge {
-            challenge: token_challenge,
-            token_key,
-            max_age: Some(max_age),
-        }]
-    );
+        assert_eq!(
+            parse_www_authenticate_header_ext(&header_value).unwrap(),
+            challenges
+        );
 
-    assert_eq!(challenges.len(), 1);
-    let challenge = &challenges[0];
-    let deserialized_public_key =
-        deserialize_public_key::<Ristretto255>(challenge.token_key()).unwrap();
-    assert_eq!(deserialized_public_key, public_key);
+        assert_eq!(challenges.len(), 1);
+        let challenge = &challenges[0];
+        let deserialized_public_key =
+            deserialize_public_key::<Ristretto255>(challenge.token_key()).unwrap();
+        assert_eq!(deserialized_public_key, public_key);
+    }
+
+    #[test]
+    fn builder_test_ext() {
+        let token_key = b"sample token key".to_vec();
+        let token_challenge = TokenChallenge::new(
+            TokenType::PublicMetadata,
+            "issuer",
+            None,
+            &["origin".to_string()],
+        );
+        let max_age = 100u32;
+
+        let extension_set = ExtensionSet::new(vec![
+            ExtensionEntry::new(true, ExtensionType(10)),
+            ExtensionEntry::new(false, ExtensionType(11)),
+        ]);
+        let extensions = Extensions::new(vec![
+            Extension::new(ExtensionType(10), b"hello".to_vec()).unwrap(),
+            Extension::new(ExtensionType(11), b"world".to_vec()).unwrap(),
+        ])
+        .unwrap();
+
+        let (header_name, header_value) = build_www_authenticate_header_ext(
+            &token_challenge,
+            &token_key,
+            Some(max_age),
+            Some(&extension_set),
+            Some(&extensions),
+        )
+        .unwrap();
+
+        let expected_value = format!(
+            "PrivateToken challenge=\"{}\", token-key=\"{}\", extension-set=\"{}\", extensions=\"{}\", max-age={}",
+            token_challenge.to_base64().unwrap(),
+            URL_SAFE.encode(&token_key),
+            URL_SAFE.encode(extension_set.tls_serialize_detached().unwrap()),
+            URL_SAFE.encode(extensions.tls_serialize_detached().unwrap()),
+            max_age
+        );
+
+        assert_eq!(header_name, http::header::WWW_AUTHENTICATE);
+        assert_eq!(header_value.as_bytes(), expected_value.as_bytes());
+    }
+
+    #[test]
+    fn parser_test_ext() {
+        let token_key = b"sample token key".to_vec();
+        let token_challenge = TokenChallenge::new(
+            TokenType::PublicMetadata,
+            "issuer",
+            None,
+            &["origin".to_string()],
+        );
+
+        let extension_set = ExtensionSet::new(vec![
+            ExtensionEntry::new(true, ExtensionType(10)),
+            ExtensionEntry::new(false, ExtensionType(11)),
+        ]);
+        let extensions = Extensions::new(vec![
+            Extension::new(ExtensionType(10), b"hello world".to_vec()).unwrap(),
+        ])
+        .unwrap();
+
+        let input = HeaderValue::from_str(&format!(
+            "PrivateToken challenge=\"{}\", token-key=\"{}\", extension-set=\"{}\", extensions=\"{}\", max-age={}",
+            token_challenge.to_base64().unwrap(),
+            URL_SAFE.encode(&token_key),
+            URL_SAFE.encode(extension_set.tls_serialize_detached().unwrap()),
+            URL_SAFE.encode(extensions.tls_serialize_detached().unwrap()),
+            42u32,
+        ))
+        .unwrap();
+
+        let (_, challenge_list) = parse_private_tokens(input.to_str().unwrap()).unwrap();
+
+        assert_eq!(
+            challenge_list,
+            vec![Challenge {
+                challenge: token_challenge,
+                token_key,
+                max_age: Some(42),
+                extension_set: Some(extension_set),
+                extensions: Some(extensions),
+            }]
+        );
+    }
+
+    #[test]
+    fn builder_parser_test_ext() {
+        let token_key = b"sample token key".to_vec();
+        let token_challenge = TokenChallenge::new(
+            TokenType::PublicMetadata,
+            "issuer",
+            None,
+            &["origin".to_string()],
+        );
+        let max_age = 100u32;
+
+        let extension_set = ExtensionSet::new(vec![
+            ExtensionEntry::new(true, ExtensionType(10)),
+            ExtensionEntry::new(false, ExtensionType(11)),
+        ]);
+        let extensions = Extensions::new(vec![
+            Extension::new(ExtensionType(10), b"hello".to_vec()).unwrap(),
+            Extension::new(ExtensionType(11), b"world".to_vec()).unwrap(),
+        ])
+        .unwrap();
+
+        let (_header_name, header_value) = build_www_authenticate_header_ext(
+            &token_challenge,
+            &token_key,
+            Some(max_age),
+            Some(&extension_set),
+            Some(&extensions),
+        )
+        .unwrap();
+
+        let parsed = parse_www_authenticate_header_ext(&header_value).unwrap();
+
+        assert_eq!(parsed[0].extension_set(), Some(&extension_set));
+        assert_eq!(parsed[0].extensions(), Some(&extensions));
+
+        assert_eq!(
+            parsed,
+            vec![Challenge {
+                challenge: token_challenge,
+                token_key,
+                max_age: Some(max_age),
+                extension_set: Some(extension_set),
+                extensions: Some(extensions),
+            }]
+        );
+    }
 }
