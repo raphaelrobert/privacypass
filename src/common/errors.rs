@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::{
     TokenType, auth::authenticate::SerializationError as TokenChallengeSerializationError,
+    common::extensions::ExtensionType,
 };
 use tls_codec::Error as TlsCodecError;
 use voprf::Error as VoprfError;
@@ -82,6 +83,21 @@ pub enum IssueTokenRequestError {
         #[source]
         source: SysError,
     },
+    #[error("Extension serialization error")]
+    /// Error when serializing Extensions fails
+    ExtensionSerializationError {
+        /// Underlying TLS error that triggered the failure
+        #[source]
+        source: TlsCodecError,
+    },
+    #[error("Invalid token type: expected {expected:?}, found {found:?}")]
+    /// Error when the token type does not match the expected type.
+    InvalidTokenType {
+        /// Expected token type for the operation.
+        expected: TokenType,
+        /// Actual token type found in the request.
+        found: TokenType,
+    },
 }
 
 /// Errors that can occur when issuing a deterministic token request.
@@ -145,6 +161,13 @@ pub enum IssueTokenResponseError {
         #[source]
         source: BlindRsaError,
     },
+    #[error("Key is not metadata capable")]
+    /// Error when the issuer key cannot be used for public metadata issuance.
+    KeyNotMetadataCapable {
+        /// Underlying RSA error that triggered the failure.
+        #[source]
+        source: BlindRsaError,
+    },
     #[error("Invalid token type: expected {expected:?}, found {found:?}")]
     /// Error when the token type does not match the expected type.
     InvalidTokenType {
@@ -160,6 +183,13 @@ pub enum IssueTokenResponseError {
         max: usize,
         /// Actual batch size in the request.
         size: usize,
+    },
+    #[error("Extension serialization error")]
+    /// Error when serializing Extensions fails
+    ExtensionSerializationError {
+        /// Underlying TLS error that triggered the failure
+        #[source]
+        source: TlsCodecError,
     },
 }
 
@@ -266,5 +296,51 @@ pub enum RedeemTokenError {
     InvalidSignature {
         /// Token type that was being redeemed.
         token_type: TokenType,
+    },
+    #[error("Extension serialization error")]
+    /// Error when serializing Extensions fails
+    ExtensionSerializationError {
+        /// Underlying TLS error that triggered the failure
+        #[source]
+        source: TlsCodecError,
+    },
+}
+
+/// Error when creating extensions
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum CreateExtensionsError {
+    /// Extension size is invalid
+    #[error("Extension size is invalid")]
+    InvalidSize,
+    /// Extension type is invalid
+    #[error("Extension type is invalid")]
+    InvalidType,
+    /// Extensions were not sorted
+    #[error("Extensions were not sorted")]
+    ExtensionsUnsorted,
+}
+
+/// Error when parsing the expiration extension.
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum ExpirationExtensionError {
+    /// Extension type is not the registered Expiration type.
+    #[error("Extension type is not Expiration")]
+    InvalidType,
+    /// Extension data is not exactly one ExpirationTimestamp value.
+    #[error("Expiration extension data is invalid")]
+    InvalidData,
+    /// More than one Expiration extension is present.
+    #[error("Duplicate Expiration extension")]
+    DuplicateExpiration,
+}
+
+/// Error that occurs during extension negotiation.
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum NegotiationError {
+    /// A required extension was missing.
+    #[error("Missing required extension type: {extension_type:?}")]
+    MissingExtensionType {
+        /// Extension type that was required.
+        extension_type: ExtensionType,
     },
 }
