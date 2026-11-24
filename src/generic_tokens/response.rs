@@ -1,7 +1,9 @@
 //! Response implementation of the Generic Token protocol.
 
+#[cfg(feature = "p384")]
 use p384::NistP384;
 use tls_codec::{Deserialize, TlsDeserialize, TlsSerialize, TlsSize};
+#[cfg(feature = "ristretto255")]
 use voprf::Ristretto255;
 
 use crate::{
@@ -22,12 +24,15 @@ use super::{GenericToken, GenericTokenState, TokenStates};
 #[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub enum GenericTokenResponse {
     /// Type VOPRF(P-384, SHA-384), RFC 9578
+    #[cfg(feature = "p384")]
     #[tls_codec(discriminant = "TokenType::PrivateP384")]
     PrivateP384(Box<crate::private_tokens::TokenResponse<NistP384>>),
     /// Type Blind RSA (2048-bit), RFC 9578
+    #[cfg(feature = "rsa")]
     #[tls_codec(discriminant = "TokenType::Public")]
     Public(Box<crate::public_tokens::TokenResponse>),
     /// Type VOPRF(Ristretto255, SHA-512), RFC XXXX
+    #[cfg(feature = "ristretto255")]
     #[tls_codec(discriminant = "TokenType::PrivateRistretto255")]
     PrivateRistretto255(Box<crate::private_tokens::TokenResponse<Ristretto255>>),
 }
@@ -101,13 +106,19 @@ impl GenericBatchTokenResponse {
         {
             if let Some(response) = token_response {
                 let expected = match token_state {
+                    #[cfg(feature = "p384")]
                     GenericTokenState::PrivateP384(_) => TokenType::PrivateP384,
+                    #[cfg(feature = "rsa")]
                     GenericTokenState::Public(_) => TokenType::Public,
+                    #[cfg(feature = "ristretto255")]
                     GenericTokenState::PrivateRistretto255(_) => TokenType::PrivateRistretto255,
                 };
                 let found = match &response {
+                    #[cfg(feature = "p384")]
                     GenericTokenResponse::PrivateP384(_) => TokenType::PrivateP384,
+                    #[cfg(feature = "rsa")]
                     GenericTokenResponse::Public(_) => TokenType::Public,
+                    #[cfg(feature = "ristretto255")]
                     GenericTokenResponse::PrivateRistretto255(_) => TokenType::PrivateRistretto255,
                 };
                 if expected != found {
@@ -115,15 +126,18 @@ impl GenericBatchTokenResponse {
                 }
 
                 let token = match (response, token_state) {
+                    #[cfg(feature = "p384")]
                     (
                         GenericTokenResponse::PrivateP384(response),
                         GenericTokenState::PrivateP384(state),
                     ) => response
                         .issue_token(state)
                         .map(GenericToken::from_private_p384)?,
+                    #[cfg(feature = "rsa")]
                     (GenericTokenResponse::Public(response), GenericTokenState::Public(state)) => {
                         response.issue_token(state).map(GenericToken::from_public)?
                     }
+                    #[cfg(feature = "ristretto255")]
                     (
                         GenericTokenResponse::PrivateRistretto255(response),
                         GenericTokenState::PrivateRistretto255(state),

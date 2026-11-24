@@ -1,5 +1,6 @@
 //! Common error types
 
+#[cfg(feature = "rsa")]
 use blind_rsa_signatures::Error as BlindRsaError;
 use rand::rngs::SysError;
 use thiserror::Error;
@@ -33,6 +34,7 @@ pub enum CreateKeypairError {
         #[source]
         source: VoprfError,
     },
+    #[cfg(feature = "rsa")]
     #[error("Key generation failed")]
     /// Error when generating an RSA keypair fails.
     KeyGenerationFailed {
@@ -40,6 +42,7 @@ pub enum CreateKeypairError {
         #[source]
         source: BlindRsaError,
     },
+    #[cfg(feature = "rsa")]
     #[error("Key serialization failed")]
     /// Error when serializing the public key fails.
     KeySerializationFailed {
@@ -130,6 +133,7 @@ pub enum BlindingErrorSource {
     #[error(transparent)]
     Voprf(#[from] VoprfError),
     /// RSA-specific blinding error.
+    #[cfg(feature = "rsa")]
     #[error(transparent)]
     Rsa(#[from] BlindRsaError),
 }
@@ -154,6 +158,7 @@ pub enum IssueTokenResponseError {
         #[source]
         source: VoprfError,
     },
+    #[cfg(feature = "rsa")]
     #[error("Blind signature failed")]
     /// Error when the server fails to compute a blind signature.
     BlindSignatureFailed {
@@ -161,6 +166,7 @@ pub enum IssueTokenResponseError {
         #[source]
         source: BlindRsaError,
     },
+    #[cfg(feature = "rsa")]
     #[error("Key is not metadata capable")]
     /// Error when the issuer key cannot be used for public metadata issuance.
     KeyNotMetadataCapable {
@@ -240,6 +246,7 @@ pub enum IssueTokenError {
         /// Token type present in the response.
         found: TokenType,
     },
+    #[cfg(feature = "rsa")]
     #[error("Signature finalization failed for {token_type:?} token")]
     /// Error when finalizing a public token signature fails.
     SignatureFinalizationFailed {

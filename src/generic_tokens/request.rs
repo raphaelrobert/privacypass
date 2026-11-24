@@ -1,8 +1,10 @@
 //! Request implementation of the  Generic Token protocol.
 
+#[cfg(feature = "p384")]
 use p384::NistP384;
 use std::io::Read;
 use tls_codec::{Deserialize, Serialize, Size, TlsDeserialize, TlsSerialize, TlsSize};
+#[cfg(feature = "ristretto255")]
 use voprf::Ristretto255;
 
 use crate::{TokenType, common::errors::SerializationError};
@@ -11,25 +13,31 @@ use crate::{TokenType, common::errors::SerializationError};
 #[derive(Debug)]
 pub enum GenericTokenState {
     /// Private p384 token state
+    #[cfg(feature = "p384")]
     PrivateP384(Box<crate::private_tokens::TokenState<NistP384>>),
     /// Public token state
+    #[cfg(feature = "rsa")]
     Public(Box<crate::public_tokens::TokenState>),
     /// Private ristretto255 token state
+    #[cfg(feature = "ristretto255")]
     PrivateRistretto255(Box<crate::private_tokens::request::TokenState<Ristretto255>>),
 }
 
+#[cfg(feature = "p384")]
 impl From<crate::private_tokens::TokenState<NistP384>> for GenericTokenState {
     fn from(state: crate::private_tokens::TokenState<NistP384>) -> Self {
         GenericTokenState::PrivateP384(Box::new(state))
     }
 }
 
+#[cfg(feature = "ristretto255")]
 impl From<crate::private_tokens::TokenState<Ristretto255>> for GenericTokenState {
     fn from(state: crate::private_tokens::TokenState<Ristretto255>) -> Self {
         GenericTokenState::PrivateRistretto255(Box::new(state))
     }
 }
 
+#[cfg(feature = "rsa")]
 impl From<crate::public_tokens::TokenState> for GenericTokenState {
     fn from(state: crate::public_tokens::TokenState) -> Self {
         GenericTokenState::Public(Box::new(state))
@@ -94,25 +102,31 @@ impl GenericBatchTokenRequestBuilder {
 #[derive(Debug, Clone, PartialEq)]
 pub enum GenericTokenRequest {
     /// Type VOPRF(P-384, SHA-384), RFC 9578
+    #[cfg(feature = "p384")]
     PrivateP384(Box<crate::private_tokens::TokenRequest<NistP384>>),
     /// Type Blind RSA (2048-bit), RFC 9578
+    #[cfg(feature = "rsa")]
     Public(Box<crate::public_tokens::TokenRequest>),
     /// Type VOPRF(Ristretto255, SHA-512), RFC XXXX
+    #[cfg(feature = "ristretto255")]
     PrivateRistretto255(Box<crate::private_tokens::TokenRequest<Ristretto255>>),
 }
 
+#[cfg(feature = "p384")]
 impl From<crate::private_tokens::TokenRequest<NistP384>> for GenericTokenRequest {
     fn from(token_request: crate::private_tokens::TokenRequest<NistP384>) -> Self {
         GenericTokenRequest::PrivateP384(Box::new(token_request))
     }
 }
 
+#[cfg(feature = "rsa")]
 impl From<crate::public_tokens::TokenRequest> for GenericTokenRequest {
     fn from(token_request: crate::public_tokens::TokenRequest) -> Self {
         GenericTokenRequest::Public(Box::new(token_request))
     }
 }
 
+#[cfg(feature = "ristretto255")]
 impl From<crate::private_tokens::TokenRequest<Ristretto255>> for GenericTokenRequest {
     fn from(token_request: crate::private_tokens::TokenRequest<Ristretto255>) -> Self {
         GenericTokenRequest::PrivateRistretto255(Box::new(token_request))
@@ -151,8 +165,11 @@ impl GenericBatchTokenRequest {
 impl Size for GenericTokenRequest {
     fn tls_serialized_len(&self) -> usize {
         match self {
+            #[cfg(feature = "p384")]
             GenericTokenRequest::PrivateP384(token_request) => token_request.tls_serialized_len(),
+            #[cfg(feature = "rsa")]
             GenericTokenRequest::Public(token_request) => token_request.tls_serialized_len(),
+            #[cfg(feature = "ristretto255")]
             GenericTokenRequest::PrivateRistretto255(token_request) => {
                 token_request.tls_serialized_len()
             }
@@ -163,8 +180,11 @@ impl Size for GenericTokenRequest {
 impl Serialize for GenericTokenRequest {
     fn tls_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         match self {
+            #[cfg(feature = "p384")]
             GenericTokenRequest::PrivateP384(token_request) => token_request.tls_serialize(writer),
+            #[cfg(feature = "rsa")]
             GenericTokenRequest::Public(token_request) => token_request.tls_serialize(writer),
+            #[cfg(feature = "ristretto255")]
             GenericTokenRequest::PrivateRistretto255(token_request) => {
                 token_request.tls_serialize(writer)
             }
@@ -182,16 +202,19 @@ impl Deserialize for GenericTokenRequest {
         let mut all_bytes = (peeked).chain(bytes);
 
         match token_type {
+            #[cfg(feature = "p384")]
             TokenType::PrivateP384 => {
                 let token_request =
                     crate::private_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
                 Ok(GenericTokenRequest::PrivateP384(Box::new(token_request)))
             }
+            #[cfg(feature = "rsa")]
             TokenType::Public => {
                 let token_request =
                     crate::public_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;
                 Ok(GenericTokenRequest::Public(Box::new(token_request)))
             }
+            #[cfg(feature = "ristretto255")]
             TokenType::PrivateRistretto255 => {
                 let token_request =
                     crate::private_tokens::TokenRequest::tls_deserialize(&mut all_bytes)?;

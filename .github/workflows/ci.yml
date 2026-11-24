@@ -39,6 +39,9 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --all-targets --no-default-features --features p384 -- -D warnings
+      - run: cargo clippy --all-targets --no-default-features --features ristretto255 -- -D warnings
+      - run: cargo clippy --all-targets --no-default-features --features rsa -- -D warnings
 
   test:
     runs-on: ubuntu-latest

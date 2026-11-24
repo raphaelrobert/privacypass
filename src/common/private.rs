@@ -19,12 +19,14 @@ pub trait PrivateCipherSuite:
     fn token_type() -> TokenType;
 }
 
+#[cfg(feature = "p384")]
 impl PrivateCipherSuite for p384::NistP384 {
     fn token_type() -> TokenType {
         TokenType::PrivateP384
     }
 }
 
+#[cfg(feature = "ristretto255")]
 impl PrivateCipherSuite for voprf::Ristretto255 {
     fn token_type() -> TokenType {
         TokenType::PrivateRistretto255
