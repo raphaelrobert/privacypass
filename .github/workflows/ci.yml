@@ -38,10 +38,10 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo clippy --all-targets --no-default-features --features p384 -- -D warnings
-      - run: cargo clippy --all-targets --no-default-features --features ristretto255 -- -D warnings
-      - run: cargo clippy --all-targets --no-default-features --features rsa -- -D warnings
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack@0.6.46
+      - run: cargo hack clippy --feature-powerset --at-least-one-of rsa,p384,ristretto255 --clean-per-run --no-dev-deps -- -D warnings
 
   test:
     runs-on: ubuntu-latest
