@@ -32,7 +32,7 @@ privacypass = "0.2"
 
 ### Features
 
-Each token type has a feature, and only the enabled ones are compiled together with their dependencies. All three are enabled by default.
+Token types are gated behind feature flags. They can be individually enabled/disabled. By default, all of them are enabled.
 
 | Feature | Token types | Dependency |
 |---|---|---|
