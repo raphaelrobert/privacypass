@@ -144,6 +144,7 @@ impl GenericBatchTokenResponse {
                     ) => response
                         .issue_token(state)
                         .map(GenericToken::from_private_ristretto)?,
+                    #[allow(unreachable_patterns)]
                     _ => {
                         return Err(IssueTokenError::UnexpectedTokenResponseType {
                             expected,
