@@ -3,6 +3,7 @@
 use log::warn;
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 use voprf::*;
 
 use crate::{

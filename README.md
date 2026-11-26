@@ -30,6 +30,25 @@ Add the dependency to your `Cargo.toml`:
 privacypass = "0.2"
 ```
 
+### Features
+
+Token types are gated behind feature flags. They can be individually enabled/disabled. By default, all of them are enabled.
+
+| Feature | Token types | Dependency |
+|---|---|---|
+| `p384` | Privately verifiable tokens with VOPRF(P-384, SHA-384), type `0x0001` | `p384` |
+| `rsa` | Publicly verifiable tokens with Blind RSA, type `0x0002` | `blind-rsa-signatures` |
+| `ristretto255` | Privately verifiable and amortized tokens with VOPRF(ristretto255, SHA-512), type `0x0005` | `voprf-ng` |
+
+To build only what you use, disable the default features:
+
+```toml
+[dependencies]
+privacypass = { version = "0.2", default-features = false, features = ["ristretto255"] }
+```
+
+At least one of the three features must be enabled.
+
 Privately verifiable token lifecycle (create keypair, challenge, request,
 issue, finalize, redeem):
 

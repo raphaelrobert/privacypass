@@ -6,6 +6,7 @@ use rand::{TryRng, rngs::SysRng};
 use sha2::digest::OutputSizeUser;
 use subtle::ConstantTimeEq;
 use typenum::Unsigned;
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 use voprf::{BlindedElement, Group, Result, VoprfServer};
 
 use crate::{

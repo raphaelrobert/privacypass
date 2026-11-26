@@ -507,6 +507,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ristretto255")]
     #[test]
     fn builder_parser_test() {
         let public_key = Ristretto255::base_elem();

@@ -1,5 +1,6 @@
 //! Common error types
 
+#[cfg(feature = "rsa")]
 use blind_rsa_signatures::Error as BlindRsaError;
 use rand::rngs::SysError;
 use thiserror::Error;
@@ -9,6 +10,7 @@ use crate::{
     common::extensions::ExtensionType,
 };
 use tls_codec::Error as TlsCodecError;
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 use voprf::Error as VoprfError;
 
 /// Serialization error
@@ -26,6 +28,7 @@ pub enum SerializationError {
 /// Errors that can occur when creating a keypair.
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum CreateKeypairError {
+    #[cfg(any(feature = "p384", feature = "ristretto255"))]
     #[error("Seed is too long")]
     /// Error when the seed is too long.
     SeedError {
@@ -33,6 +36,7 @@ pub enum CreateKeypairError {
         #[source]
         source: VoprfError,
     },
+    #[cfg(feature = "rsa")]
     #[error("Key generation failed")]
     /// Error when generating an RSA keypair fails.
     KeyGenerationFailed {
@@ -40,6 +44,7 @@ pub enum CreateKeypairError {
         #[source]
         source: BlindRsaError,
     },
+    #[cfg(feature = "rsa")]
     #[error("Key serialization failed")]
     /// Error when serializing the public key fails.
     KeySerializationFailed {
@@ -127,9 +132,11 @@ pub enum DeterministicIssuanceError {
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum BlindingErrorSource {
     /// VOPRF-specific blinding error.
+    #[cfg(any(feature = "p384", feature = "ristretto255"))]
     #[error(transparent)]
     Voprf(#[from] VoprfError),
     /// RSA-specific blinding error.
+    #[cfg(feature = "rsa")]
     #[error(transparent)]
     Rsa(#[from] BlindRsaError),
 }
@@ -140,6 +147,7 @@ pub enum IssueTokenResponseError {
     #[error("Key ID not found")]
     /// Error when the key ID is not found.
     KeyIdNotFound,
+    #[cfg(any(feature = "p384", feature = "ristretto255"))]
     #[error("Invalid blinded message")]
     /// Error when deserializing the blinded message fails.
     InvalidBlindedMessage {
@@ -151,9 +159,11 @@ pub enum IssueTokenResponseError {
     /// Error when the server fails to evaluate the blinded elements.
     BlindEvaluationFailed {
         /// Underlying VOPRF error that triggered the failure.
+        #[cfg(any(feature = "p384", feature = "ristretto255"))]
         #[source]
         source: VoprfError,
     },
+    #[cfg(feature = "rsa")]
     #[error("Blind signature failed")]
     /// Error when the server fails to compute a blind signature.
     BlindSignatureFailed {
@@ -161,6 +171,7 @@ pub enum IssueTokenResponseError {
         #[source]
         source: BlindRsaError,
     },
+    #[cfg(feature = "rsa")]
     #[error("Key is not metadata capable")]
     /// Error when the issuer key cannot be used for public metadata issuance.
     KeyNotMetadataCapable {
@@ -202,6 +213,7 @@ pub enum IssueTokenError {
         /// Token type for which deserialization failed.
         token_type: TokenType,
         /// Underlying VOPRF error that triggered the failure.
+        #[cfg(any(feature = "p384", feature = "ristretto255"))]
         #[source]
         source: VoprfError,
     },
@@ -211,6 +223,7 @@ pub enum IssueTokenError {
         /// Token type for which proof deserialization failed.
         token_type: TokenType,
         /// Underlying VOPRF error that triggered the failure.
+        #[cfg(any(feature = "p384", feature = "ristretto255"))]
         #[source]
         source: VoprfError,
     },
@@ -220,6 +233,7 @@ pub enum IssueTokenError {
         /// Token type for which finalization failed.
         token_type: TokenType,
         /// Underlying VOPRF error that triggered the failure.
+        #[cfg(any(feature = "p384", feature = "ristretto255"))]
         #[source]
         source: VoprfError,
     },
@@ -229,6 +243,7 @@ pub enum IssueTokenError {
         /// Token type for which batch finalization failed.
         token_type: TokenType,
         /// Underlying VOPRF error that triggered the failure.
+        #[cfg(any(feature = "p384", feature = "ristretto255"))]
         #[source]
         source: VoprfError,
     },
@@ -240,6 +255,7 @@ pub enum IssueTokenError {
         /// Token type present in the response.
         found: TokenType,
     },
+    #[cfg(feature = "rsa")]
     #[error("Signature finalization failed for {token_type:?} token")]
     /// Error when finalizing a public token signature fails.
     SignatureFinalizationFailed {
@@ -282,6 +298,7 @@ pub enum RedeemTokenError {
         /// Token type that was being redeemed.
         token_type: TokenType,
         /// Underlying VOPRF error that triggered the failure.
+        #[cfg(any(feature = "p384", feature = "ristretto255"))]
         #[source]
         source: VoprfError,
     },

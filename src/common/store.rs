@@ -1,9 +1,11 @@
 //! Store private token key material
 use async_trait::async_trait;
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 use voprf::VoprfServer;
 
 use crate::TruncatedTokenKeyId;
 
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 use super::private::PrivateCipherSuite;
 
 /// Key store for VOPRF server keys (private and amortized tokens).

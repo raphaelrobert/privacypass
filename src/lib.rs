@@ -17,11 +17,17 @@
 #![deny(missing_debug_implementations)]
 #![deny(unsafe_code)]
 
+#[cfg(not(any(feature = "p384", feature = "ristretto255", feature = "rsa")))]
+compile_error!("enable at least one token type feature: p384, ristretto255 or rsa");
+
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 pub mod amortized_tokens;
 pub mod auth;
 pub mod common;
 pub mod generic_tokens;
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 pub mod private_tokens;
+#[cfg(feature = "rsa")]
 pub mod public_tokens;
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
@@ -31,6 +37,7 @@ use std::fmt::Debug;
 use tls_codec::{TlsDeserialize, TlsSerialize, TlsSize};
 
 pub use tls_codec::{Deserialize, Serialize};
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 pub use voprf::{Group, VoprfServer};
 
 /// Token type

@@ -4,7 +4,7 @@ fmt:
     cargo fmt --check
 
 clippy:
-    cargo clippy --all-targets --all-features -- -D warnings
+    cargo hack clippy --feature-powerset --at-least-one-of rsa,p384,ristretto255 --clean-per-run --no-dev-deps -- -D warnings
 
 deny:
     cargo deny check

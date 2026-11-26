@@ -280,13 +280,10 @@ mod tests {
 
     #[test]
     fn key_serialization() {
-        // P384
-        let pk = p384::NistP384::base_elem();
-        key_serialization_cs::<NistP384>(pk);
-
-        // Ristretto255
-        let pk = Ristretto255::base_elem();
-        key_serialization_cs::<Ristretto255>(pk);
+        #[cfg(feature = "p384")]
+        key_serialization_cs::<NistP384>(p384::NistP384::base_elem());
+        #[cfg(feature = "ristretto255")]
+        key_serialization_cs::<Ristretto255>(Ristretto255::base_elem());
     }
 
     #[cfg(test)]

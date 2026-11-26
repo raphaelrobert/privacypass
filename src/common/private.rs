@@ -2,6 +2,7 @@
 
 use sha2::{Digest, Sha256};
 use std::fmt::Debug;
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 use voprf::{CipherSuite, Error, Group};
 
 use crate::{TokenKeyId, TokenType, TruncatedTokenKeyId, truncate_token_key_id};
@@ -19,12 +20,14 @@ pub trait PrivateCipherSuite:
     fn token_type() -> TokenType;
 }
 
+#[cfg(feature = "p384")]
 impl PrivateCipherSuite for p384::NistP384 {
     fn token_type() -> TokenType {
         TokenType::PrivateP384
     }
 }
 
+#[cfg(feature = "ristretto255")]
 impl PrivateCipherSuite for voprf::Ristretto255 {
     fn token_type() -> TokenType {
         TokenType::PrivateRistretto255
