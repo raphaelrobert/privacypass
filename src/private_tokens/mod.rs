@@ -1,6 +1,7 @@
 //! # Privately Verifiable Tokens
 
 use sha2::digest::OutputSizeUser;
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 pub use voprf::*;
 
 use crate::auth::authorize::Token;

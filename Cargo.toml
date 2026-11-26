@@ -21,10 +21,10 @@ rand = { version = "0.10", features = ["sys_rng"] }
 log = { version = "0.4", features = ["kv"] }
 serde = "1"
 sha2 = "0.11.0"
-subtle = "2"
+subtle = { version = "2", optional = true }
 thiserror = "2"
 tls_codec = { version = "0.5.0", features = ["std", "derive"] }
-voprf = { package = "voprf-ng", version = "=0.6.0", features = ["serde"] }
+voprf = { package = "voprf-ng", version = "=0.6.0", features = ["serde"], optional = true }
 p384 = { version = "0.14.0", default-features = false, features = ["oprf"], optional = true }
 blind-rsa-signatures = { version = "0.18", optional = true }
 http = "1"
@@ -35,11 +35,11 @@ tokio = { version = "1", features = ["full"], optional = true }
 [features]
 default = ["p384", "ristretto255", "rsa"]
 # Token type 0x0001: privately verifiable tokens with VOPRF(P-384, SHA-384).
-p384 = ["dep:p384"]
+p384 = ["dep:p384", "dep:voprf", "dep:subtle"]
 # Token type 0x0002: publicly verifiable tokens with Blind RSA.
 rsa = ["dep:blind-rsa-signatures"]
 # Token type 0x0005 and amortized tokens with VOPRF(ristretto255, SHA-512).
-ristretto255 = ["voprf/ristretto255-ciphersuite"]
+ristretto255 = ["voprf/ristretto255-ciphersuite", "dep:voprf", "dep:subtle"]
 deterministic-issuance = ["voprf/danger"]
 kat = ["deterministic-issuance"]
 test-utils = ["tokio"]

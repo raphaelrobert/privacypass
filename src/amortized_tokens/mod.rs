@@ -1,6 +1,7 @@
 //! # Amortized tokens
 
 use sha2::digest::OutputSizeUser;
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 use voprf::CipherSuite;
 
 use crate::auth::authorize::Token;

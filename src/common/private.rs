@@ -2,6 +2,7 @@
 
 use sha2::{Digest, Sha256};
 use std::fmt::Debug;
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 use voprf::{CipherSuite, Error, Group};
 
 use crate::{TokenKeyId, TokenType, TruncatedTokenKeyId, truncate_token_key_id};

@@ -3,6 +3,7 @@
 use rand::{TryRng, rngs::SysRng};
 use tls_codec::{Deserialize, Serialize, Size};
 use typenum::Unsigned;
+#[cfg(any(feature = "p384", feature = "ristretto255"))]
 use voprf::{Group, Result, VoprfClient};
 
 #[cfg(feature = "deterministic-issuance")]
